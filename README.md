@@ -4,14 +4,16 @@ A standalone organization-data warehouse for PesaGuard. It imports authorized re
 
 This is a datasource, not the PesaGuard customer onboarding system and not an authority that independently certifies companies. Imported data is marked unverified unless a trusted verification workflow establishes otherwise.
 
-## Local development
+## Local development with Docker
 
-1. For Windows local testing, copy `example.env` to `.env` and replace `REGISTRY_API_KEYS` with a long random local-only key.
-2. Run `docker compose -f docker-compose.windows.local.yml up -d --build` to start the API, dashboard, and independent worker with one shared SQLite database and local file storage. This configuration is isolated from production Supabase and R2.
-3. Open the dashboard at `http://localhost:5173` and API docs at `http://localhost:8000/docs`. Use only the local-only API key in the dashboard.
-4. The guided Windows startup and stop scripts are `scripts/start-windows-local.ps1` and `scripts/stop-windows-local.ps1`.
-5. Follow [`docs/windows-local-worker.md`](docs/windows-local-worker.md) to upload the fictional CSV fixture and verify that the worker processes it.
-6. Tests: `PYTHONPATH=backend pytest -q` (run from the repository root in a Python environment with backend requirements installed).
+1. Install and start Docker Desktop (Linux containers), then confirm `docker info` succeeds.
+2. Copy `example.env` to `.env` and replace `REGISTRY_API_KEYS` with a long random **local-only** key. Do not put production secrets in this file.
+3. Run `docker compose config --quiet` to validate the stack, then `docker compose up -d --build`.
+4. Compose starts the API, Redis, ingestion worker, and React dashboard. The API applies the local Alembic migrations before starting. API and worker share the same SQLite database and local upload volume. Production database and R2 settings are overridden for this stack.
+5. Open the dashboard at `http://localhost:5173`, API docs at `http://localhost:8000/docs`, liveness at `http://localhost:8000/health/live`, and readiness at `http://localhost:8000/health/ready`. Enter only the local API key in the dashboard.
+6. Follow [`docs/windows-local-worker.md`](docs/windows-local-worker.md) to upload the fictional CSV fixture and verify end-to-end worker processing.
+7. View service status and logs with `docker compose ps` and `docker compose logs -f registry-api registry-worker registry-frontend`. Stop with `docker compose down`; use `docker compose down -v` only when you intentionally want to delete local test data.
+8. For Windows, the guided helpers are `scripts/start-windows-local.ps1` and `scripts/stop-windows-local.ps1`. Tests: `PYTHONPATH=backend pytest -q` from a Python environment with backend requirements installed.
 
 Do not commit `.env`, API keys, database URLs, or R2 credentials.
 
