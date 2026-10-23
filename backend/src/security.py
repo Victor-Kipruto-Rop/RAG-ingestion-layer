@@ -102,6 +102,9 @@ def _managed_key_from_db(raw_key):
         with SessionLocal() as db:
             key=db.scalar(select(ManagedAPIKey).where(ManagedAPIKey.key_prefix==prefix))
             if not key or not hmac.compare_digest(key.secret_hash,digest): return None
+            # The visible prefix and stored environment must agree; never trust a prefix alone.
+            prefix_environment = 'production' if parts[1] == 'live' else 'sandbox'
+            if key.environment != prefix_environment: return None
             now=datetime.now(timezone.utc);expires=key.expires_at
             if expires is not None and expires.tzinfo is None: expires=expires.replace(tzinfo=timezone.utc)
             if key.status!='active' or (expires is not None and expires<=now): return None
