@@ -2,13 +2,15 @@ import os,uuid
 os.environ.setdefault('REGISTRY_API_KEYS','test-secret-key')
 os.environ.setdefault('DATABASE_URL','sqlite:///./test_registry.db')
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from src.main import app
-from src.database import Base, engine
+from src.database import Base, engine, SessionLocal
 Base.metadata.create_all(bind=engine)
 from src.ingestion.normalizer import normalize_legal_name,normalize_identifier,normalize_record
 from src import worker
 from src.config import settings
 from src.worker import process_job
+from src.models import Organization, IngestionRowError
 client=TestClient(app)
 HEADERS={'X-API-Key':'test-secret-key'}
 def test_health_live():
@@ -82,3 +84,44 @@ def test_upload_rejects_unknown_type():
 def test_large_direct_upload_requires_private_r2_configuration():
  response=client.post('/api/v1/ingestion/uploads/presign',headers=HEADERS,json={'file_name':'large-dataset.csv','size_bytes':100*1024*1024})
  assert response.status_code==503
+
+
+def test_conflicting_identifiers_are_dead_lettered_without_duplicate_org(monkeypatch, tmp_path):
+ reg = 'REG' + uuid.uuid4().hex[:12].upper()
+ pin = 'PIN' + uuid.uuid4().hex[:12].upper()
+ monkeypatch.setattr(settings, 'local_storage_path', str(tmp_path))
+
+ first_csv = f'Company Name,Registration No,Tax PIN\\nConflict Alpha Limited,{reg},{pin}\\n'
+ first_response = client.post(
+  '/api/v1/ingestion/uploads',
+  headers={**HEADERS, 'Idempotency-Key': 'conflict-seed-' + uuid.uuid4().hex},
+  files={'file': ('conflict-seed.csv', first_csv, 'text/csv')},
+ )
+ assert first_response.status_code == 202, first_response.text
+ process_job(first_response.json()['job_id'])
+
+ second_reg = 'REG' + uuid.uuid4().hex[:12].upper()
+ second_csv = f'Company Name,Registration No,Tax PIN\\nConflict Alpha Changed Limited,{second_reg},{pin}\\n'
+ second_response = client.post(
+  '/api/v1/ingestion/uploads',
+  headers={**HEADERS, 'Idempotency-Key': 'conflict-check-' + uuid.uuid4().hex},
+  files={'file': ('conflict-check.csv', second_csv, 'text/csv')},
+ )
+ assert second_response.status_code == 202, second_response.text
+ process_job(second_response.json()['job_id'])
+
+ job_id = second_response.json()['job_id']
+ with SessionLocal() as db:
+  records = db.scalars(select(Organization).where(Organization.normalized_tax_pin == pin)).all()
+  error = db.scalar(select(IngestionRowError).where(IngestionRowError.job_id == job_id))
+  assert len(records) == 1
+  assert records[0].normalized_registration_number == reg
+  assert records[0].legal_name == 'Conflict Alpha Limited'
+  assert error is not None
+  assert error.error_code == 'IDENTIFIER_CONFLICT'
+
+ job_response = client.get('/api/v1/ingestion/jobs', headers=HEADERS)
+ job = next(item for item in job_response.json()['items'] if item['id'] == job_id)
+ assert job['status'] == 'COMPLETED_WITH_ERRORS'
+ assert job['records_inserted'] == 0
+ assert job['records_skipped'] == 1
