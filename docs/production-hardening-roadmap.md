@@ -61,7 +61,8 @@ This is a status-based release checklist for PesaGuard Registry Datasource. It d
 - [x] Add an application error boundary and honest loading/error/empty states.
 - [x] Add server-side organization pagination/search and operational pages for ingestion, data quality, sources, audit logs, and API keys.
 - [x] Avoid fake metrics and label unavailable integrations as not configured.
-- [ ] Add automated frontend tests for API failures, empty states, keyboard accessibility, and large result sets.
+- [x] Add focused API-client tests for successful responses, structured API errors, and multipart upload headers.
+- [ ] Add broader component/UI tests for keyboard accessibility and large result sets.
 - [ ] Add table virtualization only after measured record volumes justify it.
 
 ## Phase 9 — Containers and CI/CD
