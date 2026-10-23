@@ -348,3 +348,10 @@ button:focus-visible, input:focus-visible { outline: 3px solid #20b87555; outlin
  .settings-list > div { flex-direction: column; gap: 7px; }
  .settings-list span { max-width: 100%; text-align: left; }
 }
+
+
+/* Phase 2 ingestion job actions */
+.job-action-group { display: flex; align-items: center; gap: 6px; min-width: 120px; }
+.job-action { display: inline-flex; align-items: center; justify-content: center; gap: 5px; width: auto; min-width: 34px; padding: 6px 8px; border-radius: 8px; }
+.job-action span { font-size: 11px; font-weight: 650; }
+.job-action:disabled { opacity: .55; cursor: wait; }

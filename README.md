@@ -52,6 +52,10 @@ Example request:
 
 The API returns found, a matching organization when present, source metadata, data-quality state, and timestamps. A local record is not proof of current legal status or authoritative KYB verification.
 
+## Phase 2 ingestion reliability
+
+See [Phase 2 implementation notes](docs/phase-2-ingestion-reliability.md) for job inspection, safe retries from committed checkpoints, streamed spreadsheet-safe row-error reports, and paginated sanitized dead-letter diagnostics.
+
 ## Ingestion flow
 
 - `POST /api/v1/ingestion/uploads` validates the file size/type, stores the original in R2 (or local development storage), creates a durable queued job, and returns HTTP 202.

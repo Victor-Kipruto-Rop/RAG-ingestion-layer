@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Activity, AlertCircle, AlertTriangle, ArrowDownRight, ArrowRight, ArrowUpRight,
   Bell, Building2, CheckCircle2, ChevronDown, CircleDot, Clock3, Database,
-  FileCheck2, FileSpreadsheet, FileText, HardDrive, LayoutDashboard, Menu,
+  FileCheck2, FileSpreadsheet, FileText, HardDrive, LayoutDashboard, Menu, Download,
   MoreHorizontal, RefreshCw, Search, Server, Settings, ShieldCheck, SlidersHorizontal,
   Upload, X, ScrollText, Workflow, KeyRound, Copy, RotateCw, Trash2, LockKeyhole
 } from 'lucide-react';
@@ -150,15 +150,52 @@ function QualityPanel({ summary }) {
   </div>;
 }
 
-function JobsTable({ jobs, compact = false, search = '' }) {
+function JobsTable({ jobs, compact = false, search = '', request, onRefresh }) {
+  const [busyJob, setBusyJob] = useState('');
+  const [actionError, setActionError] = useState('');
+  const [actionMessage, setActionMessage] = useState('');
   const filtered = jobs.filter(j => [j.file_name, j.status, j.source_name, j.id].some(v => String(v || '').toLowerCase().includes(search.toLowerCase())));
+  const retry = async (job) => {
+    if (!request || busyJob) return;
+    setBusyJob(job.id); setActionError(''); setActionMessage('');
+    try {
+      const response = await request(`/api/v1/ingestion/jobs/${encodeURIComponent(job.id)}/retry`, { method: 'POST' });
+      const body = await response.json();
+      setActionMessage(body.message || 'Job queued for retry.');
+      if (onRefresh) await onRefresh();
+    } catch (e) { setActionError(typeof e.message === 'string' ? e.message : 'Unable to retry this ingestion job.'); }
+    finally { setBusyJob(''); }
+  };
+  const downloadErrors = async (job) => {
+    if (!request || busyJob) return;
+    setBusyJob(job.id); setActionError(''); setActionMessage('');
+    try {
+      const response = await request(`/api/v1/ingestion/jobs/${encodeURIComponent(job.id)}/errors.csv`);
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url; anchor.download = `ingestion-errors-${String(job.id).slice(0, 8)}.csv`;
+      document.body.appendChild(anchor); anchor.click(); anchor.remove(); URL.revokeObjectURL(url);
+      setActionMessage('Error report downloaded.');
+    } catch (e) { setActionError(typeof e.message === 'string' ? e.message : 'Unable to download row errors.'); }
+    finally { setBusyJob(''); }
+  };
   if (!filtered.length) return <div className="empty-state"><div className="empty-icon"><Database size={23} /></div><strong>{search ? 'No matching ingestion jobs' : 'No ingestion jobs yet'}</strong><span>{search ? 'Try a different search term.' : 'Upload a dataset to create your first ingestion job.'}</span></div>;
-  return <div className="table-scroll"><table className="data-table"><thead><tr><th>DATASET / FILE</th><th>STATUS</th><th>PROCESSED</th><th>INSERTED</th><th>CREATED</th><th /></tr></thead><tbody>
-    {filtered.slice(0, compact ? 5 : 50).map(job => <tr key={job.id}>
-      <td><div className="file-cell"><span className={`file-icon ${String(job.file_name || '').toLowerCase().endsWith('.pdf') ? 'pdf' : 'csv'}`}>{String(job.file_name || '').toLowerCase().endsWith('.pdf') ? <FileText size={17} /> : <FileSpreadsheet size={17} />}</span><span><strong>{job.file_name || 'Unnamed dataset'}</strong><small>JOB-{String(job.id || '').slice(0, 8).toUpperCase()}</small></span></div></td>
-      <td><StatusPill value={job.status} /></td><td>{number(job.records_processed)}</td><td>{number(job.records_inserted)}</td><td className="date-cell">{dateLabel(job.created_at)}</td><td><button className="row-action" title="Job actions" aria-label="Job actions"><MoreHorizontal size={18} /></button></td>
-    </tr>)}
-  </tbody></table></div>;
+  return <div>
+    {actionError && <div className="alert-banner error"><AlertTriangle size={15}/><span>{actionError}</span></div>}
+    {actionMessage && <div className="alert-banner success"><CheckCircle2 size={15}/><span>{actionMessage}</span></div>}
+    <div className="table-scroll"><table className="data-table"><thead><tr><th>DATASET / FILE</th><th>STATUS</th><th>PROCESSED</th><th>INSERTED</th><th>CREATED</th><th>ACTIONS</th></tr></thead><tbody>
+      {filtered.slice(0, compact ? 5 : 50).map(job => <tr key={job.id}>
+        <td><div className="file-cell"><span className={`file-icon ${String(job.file_name || '').toLowerCase().endsWith('.pdf') ? 'pdf' : 'csv'}`}>{String(job.file_name || '').toLowerCase().endsWith('.pdf') ? <FileText size={17} /> : <FileSpreadsheet size={17} />}</span><span><strong>{job.file_name || 'Unnamed dataset'}</strong><small>JOB-{String(job.id || '').slice(0, 8).toUpperCase()}</small></span></div></td>
+        <td><StatusPill value={job.status} /></td><td>{number(job.records_processed)}</td><td>{number(job.records_inserted)}</td><td className="date-cell">{dateLabel(job.created_at)}</td>
+        <td><div className="job-action-group">
+          {request && job.status === 'FAILED' && String(job.file_name || '').toLowerCase().endsWith('.csv') && <button className="row-action job-action" title="Retry failed CSV from last committed checkpoint" aria-label="Retry failed CSV" disabled={!!busyJob} onClick={() => retry(job)}><RotateCw size={15}/><span>Retry</span></button>}
+          {request && Number(job.records_skipped || 0) > 0 && <button className="row-action job-action" title="Download row error report" aria-label="Download row errors CSV" disabled={!!busyJob} onClick={() => downloadErrors(job)}><Download size={15}/><span>Errors</span></button>}
+          {!request && <button className="row-action" title="Job actions" aria-label="Job actions"><MoreHorizontal size={18} /></button>}
+        </div></td>
+      </tr>)}
+    </tbody></table></div>
+  </div>;
 }
 
 function OrganizationsTable({ rows, total, page, pageSize, onPageChange }) {
@@ -476,11 +513,11 @@ function App() {
             <section className="panel activity-panel"><div className="panel-heading"><div><h2>Ingestion activity</h2><p>Processed and inserted records from recent jobs</p></div><span className="panel-period"><Activity size={14} /> Recent activity</span></div><ActivityChart jobs={jobs} /></section>
             <section className="panel"><QualityPanel summary={summary} /></section>
           </div>
-          <section className="panel jobs-panel"><div className="panel-heading"><div><h2>Recent ingestion jobs</h2><p>Latest persisted pipeline activity</p></div><button className="button-link" onClick={() => setPage('Ingestion Jobs')}>View all jobs <ArrowRight size={15} /></button></div><JobsTable jobs={jobs} compact search={search} /></section>
+          <section className="panel jobs-panel"><div className="panel-heading"><div><h2>Recent ingestion jobs</h2><p>Latest persisted pipeline activity</p></div><button className="button-link" onClick={() => setPage('Ingestion Jobs')}>View all jobs <ArrowRight size={15} /></button></div><JobsTable jobs={jobs} compact search={search} request={request} onRefresh={refresh} /></section>
           <section className="infra-section"><div className="section-title"><div><h2>Infrastructure health</h2><p>Connection state reported by the current datasource session</p></div><span className="health-summary"><i /> {connected ? 'API reachable' : 'Awaiting connection'}</span></div><div className="service-grid"><ServiceStatus label="Registry API" detail="Datasource application" value={connected ? 'Connected' : 'Not connected'} connected={connected} icon={Server} /><ServiceStatus label="Database metrics" detail="Registry data access" value={summary ? 'Available' : 'Unknown'} connected={!!summary} icon={Database} /><ServiceStatus label="External verification" detail="KRA / BRS integrations" value="Not configured" connected={false} icon={ShieldCheck} /></div></section>
         </>}
 
-        {page === 'Ingestion Jobs' && <section className="panel full-panel"><div className="panel-heading"><div><h2>Ingestion jobs</h2><p>Inspect persisted import outcomes and processing counts.</p></div><button className="button-secondary" onClick={refresh} disabled={loading}><RefreshCw size={15} className={loading ? 'spin' : ''} /> Refresh</button></div><JobsTable jobs={jobs} search={search} /></section>}
+        {page === 'Ingestion Jobs' && <section className="panel full-panel"><div className="panel-heading"><div><h2>Ingestion jobs</h2><p>Inspect persisted import outcomes and processing counts.</p></div><button className="button-secondary" onClick={refresh} disabled={loading}><RefreshCw size={15} className={loading ? 'spin' : ''} /> Refresh</button></div><JobsTable jobs={jobs} search={search} request={request} onRefresh={refresh} /></section>}
         {page === 'Registry Records' && <section className="panel full-panel"><div className="panel-heading"><div><h2>Registry records</h2><p>Search imported organizations and inspect source information.</p></div><span className="record-count">{number(orgTotal)} records</span></div><OrganizationsTable rows={orgs} total={orgTotal} page={orgPage} pageSize={100} onPageChange={setOrgPage} /></section>}
         {page === 'API Keys' && <APIKeysPage />}
         {page === 'Data Sources' && <DataSourcesPage request={request} />}
