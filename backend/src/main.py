@@ -16,6 +16,7 @@ from .database import engine,SessionLocal
 from . import models
 from .api import router
 from .api_keys import router as api_keys_router
+from .verification import router as verification_router
 from .models import WarehouseAccessLog,IngestionJob
 from .storage import health_check as check_object_storage, StorageNotConfigured
 from .security import _redis_client
@@ -45,6 +46,7 @@ app=FastAPI(title=settings.app_name,version='1.0.0',description='Internal regist
 app.add_middleware(CORSMiddleware,allow_origins=settings.cors_origin_list,allow_credentials=False,allow_methods=['GET','POST','PATCH','OPTIONS'],allow_headers=['Content-Type','X-API-Key','X-Correlation-ID','Idempotency-Key','X-Registry-Source'])
 app.include_router(router)
 app.include_router(api_keys_router)
+app.include_router(verification_router)
 @app.middleware('http')
 async def warehouse_access_telemetry(request,call_next):
  path=request.url.path
