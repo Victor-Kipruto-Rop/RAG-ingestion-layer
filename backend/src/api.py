@@ -283,6 +283,14 @@ def _quality_summary(db: Session):
 def quality_summary(db:Session=Depends(get_db)):
  return _quality_summary(db)
 
+@router.get('/api/v1/audit/logs',dependencies=[Depends(require_api_key)])
+def list_audit_logs(page:int=Query(default=1,ge=1),page_size:int=Query(default=50,ge=1,le=200),action:str|None=None,db:Session=Depends(get_db)):
+ stmt=select(AuditLog)
+ if action:stmt=stmt.where(AuditLog.action==action[:100])
+ total=db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+ rows=db.scalars(stmt.order_by(AuditLog.created_at.desc()).offset((page-1)*page_size).limit(page_size)).all()
+ return {'items':[{'id':row.id,'action':row.action,'actor':row.actor,'file_name':row.file_name,'details':row.details or {},'created_at':row.created_at.isoformat() if row.created_at else None} for row in rows],'total':total,'page':page,'page_size':page_size}
+
 @router.get('/api/v1/metrics/summary',dependencies=[Depends(require_api_key)])
 def metrics(db:Session=Depends(get_db)):
  return {'total_organizations':db.scalar(select(func.count()).select_from(Organization)) or 0,'total_jobs':db.scalar(select(func.count()).select_from(IngestionJob)) or 0,'queued_jobs':db.scalar(select(func.count()).select_from(IngestionJob).where(IngestionJob.status=='QUEUED')) or 0,'processing_jobs':db.scalar(select(func.count()).select_from(IngestionJob).where(IngestionJob.status=='PROCESSING')) or 0,'completed_jobs':db.scalar(select(func.count()).select_from(IngestionJob).where(IngestionJob.status.in_(['COMPLETED','COMPLETED_WITH_ERRORS']))) or 0,'failed_jobs':db.scalar(select(func.count()).select_from(IngestionJob).where(IngestionJob.status=='FAILED')) or 0,'data_quality':_quality_summary(db)}
