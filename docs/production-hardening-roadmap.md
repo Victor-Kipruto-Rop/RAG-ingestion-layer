@@ -46,7 +46,7 @@ The managed-key migration and regression tests in this branch are implementation
 - [x] Emit structured JSON logs with request and job correlation IDs.
 - [x] Expose Prometheus metrics for HTTP, DB, queue, ingestion throughput and cache.
 - [x] Use request and database histograms for latency distribution; do not claim an SLA without load-test evidence.
-- [ ] Add health checks, alerts and operational runbooks.
+- [x] Add health endpoints and an operations runbook; production alert rules still need to be configured in the selected monitoring platform.
 
 ## Phase 8 — Dashboard readiness
 - [x] Add a React error boundary and keep upload/processing labels tied to API responses.
@@ -56,7 +56,7 @@ The managed-key migration and regression tests in this branch are implementation
 ## Phase 9 — Containers and CI/CD
 - [x] Use multi-stage, non-root API, worker and frontend images.
 - [x] Require pytest, focused Ruff checks, frontend tests/build, and container builds on PRs.
-- [ ] Add dependency/container scanning and secret scanning.
+- [x] Add CodeQL analysis for Python and JavaScript/TypeScript plus weekly Dependabot update proposals.\n- [ ] Enable and verify repository secret scanning/push protection in GitHub settings; a workflow file cannot turn on account-level settings.
 - [ ] Deploy only after checks and migration review; document rollback.
 
 ## Phase 10 — End-to-end sign-off
