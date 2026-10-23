@@ -73,6 +73,7 @@ The API returns found, a matching organization when present, source metadata, da
 - `GET /api/v1/registry/lookup?reg_no=...` or `?tax_pin=...`
 - `GET /api/v1/registry/search?q=...`
 - `GET /api/v1/organizations?page=1&page_size=25`
+- `GET /api/v1/organizations/{organization_id}/quality`
 - `GET/POST /api/v1/sources`
 - `POST /api/v1/ingestion/uploads`
 - `GET /api/v1/ingestion/jobs`
@@ -103,7 +104,7 @@ A safe Windows local environment template is provided as [`example.env`](example
 
 ## Phased implementation
 
-See [implementation phases](docs/implementation-phases.md) for the delivery roadmap and release gates. The managed API-key lifecycle is documented in [API key lifecycle](docs/api-key-lifecycle.md).
+See [implementation phases](docs/implementation-phases.md) for the delivery roadmap and release gates. Use the [API quickstart](docs/api-quickstart.md) for lookup, preview, ingestion, and error-handling examples. The managed API-key lifecycle is documented in [API key lifecycle](docs/api-key-lifecycle.md).
 
 ### Managed API keys (initial implementation)
 
