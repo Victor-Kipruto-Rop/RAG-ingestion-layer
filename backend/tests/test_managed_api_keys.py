@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 import hashlib
 from src.key_management import new_key, ALLOWED_SCOPES
@@ -40,3 +41,12 @@ def test_scope_mapping_for_sensitive_routes():
     assert _required_scope(request) == 'registry:read'
     request = SimpleNamespace(url=SimpleNamespace(path='/api/v1/warehouse/query-organization'), method='GET')
     assert _required_scope(request) == 'registry:read'
+
+def test_managed_key_sql_migration_uses_valid_dollar_quoting_and_locks_down_browser_roles():
+    migration = Path(__file__).resolve().parents[2] / 'database' / 'migrations' / '009_managed_api_keys.sql'
+    sql = migration.read_text(encoding='utf-8')
+    assert 'DO $$' in sql
+    assert 'END $$;' in sql
+    assert 'ENABLE ROW LEVEL SECURITY' in sql
+    assert "REVOKE ALL ON TABLE public.managed_api_keys FROM anon" in sql
+    assert "REVOKE ALL ON TABLE public.api_key_security_events FROM authenticated" in sql
