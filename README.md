@@ -92,3 +92,12 @@ For a safe Windows/Docker Desktop smoke test that uses a shared local SQLite dat
 
 
 A safe Windows local environment template is provided as [`example.env`](example.env). Never commit `.env`, API keys, database URLs, or R2 credentials.
+
+
+## Managed API keys (Phase 1)
+
+Sandbox and production managed keys are environment-bound, scoped, expiring, revocable, and rotatable. Only a key hash is stored, and a new secret is shown once. Review [managed API key environments and operator endpoints](docs/api-key-environments.md) before using them.
+
+Set `DATASOURCE_ENVIRONMENT=sandbox` or `production` on each deployment. Configure `KEY_MANAGEMENT_TOKEN` only as a server-side secret for a trusted operator; never expose it in React or a browser. Apply the additive schema migration through the reviewed SQL or Alembic path before creating managed keys. Existing `REGISTRY_API_KEYS` are retained for migration compatibility and are not environment-bound.
+
+The complete phased feature plan is tracked in [the Datasource implementation roadmap](docs/feature-implementation-roadmap.md).
