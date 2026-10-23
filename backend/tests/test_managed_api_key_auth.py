@@ -114,3 +114,16 @@ def test_expired_managed_key_is_rejected(monkeypatch):
 
     assert response.status_code == 401
     engine.dispose()
+
+
+def test_managed_key_never_falls_back_to_legacy_key_list_when_disabled(monkeypatch):
+    client, engine, factory = make_test_client(monkeypatch, "production")
+    sandbox_secret = insert_key(factory, "sandbox")
+    monkeypatch.setattr(settings, "managed_api_keys_enabled", False)
+    monkeypatch.setattr(settings, "registry_api_keys", sandbox_secret)
+
+    response = client.get("/protected", headers={"X-API-Key": sandbox_secret})
+
+    assert response.status_code == 503
+    assert "Managed API keys are disabled" in response.json()["detail"]
+    engine.dispose()
