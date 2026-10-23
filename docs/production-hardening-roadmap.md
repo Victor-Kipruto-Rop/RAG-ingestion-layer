@@ -95,3 +95,15 @@ This document distinguishes code present in the repository from work that still 
 - A production deployment must set DATASOURCE_ENVIRONMENT=production; sandbox must set DATASOURCE_ENVIRONMENT=sandbox. The request header cannot choose the environment.
 - Production migrations and deployment changes are deliberately manual and require approval.
 - Never commit credentials or confidential datasets. Never claim a test, deployment, integration or verification succeeded without evidence.
+
+
+## Additional implementation in remaining-phase-hardening
+
+- [x] Added a normalized provider adapter contract with explicit verified, not-found, manual-review, unavailable, and error outcomes.
+- [x] Added an unconfigured-provider fallback that fails closed and cannot fabricate positive verification.
+- [x] Preserved compatibility fields while adapters migrate to the normalized provider contract.
+- [x] Added regression tests for unavailable defaults, duplicate provider registration, and normalized timestamps.
+- [x] Added an operations runbook for staged releases, environment mismatch triage, key compromise, ingestion recovery, migrations, and provider go-live checks.
+- [x] Added a provider integration contract document; it explicitly states that no BRS/KRA/IPRS integration is live merely because the interface exists.
+- [x] Added the new provider module and test to CI lint checks.
+- [ ] Execute and review the CI run for this branch before treating these changes as validated.
