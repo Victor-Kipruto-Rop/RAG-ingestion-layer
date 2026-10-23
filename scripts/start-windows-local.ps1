@@ -30,6 +30,10 @@ if ($envText -match "(?m)^\s*REGISTRY_API_KEYS\s*=\s*(change-this-local-only-key
     throw "REGISTRY_API_KEYS is still a placeholder. Edit .env to use a long random local-only key, then rerun this script."
 }
 
+if ($envText -match "(?m)^\s*DATASOURCE_ADMIN_TOKEN\s*=\s*(replace-with-a-long-random-local-operator-token|change-this-local-only-key-before-use)?\s*$") {
+    throw "DATASOURCE_ADMIN_TOKEN is still a placeholder. Set a separate strong local-only operator token in .env, then rerun this script."
+}
+
 Write-Host "Validating local Compose configuration..."
 docker compose config --quiet
 if ($LASTEXITCODE -ne 0) { throw "Compose configuration validation failed." }
