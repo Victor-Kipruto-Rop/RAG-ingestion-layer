@@ -102,7 +102,7 @@ async def require_api_key(
     x_internal_timestamp: str | None = Header(default=None, alias="X-Internal-Timestamp"),
     x_internal_nonce: str | None = Header(default=None, alias="X-Internal-Nonce"),
 ):
-    if x_api_key and x_api_key.startswith(("pg_sandbox_", "pg_live_")):
+    if x_api_key and x_api_key.startswith(("pg_sandbox_", "pg_live_")) and not settings.require_hmac:
         _, key_id, _ = authenticate_managed_key(x_api_key, request)
         identity = "managed-key:" + str(key_id)
     elif x_internal_signature is not None:
