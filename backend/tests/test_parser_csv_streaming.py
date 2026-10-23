@@ -52,7 +52,13 @@ def test_duplicate_headers_are_rejected_case_insensitively():
         list(iter_csv_records(b"legal_name,LEGAL_NAME\nAlpha Ltd,Alpha Ltd\n", 10))
 
 
-def test_invalid_utf8_after_sample_fails_with_safe_message():
-    payload = b"legal_name\n" + b"A" * 8190 + b"\xff\n"
+def test_invalid_cp1252_byte_after_sample_fails_with_safe_message():
+    payload = b"legal_name\n" + b"A" * 8190 + b"\x81\n"
     with pytest.raises(ValueError, match="invalid text encoding"):
         list(iter_csv_records(payload, 10))
+
+
+def test_windows_1252_character_after_initial_sample_is_detected():
+    payload = b"legal_name\n" + b"A" * 8190 + b"\nCaf\xe9 Limited\n"
+    rows = list(iter_csv_records(payload, 10))
+    assert rows[1][1]["legal_name"] == "Café Limited"
