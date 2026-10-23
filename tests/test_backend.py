@@ -82,3 +82,18 @@ def test_upload_rejects_unknown_type():
 def test_large_direct_upload_requires_private_r2_configuration():
  response=client.post('/api/v1/ingestion/uploads/presign',headers=HEADERS,json={'file_name':'large-dataset.csv','size_bytes':100*1024*1024})
  assert response.status_code==503
+
+def test_cors_preflight_allows_internal_signature_headers():
+    response = client.options(
+        "/api/v1/registry/lookup",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "x-internal-signature,x-internal-timestamp,x-internal-nonce",
+        },
+    )
+    assert response.status_code == 200
+    allowed = response.headers.get("access-control-allow-headers", "").lower()
+    assert "x-internal-signature" in allowed
+    assert "x-internal-timestamp" in allowed
+    assert "x-internal-nonce" in allowed
