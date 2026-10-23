@@ -228,3 +228,14 @@ def test_wrong_environment_prefix_is_rejected_even_when_key_is_not_in_this_datab
         assert event.key_id is None
         assert event.expected_environment == "production"
         assert event.key_environment == "sandbox"
+
+
+def test_create_key_rejects_whitespace_only_name(monkeypatch):
+    monkeypatch.setattr(settings, "datasource_admin_token", "test-operator-token")
+    response = client.post(
+        "/api/v1/admin/api-keys",
+        headers=admin_headers(),
+        json={"name": "   ", "environment": "sandbox", "scopes": ["registry:read"]},
+    )
+    assert response.status_code == 422
+    assert "non-whitespace" in response.json()["detail"]
