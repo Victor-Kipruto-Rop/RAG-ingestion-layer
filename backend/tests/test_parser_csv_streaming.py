@@ -46,6 +46,10 @@ def test_large_csv_is_consumed_in_bounded_reads():
             self.read_sizes.append(size)
             return super().read(size)
 
+        def read1(self, size=-1):
+            self.read_sizes.append(size)
+            return super().read1(size)
+
     data = ("legal_name,registration_number\\n" + "".join(
         f"Example Company {index},REG-{index}\\n" for index in range(2500)
     )).encode()
