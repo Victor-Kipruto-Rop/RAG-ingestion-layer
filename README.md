@@ -56,6 +56,7 @@ The API returns found, a matching organization when present, source metadata, da
 
 ## Ingestion flow
 
+- `GET /api/v1/audit/logs` (paginated ingestion audit events)
 - `GET /api/v1/quality/summary` (identifier coverage and duplicate-review indicators; not authoritative verification)
 - `GET /api/v1/verification/providers` and `POST/GET /api/v1/verification/cases`
 - `POST /api/v1/ingestion/preview` returns a non-persistent sample of CSV/XLSX files up to 5 MiB; it does not create an ingestion job.
@@ -108,7 +109,7 @@ See [implementation phases](docs/implementation-phases.md) for the delivery road
 - Configure `PESAGUARD_DATASOURCE_ENVIRONMENT=sandbox` on a sandbox deployment or `production` on production. The server setting is authoritative; request headers cannot switch environments.
 - Apply migration `009_api_key_lifecycle.sql` to a non-production PostgreSQL database first.
 - Configure `API_KEY_MANAGEMENT_TOKEN` as a high-entropy server-side deployment secret. Do not expose it to browser code.
-- The operator routes are `POST/GET /api/v1/admin/api-keys`, `POST /api/v1/admin/api-keys/{id}/revoke`, and `POST /api/v1/admin/api-keys/{id}/rotate`; they require `X-Key-Management-Token`.
+- The operator routes are `POST/GET /api/v1/admin/api-keys`, `GET /api/v1/admin/api-keys/events`, `POST /api/v1/admin/api-keys/{id}/revoke`, and `POST /api/v1/admin/api-keys/{id}/rotate`; they require `X-Key-Management-Token`.
 - Managed key secrets are returned only once. The database stores only a SHA-256 digest and a public prefix. Managed keys are checked against the server deployment environment and scopes.
 - Legacy `REGISTRY_API_KEYS` remain available during caller migration. Do not revoke them until each trusted service caller has been migrated and verified.
 - The current application has no verified customer login/organization-owner identity in this service. These management routes are operator-only; do not expose them as a customer self-service UI until authenticated tenant roles are integrated.
