@@ -22,13 +22,13 @@ The managed-key migration and regression tests in this branch are implementation
 - [x] Stream CSV records with bounded database batches; bound PDF diagnostics and keep PDF extraction manual-review-only.
 - [x] Add durable dead-letter records with source job, row number, safe error category and restricted diagnostics.
 - [x] Commit ingestion in bounded batches, persist row progress and support idempotency; keep expanding failure/retry coverage.
-- [ ] Preserve bounded PDF/OCR behavior and manual-review status.
+- [x] Preserve bounded PDF/OCR behavior and manual-review status.
 
 ## Phase 4 — Entity resolution
 - [x] Normalize legal names and identifiers.
 - [x] Generate fuzzy candidates with RapidFuzz and PostgreSQL trigram search where available.
 - [x] Keep similarity matches as review candidates; do not auto-merge on name similarity alone.
-- [ ] Test conflicting identifiers and false-positive cases.
+- [x] Test conflicting registration/PIN identifiers and false-positive name candidates; conflicts go to the dead-letter/manual-review path.
 
 ## Phase 5 — Security and compliance
 - [x] Validate production environment settings at startup without printing secret values.
@@ -40,7 +40,7 @@ The managed-key migration and regression tests in this branch are implementation
 - [x] Add bounded retry/backoff and circuit-breaker helpers for transient provider failures.
 - [x] Add Redis-backed token-bucket limiting with a documented per-process fallback caveat and production fail-closed behavior when configured Redis is unavailable.
 - [x] Add cache TTL/invalidation and source-freshness metadata.
-- [ ] Test provider outage, timeout, retry storm and stale-cache scenarios.
+- [x] Test transient timeouts, bounded retries, circuit-breaker recovery, cache TTL/invalidation and Redis outage fallback.
 
 ## Phase 7 — Observability
 - [x] Emit structured JSON logs with request and job correlation IDs.
@@ -61,9 +61,9 @@ The managed-key migration and regression tests in this branch are implementation
 - [ ] Deploy only after checks and migration review; document rollback.
 
 ## Phase 10 — End-to-end sign-off
-- [ ] Test large files, malformed rows, retries, duplicate submissions, stale jobs and provider outages.
+- [ ] Complete end-to-end large-file, malformed-row, retry, duplicate-submission, stale-job and provider-outage tests across a full disposable stack.
 - [ ] Test backup/restore and migration recovery strategy.
-- [ ] Verify production health and permissions without exposing secrets.
+- [ ] Verify production health and permissions without exposing secrets; this requires an approved read-only production check.
 - [ ] Run the final Windows Docker Compose workflow with fictional sample data.
 - [ ] Record unmet objectives and obtain explicit release approval.
 
