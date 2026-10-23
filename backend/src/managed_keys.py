@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, Request
-from sqlalchemy import DateTime, Index, Integer, String, Text, select
+from sqlalchemy import DateTime, Index, String, Text, select
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .config import settings
