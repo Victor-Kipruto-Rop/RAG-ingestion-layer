@@ -65,6 +65,8 @@ def validate_runtime_config():
     if settings.app_env.lower() != "production":
         return
     missing = []
+    if settings.api_key_list and "change-this-local-only-key-before-use" in settings.api_key_list:
+        missing.append("REGISTRY_API_KEYS (replace the local-only placeholder)")
     if not settings.api_key_list and not settings.require_hmac and not settings.key_management_token:
         missing.append("REGISTRY_API_KEYS, REQUIRE_HMAC, or KEY_MANAGEMENT_TOKEN (an authentication mechanism is required)")
     if settings.key_management_token and len(settings.key_management_token) < 32:
