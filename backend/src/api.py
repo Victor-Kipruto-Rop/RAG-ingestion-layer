@@ -81,6 +81,7 @@ def presign_direct_upload(payload:DirectUploadRequest,request:Request,db:Session
  suffix='.'+name.rsplit('.',1)[-1].lower() if '.' in name else ''
  if suffix not in {'.csv','.pdf','.xlsx'}:raise HTTPException(415,'Only CSV, XLSX, and PDF files are accepted')
  if payload.size_bytes>settings.max_direct_upload_bytes:raise HTTPException(413,'File exceeds configured direct-upload limit')
+ if suffix=='.xlsx' and payload.size_bytes>settings.max_xlsx_upload_bytes:raise HTTPException(413,'XLSX file exceeds the configured XLSX upload limit')
  content_type='application/pdf' if suffix=='.pdf' else ('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' if suffix=='.xlsx' else 'text/csv')
  correlation_id=(correlation_id or getattr(request.state,'request_id',None) or str(uuid.uuid4()))[:100]
  if idempotency_key:
@@ -169,7 +170,7 @@ async def preview_upload(file:UploadFile=File(...)):
   for index,row in enumerate(reader):
    if index>=21:break
    sample.append((index+2,{str(k or '').strip():str(v or '').strip()[:500] for k,v in row.items() if k is not None}))
- return {'file_name':name,'file_type':suffix[1:],'columns':columns,'sample_rows':[{'row_number':number,'values':values} for number,values in sample[:20]],'sample_count':min(len(sample),20),'has_more':len(sample)>20,'preview_limit_bytes':5*1024*1024,'persisted':False,'message':'Preview only. No ingestion job or registry record was created.'}
+ return {'file_name':name,'file_type':suffix[1:],'columns':columns,'sample_rows':[{'row_number':number,'values':{key:str(value)[:500] for key,value in values.items()}} for number,values in sample[:20]],'sample_count':min(len(sample),20),'has_more':len(sample)>20,'preview_limit_bytes':5*1024*1024,'persisted':False,'message':'Preview only. No ingestion job or registry record was created.'}
 
 @router.post('/api/v1/ingestion/uploads',dependencies=[Depends(require_api_key)],status_code=202)
 async def upload(request:Request,file:UploadFile=File(...),db:Session=Depends(get_db),correlation_id:str|None=Header(default=None,alias='X-Correlation-ID'),idempotency_key:str|None=Header(default=None,alias='Idempotency-Key'),source_key:str|None=Header(default=None,alias='X-Registry-Source')):
