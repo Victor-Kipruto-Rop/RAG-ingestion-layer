@@ -125,9 +125,9 @@ def complete_direct_upload(job_id:str,db:Session=Depends(get_db)):
  suffix='.'+job.file_name.rsplit('.',1)[-1].lower() if '.' in job.file_name else ''
  if suffix=='.pdf' and not prefix.startswith(b'%PDF-'):
   job.status='FAILED';job.error_summary='PDF signature validation failed.';job.completed_at=datetime.now(timezone.utc);raw.import_status='FAILED';db.commit();raise HTTPException(415,'PDF file signature is invalid')
- if suffix=='.xlsx' and not prefix.startswith(b'PK\\x03\\x04'):
+ if suffix=='.xlsx' and not prefix.startswith(b'PK\x03\x04'):
   job.status='FAILED';job.error_summary='XLSX archive signature validation failed.';job.completed_at=datetime.now(timezone.utc);raw.import_status='FAILED';db.commit();raise HTTPException(415,'XLSX file signature is invalid')
- if suffix=='.csv' and b'\\x00' in prefix:
+ if suffix=='.csv' and b'\x00' in prefix:
   job.status='FAILED';job.error_summary='CSV binary signature validation failed.';job.completed_at=datetime.now(timezone.utc);raw.import_status='FAILED';db.commit();raise HTTPException(415,'CSV contains binary data')
  raw.byte_size=actual_size;raw.import_status='QUEUED'
  raw.metadata_json={**(raw.metadata_json or {}),'r2_etag':str(metadata.get('ETag','')).strip('"'),'upload_completed_at':datetime.now(timezone.utc).isoformat()}
@@ -158,6 +158,7 @@ async def upload(request:Request,file:UploadFile=File(...),db:Session=Depends(ge
   digest.update(chunk)
  if size==0:raise HTTPException(400,'Uploaded file is empty')
  if suffix=='.pdf' and not prefix.startswith(b'%PDF-'):raise HTTPException(415,'File extension is PDF but the file signature is invalid')
+ if suffix=='.xlsx' and not prefix.startswith(b'PK\x03\x04'):raise HTTPException(415,'File extension is XLSX but the file signature is invalid')
  if suffix=='.csv' and b'\x00' in prefix:raise HTTPException(415,'CSV contains binary data')
  file.file.seek(0)
  content_type='application/pdf' if suffix=='.pdf' else ('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' if suffix=='.xlsx' else 'text/csv')
