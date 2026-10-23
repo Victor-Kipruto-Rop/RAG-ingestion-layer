@@ -22,6 +22,7 @@ Apply in order to PostgreSQL/Supabase:
 1. `database/migrations/001_initial.sql`
 2. `database/migrations/002_provenance_and_versions.sql`
 3. `database/migrations/003_durable_ingestion_sources.sql`
+4. `database/migrations/004_ingestion_retry_leases.sql`
 
 Set `APP_ENV=production` only after migrations are applied. Production startup intentionally does not create tables automatically.
 
