@@ -1,4 +1,4 @@
-import csv,io,logging,uuid
+import csv,io,logging,uuid,hashlib
 from datetime import datetime,timezone
 from fastapi import APIRouter,Depends,File,HTTPException,Query,UploadFile,Header
 from fastapi.responses import StreamingResponse
@@ -6,7 +6,7 @@ from sqlalchemy import select,func,or_
 from sqlalchemy.orm import Session
 from .config import settings
 from .database import get_db
-from .models import Organization,OrganizationRecordVersion,IngestionJob,IngestionRowError,AuditLog,RegistrySource
+from .models import Organization,OrganizationRecordVersion,IngestionJob,IngestionRowError,AuditLog,RegistrySource,WarehouseRawImport
 from .security import require_api_key
 from .storage import upload_bytes,StorageNotConfigured
 router=APIRouter();log=logging.getLogger(__name__)
@@ -81,6 +81,7 @@ async def upload(file:UploadFile=File(...),db:Session=Depends(get_db),correlatio
  try:
   upload_bytes(key,data,file.content_type or 'application/octet-stream')
   job.object_key=key
+  db.add(WarehouseRawImport(ingestion_job_id=job.id,object_key=key,original_filename=name,content_type=file.content_type or 'application/octet-stream',byte_size=len(data),sha256_hex=hashlib.sha256(data).hexdigest(),source_id=source.id if source else None,source_name=source.source_key if source else 'uploaded_dataset',uploaded_by='internal-service',import_status='QUEUED',metadata_json={'correlation_id':correlation_id,'file_suffix':suffix}))
   db.add(AuditLog(action='registry_ingestion_queued',actor='internal-service',file_name=name,details={'job_id':job.id,'source_key':source.source_key if source else None,'correlation_id':correlation_id}))
   db.commit();db.refresh(job)
   return {'job_id':job.id,'file_name':job.file_name,'status':job.status,'records_processed':0,'records_inserted':0,'records_updated':0,'records_skipped':0,'message':'Upload stored; a worker will process this job asynchronously.'}
