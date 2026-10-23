@@ -61,6 +61,10 @@ The managed-key migration and regression tests in this branch are implementation
 - [ ] Deploy only after checks and migration review; document rollback.
 
 ## Phase 10 — End-to-end sign-off
+- [x] Add durable quality-review cases and append-only decisions with audit logging; decisions do not auto-merge or rewrite organization records.
+- [x] Add a provider-readiness endpoint that explicitly reports BRS/KRA/Peleza as not connected until real contracts and credentials are approved.
+- [ ] Run the new review/provider tests and full CI on this branch; implementation is not considered verified until checks pass.
+- [ ] Add the review queue to the dashboard after API tests and authorization behavior are verified.
 - [x] Add an end-to-end ingestion test proving conflicting registration/PIN identifiers are dead-lettered without creating or overwriting an organization.
 - [ ] Complete end-to-end large-file, malformed-row, retry, duplicate-submission, stale-job and provider-outage tests across a full disposable stack.
 - [ ] Test backup/restore and migration recovery strategy.
