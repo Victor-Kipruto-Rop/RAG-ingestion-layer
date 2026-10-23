@@ -3,10 +3,10 @@
 This roadmap is the release checklist for taking PesaGuard Registry Datasource from prototype to production-grade infrastructure. Deliver changes as reviewable pull requests; keep production data and secrets unchanged unless an explicitly approved migration or deployment is underway.
 
 ## Phase 1 — Baseline and CI stabilization
-- [ ] Diagnose failing CI from actionable step logs; do not suppress failing checks.
-- [ ] Verify streaming CSV parsing and add regression tests.
-- [ ] Record baseline test results and current production health without mutating data.
-- [ ] Keep streaming work in draft PR #14 until CI passes.
+- [ ] Re-run CI and resolve the first failing step from its logs; the earlier run's log artifacts were unavailable, so the original failure cause is not yet confirmed. CI steps are now explicitly named to make fresh failures actionable.
+- [x] Verify the streaming CSV parser and add a regression test that exercises a multi-thousand-row fixture through the file iterator.
+- [ ] Record test results from a fresh successful CI run and complete a read-only production health check. Render service configuration was inspected without mutation; its health-check path is currently unset.
+- [ ] Keep streaming work isolated until CI passes; do not merge or deploy as part of baseline verification.
 
 ## Phase 2 — Database migrations and warehouse integrity
 - [ ] Add Alembic as the schema-change entry point.
