@@ -101,3 +101,19 @@ def test_cors_preflight_allows_internal_signature_headers():
     assert "x-internal-signature" in allowed
     assert "x-internal-timestamp" in allowed
     assert "x-internal-nonce" in allowed
+
+def test_idempotency_key_cannot_be_reused_for_different_file_content():
+    key = "idempotency-" + uuid.uuid4().hex
+    first = client.post(
+        "/api/v1/ingestion/uploads",
+        headers={**HEADERS, "Idempotency-Key": key},
+        files={"file": ("same.csv", b"legal_name\nFirst Company\n", "text/csv")},
+    )
+    assert first.status_code == 202, first.text
+
+    replay = client.post(
+        "/api/v1/ingestion/uploads",
+        headers={**HEADERS, "Idempotency-Key": key},
+        files={"file": ("same.csv", b"legal_name\nDifferent Company\n", "text/csv")},
+    )
+    assert replay.status_code == 409
