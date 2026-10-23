@@ -259,9 +259,10 @@ def retry_ingestion_job(job_id:str,db:Session=Depends(get_db)):
  suffix='.'+job.file_name.rsplit('.',1)[-1].lower() if '.' in job.file_name else ''
  if suffix not in {'.csv','.xlsx'}:raise HTTPException(409,detail={'code':'MANUAL_REVIEW_REQUIRED','message':'This file type is not eligible for automatic reprocessing.'})
  raw=db.scalar(select(WarehouseRawImport).where(WarehouseRawImport.ingestion_job_id==job.id))
+ previous_attempts=job.attempts or 0
  if raw:raw.import_status='QUEUED'
- job.status='QUEUED';job.next_attempt_at=None;job.completed_at=None;job.error_summary=None
- db.add(AuditLog(action='registry_ingestion_manual_retry',actor='internal-service',file_name=job.file_name,details={'job_id':job.id,'correlation_id':job.correlation_id,'resume_from_row':job.last_processed_row or 1}))
+ job.status='QUEUED';job.attempts=0;job.next_attempt_at=None;job.completed_at=None;job.error_summary=None
+ db.add(AuditLog(action='registry_ingestion_manual_retry',actor='internal-service',file_name=job.file_name,details={'job_id':job.id,'correlation_id':job.correlation_id,'previous_attempts':previous_attempts,'resume_from_row':job.last_processed_row or 1}))
  db.commit()
  return {'job_id':job.id,'status':job.status,'resume_from_row':job.last_processed_row or 1,'message':'Job queued for retry. Persisted row progress is retained so processing can resume safely.'}
 
