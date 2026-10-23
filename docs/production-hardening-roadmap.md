@@ -57,6 +57,9 @@ This roadmap is the release checklist for taking PesaGuard Registry Datasource f
 - [ ] Deploy only after checks and migration review; document rollback.
 
 ## Phase 10 — End-to-end sign-off
+- [x] Add durable quality-review cases and append-only decisions with audit logging; decisions do not automatically merge or rewrite organization records.
+- [x] Add dashboard review queue for creating cases, collecting reviewer notes, and recording review decisions against the real API.
+- [ ] Run the new review workflow tests and full CI on the latest commit before marking this phase verified.
 - [ ] Test large files, malformed rows, retries, duplicate submissions, stale jobs and provider outages.
 - [ ] Test backup/restore and migration recovery strategy.
 - [ ] Verify production health and permissions without exposing secrets.
