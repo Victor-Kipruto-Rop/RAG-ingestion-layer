@@ -71,6 +71,7 @@ class IngestionJob(Base):
  error_summary:Mapped[str|None]=mapped_column(Text)
  created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
  started_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
+ next_attempt_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),index=True)
  completed_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
 class IngestionRowError(Base):
  __tablename__='ingestion_row_errors'
