@@ -31,7 +31,7 @@ Managed keys have a `pg_sandbox_` or `pg_live_` prefix. The database stores only
 7. Revoke compromised or retired keys, then inspect `/api/v1/admin/security-events` for environment mismatch and scope-denial events.
 8. Do not treat legacy `REGISTRY_API_KEYS` as environment-isolated. During the migration period they remain compatible and must be configured separately on each deployment.
 
-A sandbox key presented to a production deployment must return HTTP 403 with code `API_KEY_ENVIRONMENT_MISMATCH`, explain that the key is sandbox-only, and attempt to persist a security event. A scope failure returns `API_KEY_SCOPE_DENIED`. Never log the raw key.
+A sandbox key presented to a production deployment must return HTTP 403 with code `API_KEY_ENVIRONMENT_MISMATCH`, explain that the key is sandbox-only, and attempt to persist a security event. The API checks a well-formed managed-key environment prefix before querying the managed-key table, so this response remains explicit even when sandbox and production use separate databases and the key record is absent from the target database. This prefix check is an environment guard, not authentication: a matching prefix never grants access without a valid stored hash. A scope failure returns `API_KEY_SCOPE_DENIED`. Never log the raw key.
 
 ## 3. Database migration checklist
 
