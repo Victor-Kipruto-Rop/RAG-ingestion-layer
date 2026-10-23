@@ -133,19 +133,25 @@ function ActivityChart({ jobs }) {
 }
 
 function QualityPanel({ summary }) {
-  const valid = summary?.data_quality?.valid_percentage;
-  const missing = summary?.data_quality?.missing_percentage;
-  const duplicate = summary?.data_quality?.duplicate_percentage;
-  const hasQuality = [valid, missing, duplicate].some(v => v !== undefined && v !== null);
+  const total = Number(summary?.total_records || 0);
+  const missingReg = Number(summary?.records_missing_registration_number || 0);
+  const missingPin = Number(summary?.records_missing_tax_pin || 0);
+  const missingBoth = Number(summary?.records_missing_both_identifiers || 0);
+  const missingAny = Math.max(0, missingReg + missingPin - missingBoth);
+  const unreviewed = Number(summary?.records_unreviewed || 0);
+  const stale = Number(summary?.records_stale || 0);
+  const hasQuality = summary && total > 0;
+  const pct = (count) => total ? Math.min(100, Math.max(0, count / total * 100)) : 0;
   const rows = hasQuality ? [
-    ['Valid records', Number(valid || 0), 'quality-valid'],
-    ['Missing required fields', Number(missing || 0), 'quality-missing'],
-    ['Duplicate candidates', Number(duplicate || 0), 'quality-duplicate'],
+    ['Records with both identifiers', Math.max(0, total - missingAny), 'quality-valid'],
+    ['Records missing identifiers', missingAny, 'quality-missing'],
+    ['Unreviewed records', unreviewed, 'quality-duplicate'],
+    ['Stale records', stale, 'quality-missing'],
   ] : null;
   return <div className="quality-panel">
-    <div className="card-heading"><div><h2>Data quality</h2><p>Registry validation overview</p></div><div className="heading-icon"><SlidersHorizontal size={17} /></div></div>
-    {rows ? rows.map(([label, pct, cls]) => <div className="quality-row" key={label}><div className="quality-label"><span>{label}</span><strong>{pct.toFixed(1)}%</strong></div><div className="quality-track"><span className={cls} style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} /></div></div>) : <div className="quality-unavailable"><ShieldCheck size={24} /><strong>Quality metrics not available yet</strong><span>The API does not currently expose aggregate quality percentages. Values are intentionally not estimated.</span></div>}
-    <div className="quality-foot"><span className="tiny-dot" />{hasQuality ? 'Metrics returned by API' : 'Waiting for quality metrics endpoint'}</div>
+    <div className="card-heading"><div><h2>Data quality</h2><p>Completeness and freshness from stored records</p></div><div className="heading-icon"><SlidersHorizontal size={17} /></div></div>
+    {rows ? rows.map(([label, count, cls]) => <div className="quality-row" key={label}><div className="quality-label"><span>{label} <small>({count.toLocaleString()})</small></span><strong>{pct(count).toFixed(1)}%</strong></div><div className="quality-track"><span className={cls} style={{ width: `${pct(count)}%` }} /></div></div>) : <div className="quality-unavailable"><ShieldCheck size={24} /><strong>Quality metrics not available yet</strong><span>Connect to the API and load real registry records to see completeness and freshness indicators.</span></div>}
+    <div className="quality-foot"><span className="tiny-dot" />{hasQuality ? 'Counts returned by the API; not legal verification' : 'Waiting for quality metrics endpoint'}</div>
   </div>;
 }
 
@@ -178,6 +184,7 @@ export default function App() {
   const [key, setKey] = useState('');
   const [connected, setConnected] = useState(false);
   const [summary, setSummary] = useState(null);
+  const [qualitySummary, setQualitySummary] = useState(null);
   const [orgs, setOrgs] = useState([]);
   const [orgPage, setOrgPage] = useState(1);
   const [orgTotal, setOrgTotal] = useState(0);
@@ -194,15 +201,17 @@ export default function App() {
     if (!key) return;
     setLoading(true); setError('');
     try {
-      const [metricsResponse, orgResponse, jobsResponse] = await Promise.all([
+      const [metricsResponse, orgResponse, jobsResponse, qualityResponse] = await Promise.all([
         request('/api/v1/metrics/summary'),
         request(`/api/v1/organizations?page=${orgPage}&page_size=100${search ? `&q=${encodeURIComponent(search)}` : ''}`),
-        request('/api/v1/ingestion/jobs?page_size=50')
+        request('/api/v1/ingestion/jobs?page_size=50'),
+        request('/api/v1/data-quality/summary')
       ]);
       const metrics = await metricsResponse.json();
       const orgResult = await orgResponse.json();
       const jobsResult = await jobsResponse.json();
-      setSummary(metrics); setOrgs(orgResult.items || []); setOrgTotal(orgResult.total || 0);
+      const quality = await qualityResponse.json();
+      setSummary(metrics); setQualitySummary(quality); setOrgs(orgResult.items || []); setOrgTotal(orgResult.total || 0);
       setJobs(jobsResult.items || []); setConnected(true);
     } catch (e) { setConnected(false); setError(e.message || 'Unable to connect to the Registry API.'); }
     finally { setLoading(false); }
@@ -262,7 +271,7 @@ export default function App() {
           </div>
           <div className="dashboard-grid">
             <section className="panel activity-panel"><div className="panel-heading"><div><h2>Ingestion activity</h2><p>Processed and inserted records from recent jobs</p></div><span className="panel-period"><Activity size={14} /> Recent activity</span></div><ActivityChart jobs={jobs} /></section>
-            <section className="panel"><QualityPanel summary={summary} /></section>
+            <section className="panel"><QualityPanel summary={qualitySummary} /></section>
           </div>
           <section className="panel jobs-panel"><div className="panel-heading"><div><h2>Recent ingestion jobs</h2><p>Latest persisted pipeline activity</p></div><button className="button-link" onClick={() => setPage('Ingestion Jobs')}>View all jobs <ArrowRight size={15} /></button></div><JobsTable jobs={jobs} compact search={search} /></section>
           <section className="infra-section"><div className="section-title"><div><h2>Infrastructure health</h2><p>Connection state reported by the current datasource session</p></div><span className="health-summary"><i /> {connected ? 'API reachable' : 'Awaiting connection'}</span></div><div className="service-grid"><ServiceStatus label="Registry API" detail="Datasource application" value={connected ? 'Connected' : 'Not connected'} connected={connected} icon={Server} /><ServiceStatus label="Database metrics" detail="Registry data access" value={summary ? 'Available' : 'Unknown'} connected={!!summary} icon={Database} /><ServiceStatus label="External verification" detail="KRA / BRS integrations" value="Not configured" connected={false} icon={ShieldCheck} /></div></section>
