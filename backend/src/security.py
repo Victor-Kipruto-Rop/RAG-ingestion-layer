@@ -63,8 +63,44 @@ def _audit_key_security_event(key, request, action, details):
     except Exception:
         raise HTTPException(503, "Security audit service is unavailable; request rejected")
 
+def _audit_unknown_environment_mismatch(raw_key, request, key_environment, requested_environment):
+    from .models import ApiKeyAuditEvent
+    import uuid
+    # Separate sandbox/production deployments may have separate key/data stores. In that
+    # case the prefix still proves the declared environment, so record the attempt without
+    # persisting the supplied secret or pretending we know the owning organization.
+    try:
+        with SessionLocal() as db:
+            db.add(ApiKeyAuditEvent(
+                id=str(uuid.uuid4()), organization_id="unknown", actor_user_id="system",
+                api_key_id=None, action="api_key.environment_mismatch_unresolved",
+                details={"key_environment":key_environment,"requested_environment":requested_environment,
+                         "key_prefix":raw_key[:22],"key_fingerprint":hashlib.sha256(raw_key.encode()).hexdigest(),
+                         "error_code":"API_KEY_ENVIRONMENT_MISMATCH","method":request.method,
+                         "path":request.url.path,"request_id":getattr(request.state,"request_id",None),
+                         "remote_address":request.client.host if request.client else None},
+                created_at=datetime.now(timezone.utc)))
+            db.commit()
+    except Exception:
+        raise HTTPException(503, "Security audit service is unavailable; request rejected")
+
 def _validate_customer_api_key(raw_key, request):
     from .models import ApiKey
+    runtime_environment = settings.api_environment.lower().strip()
+    if runtime_environment not in {"sandbox", "production"}:
+        raise HTTPException(503, "API environment is not configured correctly")
+    prefix_environment = "sandbox" if raw_key.startswith("pg_sandbox_") else "production"
+    if prefix_environment != runtime_environment:
+        digest = hashlib.sha256(raw_key.encode()).hexdigest()
+        with SessionLocal() as db:
+            key = db.scalar(select(ApiKey).where(ApiKey.secret_hash == digest))
+        if key:
+            _audit_key_security_event(key, request, "api_key.environment_mismatch", {
+                "key_environment":key.environment,"requested_environment":runtime_environment,
+                "error_code":"API_KEY_ENVIRONMENT_MISMATCH"})
+        else:
+            _audit_unknown_environment_mismatch(raw_key, request, prefix_environment, runtime_environment)
+        raise HTTPException(status_code=403, detail=environment_mismatch_detail(prefix_environment, runtime_environment))
     digest = hashlib.sha256(raw_key.encode()).hexdigest()
     with SessionLocal() as db:
         key = db.scalar(select(ApiKey).where(ApiKey.secret_hash == digest))
@@ -73,9 +109,6 @@ def _validate_customer_api_key(raw_key, request):
         now = datetime.now(timezone.utc)
         if key.expires_at and key.expires_at <= now:
             raise HTTPException(401, "This API key has expired")
-        runtime_environment = settings.api_environment.lower().strip()
-        if runtime_environment not in {"sandbox", "production"}:
-            raise HTTPException(503, "API environment is not configured correctly")
         if key.environment != runtime_environment:
             _audit_key_security_event(key, request, "api_key.environment_mismatch", {
                 "key_environment":key.environment,"requested_environment":runtime_environment,
