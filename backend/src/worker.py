@@ -173,21 +173,40 @@ def process_job(job_id):
      retry_db.commit()
    log.error('job_processing_failed',job_id=job_id,error_type=type(exc).__name__)
 def recover_stale_jobs():
- cutoff=now()-timedelta(seconds=max(60,settings.worker_stale_after_seconds))
+ current=now()
+ cutoff=current-timedelta(seconds=max(60,settings.worker_stale_after_seconds))
  with SessionLocal() as db:
   stale=db.scalars(select(IngestionJob).where(IngestionJob.status=='PROCESSING',IngestionJob.started_at<cutoff)).all()
+  expired_uploads=[]
+  uploading=db.scalars(select(IngestionJob).where(IngestionJob.status=='UPLOADING')).all()
+  for job in uploading:
+   raw_import=db.scalar(select(WarehouseRawImport).where(WarehouseRawImport.ingestion_job_id==job.id))
+   if not raw_import:
+    continue
+   expires_at=int((raw_import.metadata_json or {}).get('upload_expires_at',0) or 0)
+   if not expires_at or expires_at>=int(current.timestamp()):
+    continue
+   job.status='FAILED'
+   job.completed_at=current
+   job.error_summary='Direct upload expired before completion.'
+   raw_import.import_status='FAILED'
+   db.add(AuditLog(action='registry_direct_upload_expired',actor='ingestion-worker',file_name=job.file_name,details={'job_id':job.id,'correlation_id':job.correlation_id,'expired_at':expires_at}))
+   expired_uploads.append(job.id)
   for job in stale:
    raw_import=db.scalar(select(WarehouseRawImport).where(WarehouseRawImport.ingestion_job_id==job.id))
    if job.attempts < settings.worker_max_attempts:
-    job.status='QUEUED';job.next_attempt_at=now()+timedelta(seconds=max(1,settings.worker_retry_seconds));job.error_summary='Recovered stale processing job after worker interruption.'
+    job.status='QUEUED';job.next_attempt_at=current+timedelta(seconds=max(1,settings.worker_retry_seconds));job.error_summary='Recovered stale processing job after worker interruption.'
     if raw_import:raw_import.import_status='QUEUED'
    else:
-    job.status='FAILED';job.completed_at=now();job.error_summary='Worker interrupted repeatedly; maximum attempts reached.'
+    job.status='FAILED';job.completed_at=current;job.error_summary='Worker interrupted repeatedly; maximum attempts reached.'
     if raw_import:raw_import.import_status='FAILED'
    db.add(AuditLog(action='registry_stale_job_recovered',actor='ingestion-worker',file_name=job.file_name,details={'job_id':job.id,'attempts':job.attempts,'recovered_status':job.status}))
-  if stale:
+  if stale or expired_uploads:
    db.commit()
-   log.warning('stale_jobs_recovered',count=len(stale))
+   if stale:
+    log.warning('stale_jobs_recovered',count=len(stale))
+   if expired_uploads:
+    log.warning('expired_direct_uploads_recovered',count=len(expired_uploads))
 def run_batch(max_jobs=None):
  """Process a bounded number of eligible jobs, then exit for scheduled runners."""
  logging.basicConfig(level=logging.INFO,format='%(message)s')
