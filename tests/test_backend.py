@@ -28,10 +28,12 @@ def test_name_required():
 def test_csv_ingestion_is_queued_then_processed_with_provenance(monkeypatch):
  reg='TEST'+uuid.uuid4().hex[:12].upper()
  csv_data=f'Company Name,Registration No,Tax PIN\nFirst Example Limited,{reg},P000001\nUpdated Example Limited,{reg},P000001\n,INVALID-ROW,P000002\n'
- response=client.post('/api/v1/ingestion/uploads',headers={**HEADERS,'Idempotency-Key':'test-'+uuid.uuid4().hex},files={'file':('organizations.csv',csv_data,'text/csv')})
+ correlation_id='test-correlation-'+uuid.uuid4().hex
+ response=client.post('/api/v1/ingestion/uploads',headers={**HEADERS,'Idempotency-Key':'test-'+uuid.uuid4().hex,'X-Correlation-ID':correlation_id},files={'file':('organizations.csv',csv_data,'text/csv')})
  assert response.status_code==202,response.text
  job=response.json()
  assert job['status']=='QUEUED'
+ assert job['correlation_id']==correlation_id
  old_batch_size=settings.ingestion_batch_size
  original_normalize=worker.normalize_record
  def fail_once_on_malformed_row(row):
