@@ -44,6 +44,7 @@ jobs:
           backend/tests/test_security_hmac.py backend/tests/test_worker_recovery.py
           backend/tests/test_managed_api_keys.py
           backend/tests/test_managed_api_key_enforcement.py
+          backend/tests/test_xlsx_parser.py
           tests/test_backend.py
       - name: Smoke-test Alembic on disposable SQLite
         working-directory: backend
