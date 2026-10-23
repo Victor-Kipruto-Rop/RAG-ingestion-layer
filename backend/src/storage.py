@@ -1,4 +1,7 @@
 import os
+import shutil
+import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 import boto3
 from botocore.config import Config
@@ -48,3 +51,29 @@ def upload_fileobj(key,file_obj,content_type):
    out.write(chunk)
  file_obj.seek(0)
  return f'local://{key}'
+
+
+@contextmanager
+def download_spooled_file(key, max_memory_bytes=1024 * 1024):
+    """Download an object to a seekable spool that spills to disk above 1 MiB."""
+    spool = tempfile.SpooledTemporaryFile(max_size=max_memory_bytes, mode='w+b')
+    body = None
+    try:
+        if key.startswith('r2://'): key = key[5:]
+        if key.startswith('local://'): key = key[8:]
+        if configured():
+            body = client().get_object(Bucket=settings.r2_bucket_name, Key=key)['Body']
+            while True:
+                chunk = body.read(1024 * 1024)
+                if not chunk: break
+                spool.write(chunk)
+        else:
+            root = Path(settings.local_storage_path).resolve()
+            target = (root / key).resolve()
+            if root not in target.parents: raise ValueError('Invalid storage key')
+            with target.open('rb') as source: shutil.copyfileobj(source, spool, length=1024 * 1024)
+        spool.seek(0)
+        yield spool
+    finally:
+        if body is not None: body.close()
+        spool.close()
