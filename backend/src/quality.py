@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, func, or_
 from sqlalchemy.orm import Session
 from .database import get_db
-from .models import Organization, IngestionJob, RegistrySource
+from .models import Organization, IngestionJob, RegistrySource, AuditLog
 from .security import require_api_key
 router=APIRouter(prefix='/api/v1',tags=['data quality'],dependencies=[Depends(require_api_key)])
 
@@ -36,3 +36,20 @@ def match_candidates(q:str=Query(min_length=2,max_length=200),limit:int=Query(de
 def source_freshness(db:Session=Depends(get_db)):
  sources=db.scalars(select(RegistrySource).order_by(RegistrySource.precedence,RegistrySource.display_name)).all()
  return {'items':[{'source_key':s.source_key,'display_name':s.display_name,'enabled':s.enabled,'freshness_sla_hours':s.freshness_sla_hours,'last_import_at':None,'freshness_status':'unknown','note':'Last successful source import timestamps are not yet persisted per source.'} for s in sources],'generated_at':datetime.now(timezone.utc).isoformat()}
+
+@router.get('/quality/rules')
+def quality_rules():
+ return {'items':[
+  {'id':'legal-name-required','name':'Legal name required','severity':'error','status':'active','description':'An organization record must include a non-empty legal name.','enforced_at':'ingestion'},
+  {'id':'registration-identifier-present','name':'Registration identifier present','severity':'warning','status':'active','description':'Records without a normalized registration number are counted for review; not all entity types use the same identifier.','enforced_at':'quality-report'},
+  {'id':'tax-pin-present','name':'Tax PIN present','severity':'warning','status':'active','description':'Records without a normalized tax PIN are counted for review; missing values are not proof of non-compliance.','enforced_at':'quality-report'},
+  {'id':'stale-source-record','name':'Record freshness','severity':'info','status':'active','description':'Records not seen within the configured lookback are flagged as stale candidates.','enforced_at':'quality-report'},
+  {'id':'similar-name-candidate','name':'Potential name match','severity':'review','status':'active','description':'Similarity results are review candidates only; records are never automatically merged.','enforced_at':'manual-review'}
+ ],'note':'These are the checks currently exposed by this service, not a configurable rules engine.'}
+
+@router.get('/audit/logs')
+def audit_logs(limit:int=Query(default=100,ge=1,le=500),action:str|None=None,db:Session=Depends(get_db)):
+ stmt=select(AuditLog)
+ if action: stmt=stmt.where(AuditLog.action==action[:100])
+ rows=db.scalars(stmt.order_by(AuditLog.created_at.desc()).limit(limit)).all()
+ return {'items':[{'id':r.id,'action':r.action,'actor':r.actor,'file_name':r.file_name,'details':r.details or {},'created_at':r.created_at.isoformat() if r.created_at else None} for r in rows],'count':len(rows)}
