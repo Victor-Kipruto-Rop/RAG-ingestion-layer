@@ -64,9 +64,16 @@ jobs:
       - uses: actions/checkout@v4
       - name: Prepare safe local environment
         run: cp example.env .env
-      - name: Validate connected local Docker stack
+      - name: Validate connected local Docker stack with disposable sandbox placeholders
         shell: bash
         run: |
+          # Validate Compose interpolation without requiring or contacting real cloud resources.
+          export DATABASE_URL='postgresql://postgres.example:ci-placeholder@127.0.0.1:5432/postgres?sslmode=require'
+          export R2_ACCOUNT_ID='ci-account'
+          export R2_ACCESS_KEY_ID='ci-access-key'
+          export R2_SECRET_ACCESS_KEY='ci-secret-key'
+          export R2_BUCKET_NAME='ci-sandbox-bucket'
+          export CONFIRM_SANDBOX_TARGET='YES'
           docker compose config --quiet
           services="$(docker compose config --services)"
           for service in registry-api registry-worker registry-frontend registry-redis; do
