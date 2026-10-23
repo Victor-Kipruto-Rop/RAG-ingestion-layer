@@ -5,14 +5,23 @@ $repoRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Set-Location $repoRoot
 
 if (-not (Test-Path ".env")) {
-    throw "Missing .env. Copy example.env to .env and set REGISTRY_API_KEYS to a long random local-only key first."
+    throw "Missing .env. Copy example.env, configure Supabase and R2 sandbox credentials, then explicitly confirm the sandbox target."
 }
 
 $keyLine = Get-Content ".env" | Where-Object { $_ -match "^\s*REGISTRY_API_KEYS\s*=" } | Select-Object -First 1
 if (-not $keyLine) { throw "REGISTRY_API_KEYS is missing from .env." }
 $apiKey = ($keyLine -replace "^\s*REGISTRY_API_KEYS\s*=", "").Split(",")[0].Trim()
-if (-not $apiKey -or $apiKey -eq "change-this-local-only-key-before-use") {
-    throw "Set REGISTRY_API_KEYS to a long random local-only key before testing."
+if (-not $apiKey -or $apiKey -match "replace-with|change-this|example|placeholder") {
+    throw "Set REGISTRY_API_KEYS to a long random sandbox-only key before testing."
+}
+$envText = Get-Content ".env" -Raw
+function Get-EnvValue([string]$name) {
+    $match = [regex]::Match($envText, "(?m)^\s*" + [regex]::Escape($name) + "\s*=\s*(.*?)\s*$")
+    if (-not $match.Success) { return "" }
+    return $match.Groups[1].Value.Trim().Trim('"').Trim("'")
+}
+if ((Get-EnvValue "CONFIRM_SANDBOX_TARGET") -ne "YES" -or (Get-EnvValue "DATASOURCE_ENVIRONMENT") -ne "sandbox") {
+    throw "Smoke tests write to the configured database and bucket. Confirm dedicated sandbox resources in .env first."
 }
 
 Write-Host "Checking API readiness..." -ForegroundColor Cyan
@@ -51,7 +60,7 @@ if ($job.status -notin @("COMPLETED", "COMPLETED_WITH_ERRORS")) {
 if ([int]$job.records_processed -lt 1) { throw "The worker completed without processing any CSV rows." }
 
 Write-Host ""
-Write-Host "LOCAL END-TO-END TEST PASSED" -ForegroundColor Green
+Write-Host "SUPABASE + R2 SANDBOX END-TO-END TEST PASSED" -ForegroundColor Green
 Write-Host "API and frontend containers: use 'docker compose ps' to inspect."
 Write-Host "Job: $($job.id) | Status: $($job.status) | Processed rows: $($job.records_processed)"
 Write-Host "Dashboard: http://localhost:5173"
