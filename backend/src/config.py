@@ -65,8 +65,10 @@ def validate_runtime_config():
     if settings.app_env.lower() != "production":
         return
     missing = []
-    if not settings.api_key_list or "change-this-local-only-key-before-use" in settings.api_key_list:
-        missing.append("REGISTRY_API_KEYS")
+    if not settings.api_key_list and not settings.require_hmac and not settings.key_management_token:
+        missing.append("REGISTRY_API_KEYS, REQUIRE_HMAC, or KEY_MANAGEMENT_TOKEN (an authentication mechanism is required)")
+    if settings.key_management_token and len(settings.key_management_token) < 32:
+        missing.append("KEY_MANAGEMENT_TOKEN (must be at least 32 characters)")
     if settings.database_url.startswith("sqlite"):
         missing.append("DATABASE_URL (PostgreSQL required in production)")
     if not all([settings.r2_account_id, settings.r2_access_key_id, settings.r2_secret_access_key, settings.r2_bucket_name]):
