@@ -4,7 +4,7 @@ import json
 import secrets
 import uuid
 from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
