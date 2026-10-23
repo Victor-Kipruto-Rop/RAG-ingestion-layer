@@ -348,3 +348,13 @@ button:focus-visible, input:focus-visible { outline: 3px solid #20b87555; outlin
  .settings-list > div { flex-direction: column; gap: 7px; }
  .settings-list span { max-width: 100%; text-align: left; }
 }
+
+
+.table-pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 2px 0; color: var(--muted); font-size: 11px; }
+.table-pagination > div { display: flex; gap: 8px; }
+.table-pagination .button-secondary { padding: 8px 12px; font-size: 11px; }
+@media (max-width: 520px) {
+  .table-pagination { align-items: flex-start; flex-direction: column; }
+  .table-pagination > div { width: 100%; }
+  .table-pagination .button-secondary { flex: 1; }
+}
