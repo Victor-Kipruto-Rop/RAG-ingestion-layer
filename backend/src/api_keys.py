@@ -69,6 +69,23 @@ def list_keys(db: Session = Depends(get_db),
     rows = db.execute(text("SELECT * FROM api_keys ORDER BY created_at DESC LIMIT 500")).mappings().all()
     return {"items":[_row(r) for r in rows],"count":len(rows)}
 
+@router.get("/events")
+def list_security_events(page:int=1,page_size:int=50,event_type:str|None=None,db:Session=Depends(get_db),
+                         x_key_management_token:str|None=Header(default=None,alias="X-Key-Management-Token")):
+    _management_auth(x_key_management_token)
+    page=max(1,page);page_size=max(1,min(200,page_size))
+    where=" WHERE event_type=:event_type" if event_type else ""
+    params={"offset":(page-1)*page_size,"limit":page_size}
+    if event_type:params["event_type"]=event_type[:60]
+    total=db.execute(text("SELECT count(*) FROM api_key_security_events"+where),params).scalar() or 0
+    rows=db.execute(text("SELECT id,api_key_id,key_prefix,event_type,expected_environment,key_environment,endpoint,request_id,source_ip,details,created_at FROM api_key_security_events"+where+" ORDER BY created_at DESC OFFSET :offset LIMIT :limit"),params).mappings().all()
+    return {"items":[{"id":row["id"],"api_key_id":row["api_key_id"],"key_prefix":row["key_prefix"],
+        "event_type":row["event_type"],"expected_environment":row["expected_environment"],
+        "key_environment":row["key_environment"],"endpoint":row["endpoint"],"request_id":row["request_id"],
+        "source_ip":row["source_ip"],"details":row["details"] or {},
+        "created_at":row["created_at"].isoformat() if row["created_at"] else None} for row in rows],
+        "total":total,"page":page,"page_size":page_size}
+
 @router.post("/{key_id}/revoke")
 def revoke_key(key_id: str, db: Session = Depends(get_db),
                x_key_management_token: str | None = Header(default=None, alias="X-Key-Management-Token")):
