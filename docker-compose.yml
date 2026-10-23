@@ -22,7 +22,7 @@ services:
       LOCAL_STORAGE_PATH: /app/.registry-uploads
       CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
       DATASOURCE_ENVIRONMENT: sandbox
-      DATASOURCE_ADMIN_TOKEN: ""
+      DATASOURCE_ADMIN_TOKEN: ${DATASOURCE_ADMIN_TOKEN:-}
       REDIS_URL: redis://registry-redis:6379/0
       HMAC_SHARED_SECRET: ""
       REQUIRE_HMAC: "false"
