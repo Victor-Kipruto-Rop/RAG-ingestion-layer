@@ -7,7 +7,7 @@ import structlog
 from prometheus_client import Counter,Histogram,Gauge,generate_latest,CONTENT_TYPE_LATEST
 from fastapi import Request,Header
 from fastapi.responses import Response
-from sqlalchemy import event,func,text
+from sqlalchemy import event,func,select,text
 from fastapi import FastAPI,HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from .config import settings,validate_runtime_config
