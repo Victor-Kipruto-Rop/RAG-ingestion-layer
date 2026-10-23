@@ -35,3 +35,25 @@ def test_file_iterator_accepts_seekable_binary_stream():
 def test_tab_delimited_csv_is_detected():
     rows = list(iter_csv_records(b"legal_name\\tstatus\\nAlpha Ltd\\tACTIVE\\n", 10))
     assert rows == [(2, {"legal_name": "Alpha Ltd", "status": "ACTIVE"})]
+
+def test_large_csv_is_consumed_in_bounded_reads():
+    class ReadTrackingStream(BytesIO):
+        def __init__(self, data):
+            super().__init__(data)
+            self.read_sizes = []
+
+        def read(self, size=-1):
+            self.read_sizes.append(size)
+            return super().read(size)
+
+    data = ("legal_name,registration_number\\n" + "".join(
+        f"Example Company {index},REG-{index}\\n" for index in range(2500)
+    )).encode()
+    stream = ReadTrackingStream(data)
+
+    rows = iter_csv_file(stream, 3000)
+    assert next(rows)[1]["legal_name"] == "Example Company 0"
+    assert sum(1 for _ in rows) == 2499
+    assert stream.read_sizes
+    assert all(size >= 0 for size in stream.read_sizes), "parser must not issue an unbounded read"
+
