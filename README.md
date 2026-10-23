@@ -30,6 +30,12 @@ Apply in order to PostgreSQL/Supabase:
 Set `APP_ENV=production` only after migrations are applied. Production startup intentionally does not create tables automatically.
 
 ## Warehouse layers\n\n- **Bronze:** `warehouse_raw_imports` records raw object metadata, checksum, source, size, and ingestion status; raw files are stored in private R2.\n- **Silver:** `warehouse_organizations` is a read-only view over canonical `internal_organizations` records, with normalization, provenance and data-quality state.\n- **Gold:** `warehouse_access_logs` stores lookup/API performance telemetry without API keys or raw credentials.\n\nConfigure `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `R2_BUCKET_NAME` in the deployment environment. Create the private bucket in Cloudflare R2 first; the repository cannot create a Cloudflare account resource without authorized Cloudflare access.\n\n
+## Quality review workflow
+
+The internal API exposes a durable review queue at `/api/v1/quality/reviews`. Create a case with an existing organization ID, then append a decision with reviewer notes and optional bounded evidence. Decisions are audit logged and append-only. A `same_entity` decision does not merge records or rewrite identifiers; it records the reviewer outcome only. Grant the `quality:review` scope to managed keys that need to create cases or record decisions.
+
+Provider readiness is exposed at `/api/v1/providers/status`. BRS, KRA and Peleza remain `not_connected` until provider contracts, authorized credentials, sandbox tests and data-processing terms have been approved. Presence of credentials does not mean connectivity.
+
 ## Production hardening
 
 The current implementation work is tracked in [the phased production hardening roadmap](docs/production-hardening-roadmap.md). Review [database migration safety](docs/database-migrations.md) before running Alembic against any existing database, and see [internal API security](docs/internal-api-security.md), [managed API keys](docs/managed-api-keys.md), [large-file ingestion](docs/large-file-ingestion.md), and the [operations runbook](docs/operations-runbook.md) for environment isolation, key lifecycle, HMAC signing, replay protection, rate limits, cache behavior, incident triage and metrics.
