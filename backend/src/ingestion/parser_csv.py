@@ -52,8 +52,8 @@ def iter_csv_file(file_obj, max_records: int):
     text_stream = io.TextIOWrapper(file_obj, encoding=encoding, errors="strict", newline="")
     try:
         reader = csv.DictReader(text_stream, dialect=dialect, restkey="__extra_columns__")
-        if not reader.fieldnames or not any((header or "").strip() for header in reader.fieldnames):
-            raise ValueError("CSV has no usable header row")
+        if not reader.fieldnames or any(not (header or "").strip() for header in reader.fieldnames):
+            raise ValueError("CSV has missing or blank column headers")
 
         normalized_headers = [str(header or "").strip().casefold() for header in reader.fieldnames]
         if len(set(normalized_headers)) != len(normalized_headers):
