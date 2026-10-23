@@ -53,7 +53,11 @@ def process_job(job_id):
    suffix='.'+job.file_name.rsplit('.',1)[-1].lower() if '.' in job.file_name else ''
    raw_import=db.scalar(select(WarehouseRawImport).where(WarehouseRawImport.ingestion_job_id==job.id))
    if suffix=='.pdf':
-    from .ingestion.pdf_text import extract_pdf_text
+    from .ingestion.pdf_text import extract_pdf_text,MAX_PDF_BYTES
+    if raw_import and raw_import.byte_size>MAX_PDF_BYTES:
+     job.status='NEEDS_PDF_PROCESSING';job.error_summary='PDF retained in private storage; automatic diagnostics are limited to 50 MiB. Manual review is required.';job.completed_at=now();raw_import.import_status='NEEDS_PDF_PROCESSING'
+     db.add(AuditLog(action='registry_pdf_size_limit_manual_review',actor='ingestion-worker',file_name=job.file_name,details={'job_id':job.id,'byte_size':raw_import.byte_size,'manual_review_required':True}))
+     db.commit();return
     data=download_bytes(job.object_key)
     diagnostics=extract_pdf_text(data, enable_ocr=settings.pdf_ocr_enabled, max_ocr_pages=settings.pdf_ocr_max_pages)
     job.status='NEEDS_PDF_PROCESSING'
