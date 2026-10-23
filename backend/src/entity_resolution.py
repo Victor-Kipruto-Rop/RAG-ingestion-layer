@@ -76,3 +76,16 @@ def find_existing_organization(db, registration_number, tax_pin):
             )
 
     return by_registration or by_tax_pin
+
+def merge_record_preserving_identifiers(existing, record):
+    """Apply imported values without erasing stored identifiers when source cells are blank."""
+    protected = {
+        'registration_number',
+        'normalized_registration_number',
+        'tax_pin',
+        'normalized_tax_pin',
+    }
+    for field, value in record.items():
+        if field in protected and not value and getattr(existing, field, None):
+            continue
+        setattr(existing, field, value)
