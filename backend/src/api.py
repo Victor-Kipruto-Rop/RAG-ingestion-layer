@@ -249,6 +249,22 @@ async def upload(request:Request,file:UploadFile=File(...),db:Session=Depends(ge
 def jobs(page:int=Query(default=1,ge=1),page_size:int=Query(default=25,ge=1,le=100),db:Session=Depends(get_db)):
  rows=db.scalars(select(IngestionJob).order_by(IngestionJob.created_at.desc()).offset((page-1)*page_size).limit(page_size)).all()
  return {'items':[{'id':j.id,'file_name':j.file_name,'correlation_id':j.correlation_id,'status':j.status,'attempts':j.attempts,'source_name':j.source_name,'records_processed':j.records_processed,'records_inserted':j.records_inserted,'records_updated':j.records_updated,'records_skipped':j.records_skipped,'error_summary':j.error_summary,'created_at':j.created_at.isoformat() if j.created_at else None,'started_at':j.started_at.isoformat() if j.started_at else None,'completed_at':j.completed_at.isoformat() if j.completed_at else None} for j in rows]}
+@router.post('/api/v1/ingestion/jobs/{job_id}/retry',dependencies=[Depends(require_api_key)])
+def retry_ingestion_job(job_id:str,db:Session=Depends(get_db)):
+ job=db.get(IngestionJob,job_id)
+ if not job:raise HTTPException(404,'Ingestion job not found')
+ if job.status in {'QUEUED','PROCESSING'}:return {'job_id':job.id,'status':job.status,'idempotent_replay':True}
+ if job.status!='FAILED':raise HTTPException(409,detail={'code':'JOB_NOT_RETRYABLE','message':'Only failed ingestion jobs can be retried. PDF manual-review jobs cannot be retried as tabular imports.'})
+ if not job.object_key:raise HTTPException(409,detail={'code':'JOB_SOURCE_MISSING','message':'The original source object is not available.'})
+ suffix='.'+job.file_name.rsplit('.',1)[-1].lower() if '.' in job.file_name else ''
+ if suffix not in {'.csv','.xlsx'}:raise HTTPException(409,detail={'code':'MANUAL_REVIEW_REQUIRED','message':'This file type is not eligible for automatic reprocessing.'})
+ raw=db.scalar(select(WarehouseRawImport).where(WarehouseRawImport.ingestion_job_id==job.id))
+ if raw:raw.import_status='QUEUED'
+ job.status='QUEUED';job.next_attempt_at=None;job.completed_at=None;job.error_summary=None
+ db.add(AuditLog(action='registry_ingestion_manual_retry',actor='internal-service',file_name=job.file_name,details={'job_id':job.id,'correlation_id':job.correlation_id,'resume_from_row':job.last_processed_row or 1}))
+ db.commit()
+ return {'job_id':job.id,'status':job.status,'resume_from_row':job.last_processed_row or 1,'message':'Job queued for retry. Persisted row progress is retained so processing can resume safely.'}
+
 @router.get('/api/v1/ingestion/jobs/{job_id}/errors',dependencies=[Depends(require_api_key)])
 def job_errors(job_id:str,page:int=Query(default=1,ge=1),page_size:int=Query(default=100,ge=1,le=500),db:Session=Depends(get_db)):
  if not db.get(IngestionJob,job_id):raise HTTPException(404,'Ingestion job not found')
