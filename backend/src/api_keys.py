@@ -53,7 +53,9 @@ def require_user_claims(authorization: str | None = Header(default=None, alias="
     return claims
 
 def _roles(claims: dict) -> set[str]:
-    roles = _roles(claims)
+    roles = claims.get("roles", [])
+    if isinstance(roles, str):
+        roles = [roles]
     return set(roles)
 
 def _require_org_admin(claims: dict):
@@ -76,9 +78,7 @@ def _create_key(db: Session, claims: dict, payload: CreateApiKey):
     env = payload.environment.lower().strip()
     if env not in {"sandbox", "production"}:
         raise HTTPException(422, "environment must be sandbox or production")
-    roles = claims.get("roles", [])
-    if isinstance(roles, str):
-        roles = [roles]
+    roles = _roles(claims)
     if env == "production" and not payload.expires_in_days:
         raise HTTPException(422, "Production API keys must have an expiry date (maximum 365 days)")
     if env == "production" and not (claims.get("organization_verified") is True and ({"owner", "admin"} & set(roles))):
