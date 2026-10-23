@@ -14,6 +14,7 @@ const NAV = [
   { name: 'Ingestion Jobs', icon: Activity, group: 'WORKSPACE' },
   { name: 'Registry Records', icon: Building2, group: 'WORKSPACE' },
   { name: 'Data Quality', icon: FileCheck2, group: 'GOVERNANCE' },
+  { name: 'Review Queue', icon: FileCheck2, group: 'GOVERNANCE' },
   { name: 'Warehouse', icon: HardDrive, group: 'GOVERNANCE' },
   { name: 'Validation Rules', icon: ShieldCheck, group: 'GOVERNANCE' },
   { name: 'Audit Logs', icon: ScrollText, group: 'ADMINISTRATION' },
@@ -173,7 +174,87 @@ function ServiceStatus({ label, detail, icon: Icon, value, connected }) {
   return <div className="service-card"><div className="service-icon"><Icon size={19} /></div><div className="service-copy"><strong>{label}</strong><span>{detail}</span></div><StatusPill value={value || (connected ? 'Connected' : 'Unknown')} /></div>;
 }
 
-export default function App() {
+export default function ReviewQueuePage({ request }) {
+  const [items, setItems] = useState([]);
+  const [organizationId, setOrganizationId] = useState('');
+  const [relatedOrganizationId, setRelatedOrganizationId] = useState('');
+  const [caseType, setCaseType] = useState('possible_duplicate');
+  const [summary, setSummary] = useState('');
+  const [notes, setNotes] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+
+  const load = async () => {
+    setLoading(true); setError('');
+    try {
+      const response = await request('/api/v1/quality/reviews?status=open&page_size=50');
+      const body = await response.json();
+      setItems(body.items || []);
+    } catch (e) { setError(e.message || 'Unable to load review cases.'); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, [request]);
+
+  const createCase = async (event) => {
+    event.preventDefault(); setLoading(true); setError(''); setNotice('');
+    try {
+      const response = await request('/api/v1/quality/reviews', { method: 'POST', body: JSON.stringify({
+        organization_id: organizationId.trim(),
+        related_organization_id: relatedOrganizationId.trim() || null,
+        case_type: caseType,
+        summary: summary.trim(),
+        evidence: { created_from: 'dashboard_manual_review' },
+      }) });
+      const body = await response.json();
+      setItems(current => [body.item, ...current.filter(item => item.id !== body.item.id)]);
+      setOrganizationId(''); setRelatedOrganizationId(''); setSummary('');
+      setNotice('Review case created. No organization data was changed.');
+    } catch (e) { setError(e.message || 'Unable to create review case. Check that your API key has registry:write permission.'); }
+    finally { setLoading(false); }
+  };
+
+  const decide = async (item, decision) => {
+    const reviewerNotes = (notes[item.id] || '').trim();
+    if (reviewerNotes.length < 3) { setError('Enter reviewer notes of at least 3 characters before recording a decision.'); return; }
+    setLoading(true); setError(''); setNotice('');
+    try {
+      const response = await request(`/api/v1/quality/reviews/${item.id}/decisions`, { method: 'POST', body: JSON.stringify({ decision, notes: reviewerNotes }) });
+      const body = await response.json();
+      if (['resolved', 'dismissed'].includes(body.item.status)) setItems(current => current.filter(row => row.id !== item.id));
+      else setItems(current => current.map(row => row.id === item.id ? body.item : row));
+      setNotes(current => ({ ...current, [item.id]: '' }));
+      setNotice(body.message || 'Decision recorded. Organization records were not changed.');
+    } catch (e) { setError(e.message || 'Unable to record review decision.'); }
+    finally { setLoading(false); }
+  };
+
+  return <div className="governance-workspace">
+    <div className="page-heading"><div><div className="eyebrow-label">DATA GOVERNANCE</div><h1>Review queue</h1><p>Track potential duplicates and data-quality issues with an auditable human decision trail.</p></div><button className="button-secondary" onClick={load} disabled={loading}><RefreshCw size={14} className={loading ? 'spin' : ''}/> Refresh</button></div>
+    {error && <div className="alert-banner error"><AlertTriangle size={16}/><span>{error}</span><button onClick={() => setError('')} aria-label="Dismiss error"><X size={15}/></button></div>}
+    {notice && <div className="alert-banner success"><CheckCircle2 size={16}/><span>{notice}</span></div>}
+    <section className="panel"><div className="panel-heading"><div><h2>Create review case</h2><p>Use existing organization IDs. The service validates each ID before saving the case.</p></div></div>
+      <form className="review-create-form" onSubmit={createCase}>
+        <label>Primary organization ID<input required minLength={1} maxLength={36} value={organizationId} onChange={e => setOrganizationId(e.target.value)} placeholder="Existing organization ID"/></label>
+        <label>Related organization ID (optional)<input maxLength={36} value={relatedOrganizationId} onChange={e => setRelatedOrganizationId(e.target.value)} placeholder="Required for same/different entity decisions"/></label>
+        <label>Case type<select value={caseType} onChange={e => setCaseType(e.target.value)}><option value="possible_duplicate">Possible duplicate</option><option value="identifier_conflict">Identifier conflict</option><option value="missing_data">Missing data</option><option value="stale_record">Stale record</option><option value="source_conflict">Source conflict</option><option value="other">Other</option></select></label>
+        <label>Summary<input required minLength={5} maxLength={1000} value={summary} onChange={e => setSummary(e.target.value)} placeholder="Why does this record need review?"/></label>
+        <button className="button-primary" disabled={loading || !organizationId.trim() || summary.trim().length < 5}><FileCheck2 size={15}/> Create case</button>
+      </form>
+    </section>
+    <section className="panel"><div className="panel-heading"><div><h2>Open cases</h2><p>{items.length} cases loaded. Decisions are append-only and do not automatically merge or edit records.</p></div></div>
+      {!items.length ? <div className="empty-state"><div className="empty-icon"><FileCheck2 size={22}/></div><strong>No open review cases</strong><span>Create a case above when a registry record needs manual review.</span></div> : <div className="review-case-list">{items.map(item => <article className="review-case-row" key={item.id}>
+        <div className="review-case-top"><span className="rule-severity review">{item.case_type.replaceAll('_', ' ')}</span><StatusPill value={item.status}/><span className="review-case-id">{item.id.slice(0, 8)}</span></div>
+        <strong>{item.summary}</strong><p>Primary: {item.organization_id}{item.related_organization_id ? ` · Related: ${item.related_organization_id}` : ''}</p>
+        <input value={notes[item.id] || ''} onChange={e => setNotes(current => ({ ...current, [item.id]: e.target.value }))} maxLength={4000} placeholder="Reviewer notes (required)" aria-label={`Reviewer notes for ${item.id}`}/>
+        <div className="review-case-actions">{item.related_organization_id && <><button className="button-secondary" disabled={loading} onClick={() => decide(item, 'same_entity')}>Same entity</button><button className="button-secondary" disabled={loading} onClick={() => decide(item, 'different_entities')}>Different entities</button></>}<button className="button-secondary" disabled={loading} onClick={() => decide(item, 'needs_more_evidence')}>Need evidence</button><button className="button-secondary" disabled={loading} onClick={() => decide(item, 'data_quality_issue')}>Data issue</button><button className="button-secondary" disabled={loading} onClick={() => decide(item, 'dismissed')}>Dismiss</button></div>
+      </article>)}</div>}
+    </section>
+    <p className="governance-footnote">This is a review record, not an authoritative legal verification. A decision never merges organizations or rewrites source data.</p>
+  </div>;
+}
+
+function App() {
   const [page, setPage] = useState('Overview');
   const [key, setKey] = useState('');
   const [connected, setConnected] = useState(false);
@@ -280,6 +361,7 @@ export default function App() {
           <section className="infra-section"><div className="section-title"><div><h2>Infrastructure health</h2><p>Connection state reported by the current datasource session</p></div><span className="health-summary"><i /> {connected ? 'API reachable' : 'Awaiting connection'}</span></div><div className="service-grid"><ServiceStatus label="Registry API" detail="Datasource application" value={connected ? 'Connected' : 'Not connected'} connected={connected} icon={Server} /><ServiceStatus label="Database metrics" detail="Registry data access" value={summary ? 'Available' : 'Unknown'} connected={!!summary} icon={Database} /><ServiceStatus label="External verification" detail="KRA / BRS integrations" value="Not configured" connected={false} icon={ShieldCheck} /></div></section>
         </>}
 
+        {page === 'Review Queue' && <ReviewQueuePage request={request} />}
         {page === 'Ingestion Jobs' && <section className="panel full-panel"><div className="panel-heading"><div><h2>Ingestion jobs</h2><p>Inspect persisted import outcomes and processing counts.</p></div><button className="button-secondary" onClick={refresh} disabled={loading}><RefreshCw size={15} className={loading ? 'spin' : ''} /> Refresh</button></div><JobsTable jobs={jobs} search={search} /></section>}
         {page === 'Registry Records' && <section className="panel full-panel"><div className="panel-heading"><div><h2>Registry records</h2><p>Search imported organizations and inspect source information.</p></div><span className="record-count">{number(orgTotal)} records</span></div><OrganizationsTable rows={orgs} total={orgTotal} page={orgPage} pageSize={100} onPageChange={setOrgPage} /></section>}
         {page === 'Upload center' && <section className="panel upload-panel"><div className="panel-heading"><div><h2>Upload dataset</h2><p>Submit registry files for asynchronous ingestion.</p></div><div className="heading-icon"><Upload size={18} /></div></div><form onSubmit={upload} className="upload-form"><label className="dropzone"><input type="file" accept=".csv,.xlsx,.pdf" onChange={e => setFile(e.target.files?.[0] || null)} /><span className="dropzone-icon"><Upload size={25} /></span><strong>{file ? file.name : 'Choose a dataset to upload'}</strong><span>{file ? `${(file.size / 1048576).toFixed(2)} MB · ready to submit` : 'Drag a file here or browse from your device'}</span><small>CSV, XLSX and PDF · backend size limits apply</small></label><div className="upload-actions"><p>Only upload datasets you are authorized to process. PDF files may be stored even where structured extraction is not yet enabled.</p><div className="upload-button-row"><button type="button" className="button-secondary" disabled={!file || loading || file.size > 5 * 1024 * 1024} onClick={previewUpload}>Preview sample</button><button className="button-primary" disabled={!file || loading}>{loading ? 'Working…' : <><Upload size={16} /> Queue import</>}</button></div></div></form>{preview && <div className="preview-panel"><div className="panel-heading"><div><h3>File preview</h3><p>{preview.sample_count} sample rows · no data has been saved</p></div><button className="button-link" onClick={() => setPreview(null)}>Close</button></div><div className="table-scroll"><table className="data-table"><thead><tr><th>Row</th>{preview.columns.map(column => <th key={column}>{column}</th>)}</tr></thead><tbody>{preview.sample_rows.map(row => <tr key={row.row_number}><td>{row.row_number}</td>{preview.columns.map(column => <td key={column}>{row.values[column] ?? '—'}</td>)}</tr>)}</tbody></table></div><p className="preview-note">Preview is limited to 5 MiB and is not an ingestion or verification result.</p></div>}</section>}
