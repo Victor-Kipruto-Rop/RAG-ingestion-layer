@@ -8,6 +8,7 @@ from .database import SessionLocal
 from .models import IngestionJob,Organization,OrganizationRecordVersion,IngestionRowError,AuditLog,WarehouseRawImport,FailedImportDLQ
 from .storage import download_bytes
 from .ingestion.parser_csv import iter_csv_records_from_storage
+from .ingestion.parser_xlsx import iter_xlsx_records_from_storage
 from .ingestion.normalizer import normalize_record
 from .entity_resolution import similarity_score
 from .cache import invalidate_lookup_keys
@@ -85,7 +86,8 @@ def process_job(job_id):
    changed_lookup_keys=set()
    batch_count=0
    last_row_number=job.last_processed_row or 1
-   for row_num,row in iter_csv_records_from_storage(job.object_key,settings.max_records_per_file):
+   records = iter_xlsx_records_from_storage(job.object_key,settings.max_records_per_file) if suffix=='.xlsx' else iter_csv_records_from_storage(job.object_key,settings.max_records_per_file)
+   for row_num,row in records:
     if row_num <= last_row_number:
      continue
     processed+=1
