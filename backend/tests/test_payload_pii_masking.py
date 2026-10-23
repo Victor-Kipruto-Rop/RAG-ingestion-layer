@@ -11,6 +11,7 @@ def test_registry_payload_drops_personal_fields_and_keeps_company_flags():
         'Contact Phone': 'redacted-value',
         'Company Compliance Flag': 'CLEAR',
         'Sanctions Status': 'NOT_LISTED',
+        'Shipping Address': 'Nairobi Industrial Area',
     })
     payload = record['registry_payload']
     assert 'director_name' not in payload
@@ -18,4 +19,5 @@ def test_registry_payload_drops_personal_fields_and_keeps_company_flags():
     assert 'contact_phone' not in payload
     assert payload['company_compliance_flag'] == 'CLEAR'
     assert payload['sanctions_status'] == 'NOT_LISTED'
+    assert payload['shipping_address'] == 'Nairobi Industrial Area'
     assert record['tax_pin'] == 'TEST-CORP-PIN'
