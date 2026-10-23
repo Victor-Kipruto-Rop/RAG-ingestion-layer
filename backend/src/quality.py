@@ -58,8 +58,9 @@ def quality_rules():
  ],'note':'These are the checks currently exposed by this service, not a configurable rules engine.'}
 
 @router.get('/audit/logs')
-def audit_logs(limit:int=Query(default=100,ge=1,le=500),action:str|None=None,db:Session=Depends(get_db)):
+def audit_logs(limit:int=Query(default=100,ge=1,le=500),offset:int=Query(default=0,ge=0),action:str|None=None,db:Session=Depends(get_db)):
  stmt=select(AuditLog)
  if action: stmt=stmt.where(AuditLog.action==action[:100])
- rows=db.scalars(stmt.order_by(AuditLog.created_at.desc()).limit(limit)).all()
- return {'items':[{'id':r.id,'action':r.action,'actor':r.actor,'file_name':r.file_name,'details':r.details or {},'created_at':r.created_at.isoformat() if r.created_at else None} for r in rows],'count':len(rows)}
+ total=db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+ rows=db.scalars(stmt.order_by(AuditLog.created_at.desc(),AuditLog.id.desc()).offset(offset).limit(limit)).all()
+ return {'items':[{'id':r.id,'action':r.action,'actor':r.actor,'file_name':r.file_name,'details':r.details or {},'created_at':r.created_at.isoformat() if r.created_at else None} for r in rows],'count':len(rows),'total':total,'limit':limit,'offset':offset,'next_offset':offset+len(rows) if offset+len(rows)<total else None}
