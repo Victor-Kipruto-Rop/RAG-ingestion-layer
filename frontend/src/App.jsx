@@ -14,6 +14,7 @@ const NAV = [
   { name: 'Ingestion Jobs', icon: Activity, group: 'WORKSPACE' },
   { name: 'Registry Records', icon: Building2, group: 'WORKSPACE' },
   { name: 'Data Quality', icon: FileCheck2, group: 'GOVERNANCE' },
+  { name: 'Match Reviews', icon: FileCheck2, group: 'GOVERNANCE' },
   { name: 'Warehouse', icon: HardDrive, group: 'GOVERNANCE' },
   { name: 'Validation Rules', icon: ShieldCheck, group: 'GOVERNANCE' },
   { name: 'Audit Logs', icon: ScrollText, group: 'ADMINISTRATION' },
@@ -286,6 +287,72 @@ function ValidationRulesPage({ request }) {
   </div>;
 }
 
+
+function EntityMatchReviewsPage({ request }) {
+  const [items, setItems] = useState([]);
+  const [candidateId, setCandidateId] = useState('');
+  const [queryName, setQueryName] = useState('');
+  const [decision, setDecision] = useState('needs_more_evidence');
+  const [comment, setComment] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+
+  const load = async () => {
+    setLoading(true); setError('');
+    try {
+      const response = await request('/api/v1/quality/reviews?limit=50&offset=0');
+      const body = await response.json();
+      setItems(body.items || []);
+    } catch (e) {
+      setError(e.message || 'Unable to load match reviews. Check your API key and registry:read scope.');
+    } finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, [request]);
+
+  const submit = async (event) => {
+    event.preventDefault();
+    setLoading(true); setError(''); setMessage('');
+    try {
+      const response = await request('/api/v1/quality/reviews', {
+        method: 'POST',
+        body: JSON.stringify({
+          candidate_organization_id: candidateId.trim(),
+          query_name: queryName.trim(),
+          decision,
+          comment: comment.trim(),
+          evidence: { submitted_from: 'datasource_dashboard' },
+        }),
+      });
+      const body = await response.json();
+      setMessage('Review saved. The canonical organization record was not changed or merged.');
+      setCandidateId(''); setQueryName(''); setComment('');
+      setItems(current => [body.item, ...current]);
+    } catch (e) {
+      setError(e.message || 'Unable to save review. A managed API key with quality:review scope is required.');
+    } finally { setLoading(false); }
+  };
+
+  return <div className="content-stack">
+    <section className="panel full-panel">
+      <div className="panel-heading"><div><h2>Record a human match review</h2><p>Store an auditable decision for a fuzzy candidate. This action never merges or edits registry records.</p></div><StatusPill value="Review only" /></div>
+      {error && <div className="alert-banner error"><AlertCircle size={17}/><span>{error}</span></div>}
+      {message && <div className="alert-banner success"><CheckCircle2 size={17}/><span>{message}</span></div>}
+      <form className="review-form" onSubmit={submit}>
+        <label>Candidate organization ID<input required value={candidateId} onChange={e => setCandidateId(e.target.value)} placeholder="Paste the organization ID from match candidates" maxLength={36}/></label>
+        <label>Search / query name<input required minLength={2} maxLength={500} value={queryName} onChange={e => setQueryName(e.target.value)} placeholder="Name originally searched"/></label>
+        <label>Decision<select value={decision} onChange={e => setDecision(e.target.value)}><option value="needs_more_evidence">Needs more evidence</option><option value="accepted_candidate">Accept as candidate</option><option value="rejected_candidate">Reject candidate</option></select></label>
+        <label className="review-comment">Review notes<textarea required minLength={5} maxLength={2000} value={comment} onChange={e => setComment(e.target.value)} placeholder="Explain the evidence and reason for this decision."/></label>
+        <div className="review-actions"><span>Use a key with <code>quality:review</code> to save decisions. Do not include personal data or raw documents.</span><button className="button-primary" type="submit" disabled={loading}>{loading ? 'Saving…' : 'Save review'}</button></div>
+      </form>
+    </section>
+    <section className="panel full-panel">
+      <div className="panel-heading"><div><h2>Review history</h2><p>Latest saved decisions with reviewer and request trace.</p></div><button className="button-secondary" onClick={load} disabled={loading}><RefreshCw size={14}/> Refresh</button></div>
+      {loading && !items.length ? <div className="empty-state">Loading review history…</div> : !items.length ? <div className="empty-state">No match reviews have been recorded yet.</div> : <div className="table-wrap"><table><thead><tr><th>DECISION</th><th>QUERY NAME</th><th>CANDIDATE ID</th><th>REVIEWER</th><th>DATE</th></tr></thead><tbody>{items.map(item => <tr key={item.id}><td><StatusPill value={item.decision}/></td><td>{item.query_name}</td><td><code>{item.candidate_organization_id}</code></td><td>{item.reviewer_id}</td><td>{dateLabel(item.created_at)}</td></tr>)}</tbody></table></div>}
+    </section>
+  </div>;
+}
+
 function APIKeysPage() {
   const [token, setToken] = useState('');
   const [items, setItems] = useState([]);
@@ -452,7 +519,7 @@ function App() {
 
   const metrics = summary || {};
   const navToUpload = () => setPage('Upload center');
-  const knownPage = ['Overview', 'Data Sources', 'Ingestion Jobs', 'Registry Records', 'Data Quality', 'Warehouse', 'Validation Rules', 'Audit Logs', 'Settings', 'API Keys', 'Upload center'].includes(page);
+  const knownPage = ['Overview', 'Data Sources', 'Ingestion Jobs', 'Registry Records', 'Data Quality', 'Match Reviews', 'Warehouse', 'Validation Rules', 'Audit Logs', 'Settings', 'API Keys', 'Upload center'].includes(page);
 
   return <div className="app-shell">
     {mobile && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setMobile(false)} />}
@@ -485,6 +552,7 @@ function App() {
         {page === 'API Keys' && <APIKeysPage />}
         {page === 'Data Sources' && <DataSourcesPage request={request} />}
         {page === 'Data Quality' && <DataQualityPage request={request} />}
+        {page === 'Match Reviews' && <EntityMatchReviewsPage request={request} />}
         {page === 'Validation Rules' && <ValidationRulesPage request={request} />}
         {page === 'Audit Logs' && <AuditLogsPage request={request} />}
         {page === 'Warehouse' && <section className="panel full-panel"><div className="panel-heading"><div><h2>Warehouse records</h2><p>Browse the canonical organization records currently exposed by the registry API.</p></div><span className="record-count">{number(orgTotal)} records</span></div><OrganizationsTable rows={orgs} total={orgTotal} page={orgPage} pageSize={100} onPageChange={setOrgPage} /></section>}
