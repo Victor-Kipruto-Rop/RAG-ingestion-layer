@@ -3,6 +3,8 @@ os.environ.setdefault('REGISTRY_API_KEYS','test-secret-key')
 os.environ.setdefault('DATABASE_URL','sqlite:///./test_registry.db')
 from fastapi.testclient import TestClient
 from src.main import app
+from src.database import Base, engine
+Base.metadata.create_all(bind=engine)
 from src.ingestion.normalizer import normalize_legal_name,normalize_identifier,normalize_record
 from src.worker import process_job
 client=TestClient(app)
