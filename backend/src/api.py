@@ -119,3 +119,21 @@ def export_csv(db:Session=Depends(get_db)):
    safe=["'"+v if isinstance(v,str) and v.startswith(('=','+','-','@','\\t','\\r')) else v for v in vals]
    writer.writerow(safe);yield buffer.getvalue();buffer.seek(0);buffer.truncate(0)
  return StreamingResponse(stream(),media_type='text/csv; charset=utf-8',headers={'Content-Disposition':'attachment; filename=pesaguard-registry-export.csv'})
+
+@router.get('/api/v1/warehouse/query-organization',dependencies=[Depends(require_api_key)])
+def query_organization(registration_number:str|None=None,tax_pin:str|None=None,legal_name:str|None=None,db:Session=Depends(get_db)):
+ supplied=[bool(registration_number and registration_number.strip()),bool(tax_pin and tax_pin.strip()),bool(legal_name and legal_name.strip())]
+ if sum(supplied)!=1:raise HTTPException(422,'Provide exactly one of registration_number, tax_pin, or legal_name')
+ if registration_number or tax_pin:
+  from .ingestion.normalizer import normalize_identifier
+  ident=normalize_identifier(registration_number or tax_pin)
+  col=Organization.normalized_registration_number if registration_number else Organization.normalized_tax_pin
+  org=db.scalar(select(Organization).where(col==ident).limit(1))
+  if org:return {'found':True,'match_type':'exact_identifier','organization':org_out(org),'fallback_required':False,'fallback_provider_candidates':[],'verification_note':'Imported data is not authoritative verification.'}
+  return {'found':False,'match_type':'none','organization':None,'fallback_required':True,'fallback_provider_candidates':['Dojah','Verifisha'],'provider_status':'NOT_CONFIGURED','message':'No local exact match. PesaGuard may invoke a separately configured external verification provider.'}
+ result=search(q=legal_name,limit=10,db=db)
+ items=result['items']
+ return {'found':bool(items),'match_type':result['match_mode'],'candidates':items,'organization':items[0] if len(items)==1 else None,'fallback_required':not bool(items),'fallback_provider_candidates':['Dojah','Verifisha'] if not items else [],'provider_status':'NOT_CONFIGURED' if not items else None,'warning':'Name-based matches are candidates, not identity verification.'}
+@router.get('/api/v1/warehouse/health/telemetry',dependencies=[Depends(require_api_key)])
+def warehouse_telemetry(db:Session=Depends(get_db)):
+ return {'status':'ok','indexed_organizations':db.scalar(select(func.count()).select_from(Organization)) or 0,'raw_files':db.scalar(select(func.count()).select_from(WarehouseRawImport)) or 0,'query_logs':db.scalar(select(func.count()).select_from(WarehouseAccessLog)) or 0,'queued_imports':db.scalar(select(func.count()).select_from(WarehouseRawImport).where(WarehouseRawImport.import_status=='QUEUED')) or 0,'failed_imports':db.scalar(select(func.count()).select_from(WarehouseRawImport).where(WarehouseRawImport.import_status=='FAILED')) or 0,'storage_usage_bytes':db.scalar(select(func.coalesce(func.sum(WarehouseRawImport.byte_size),0))) or 0,'storage_usage_note':'Byte total is based on recorded uploads, not a live R2 bucket inventory.','generated_at':datetime.now(timezone.utc).isoformat()}
