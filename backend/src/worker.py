@@ -1,6 +1,6 @@
 """Run with: python -m src.worker. PostgreSQL is recommended for multiple workers."""
 import logging,time
-from datetime import datetime,timezone
+from datetime import datetime,timezone,timedelta
 from sqlalchemy import select
 from .config import settings
 from .database import SessionLocal
@@ -14,11 +14,11 @@ def snap(o):
  return {'legal_name':o.legal_name,'normalized_legal_name':o.normalized_legal_name,'registration_number':o.registration_number,'normalized_registration_number':o.normalized_registration_number,'tax_pin':o.tax_pin,'normalized_tax_pin':o.normalized_tax_pin,'status':o.status,'registry_payload':o.registry_payload or {},'data_quality_status':o.data_quality_status}
 def claim_job():
  with SessionLocal() as db:
-  stmt=select(IngestionJob).where(IngestionJob.status=='QUEUED').order_by(IngestionJob.created_at).limit(1)
+  stmt=select(IngestionJob).where(IngestionJob.status=='QUEUED', (IngestionJob.next_attempt_at.is_(None)) | (IngestionJob.next_attempt_at<=now())).order_by(IngestionJob.created_at).limit(1)
   if db.bind.dialect.name=='postgresql':stmt=stmt.with_for_update(skip_locked=True)
   job=db.scalar(stmt)
   if not job:return None
-  job.status='PROCESSING';job.attempts=(job.attempts or 0)+1;job.started_at=now();db.commit()
+  job.status='PROCESSING';job.attempts=(job.attempts or 0)+1;job.started_at=now();job.next_attempt_at=None;db.commit()
   return job.id
 def process_job(job_id):
  with SessionLocal() as db:
@@ -50,8 +50,8 @@ def process_job(job_id):
       db.add(OrganizationRecordVersion(organization_id=org.id,change_type='CREATED',snapshot={'after':snap(org)},source_name=org.source_name,source_file=job.file_name,source_row=row_num));inserted+=1
     except ValueError as exc:
      skipped+=1;db.add(IngestionRowError(job_id=job.id,row_number=row_num,error_code='INVALID_ROW',message=str(exc)[:1000]))
-    except Exception as exc:
-     skipped+=1;db.add(IngestionRowError(job_id=job.id,row_number=row_num,error_code='ROW_PROCESSING_ERROR',message=str(exc)[:1000]))
+    except Exception:
+     raise
    job.records_processed=processed;job.records_inserted=inserted;job.records_updated=updated;job.records_skipped=skipped
    job.status='COMPLETED_WITH_ERRORS' if skipped else 'COMPLETED';job.error_summary=f'{skipped} row(s) were skipped; see row-errors endpoint.' if skipped else None;job.completed_at=now()
    db.add(AuditLog(action='registry_ingestion_completed',actor='ingestion-worker',file_name=job.file_name,details={'job_id':job.id,'processed':processed,'inserted':inserted,'updated':updated,'skipped':skipped}))
@@ -62,15 +62,26 @@ def process_job(job_id):
     job=retry_db.get(IngestionJob,job_id)
     if job:
      if job.attempts < settings.worker_max_attempts:
-      job.status='QUEUED';job.error_summary=f'Attempt {job.attempts} failed; will retry. {str(exc)[:500]}'
+      job.status='QUEUED';job.next_attempt_at=now()+timedelta(seconds=max(1,settings.worker_retry_seconds)*(2**max(0,job.attempts-1)));job.error_summary=f'Attempt {job.attempts} failed; retry scheduled. {str(exc)[:500]}'
      else:
       job.status='FAILED';job.error_summary=f'Ingestion failed after {job.attempts} attempts: {str(exc)[:800]}';job.completed_at=now()
      retry_db.commit()
    log.exception('Job processing failed job_id=%s',job_id)
+def recover_stale_jobs():
+ cutoff=now()-timedelta(seconds=max(60,settings.worker_stale_after_seconds))
+ with SessionLocal() as db:
+  stale=db.scalars(select(IngestionJob).where(IngestionJob.status=='PROCESSING',IngestionJob.started_at<cutoff)).all()
+  for job in stale:
+   if job.attempts < settings.worker_max_attempts:
+    job.status='QUEUED';job.next_attempt_at=now()+timedelta(seconds=max(1,settings.worker_retry_seconds));job.error_summary='Recovered stale processing job after worker interruption.'
+   else:
+    job.status='FAILED';job.completed_at=now();job.error_summary='Worker interrupted repeatedly; maximum attempts reached.'
+  if stale:db.commit();log.warning('Recovered stale jobs: %s',len(stale))
 def run_forever():
  logging.basicConfig(level=logging.INFO);log.info('Ingestion worker starting')
  while True:
   try:
+   recover_stale_jobs()
    job_id=claim_job()
    if job_id:process_job(job_id)
    else:time.sleep(max(0.25,settings.worker_poll_seconds))
