@@ -164,6 +164,6 @@ async def require_api_key(request:Request,x_api_key:str|None=Header(default=None
             keys=settings.api_key_list
             if not keys or not any(hmac.compare_digest(x_api_key,key) for key in keys): raise HTTPException(401,'Invalid or missing API key')
             identity='api-key:'+hashlib.sha256(x_api_key.encode()).hexdigest()
-            request.state.api_key_scopes=['registry:read','ingestion:write','sources:write','exports:read']
+            request.state.api_key_scopes=['registry:read','ingestion:write','sources:write','exports:read','quality:review']
     if request.url.path in {'/api/v1/registry/lookup','/api/v1/registry/search'}: await _take_token(identity,request)
     return identity
