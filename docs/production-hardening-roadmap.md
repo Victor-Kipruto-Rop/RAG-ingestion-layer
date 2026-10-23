@@ -14,6 +14,7 @@ This document distinguishes code present in the repository from work that still 
 
 ## Phase 2 — Database migrations and warehouse integrity
 - [x] Additive SQL migrations exist for managed API keys/security events and ingestion schema changes.
+- [x] Alembic revision `0005_managed_api_keys` creates managed-key tables on fresh local SQLite bootstraps; PostgreSQL upgrade verification is still required.
 - [x] Production startup avoids automatic table creation.
 - [ ] Reconcile the SQL migration sequence with Alembic before making Alembic the single schema-change entry point.
 - [ ] Test both clean database bootstrap and upgrade of a schema snapshot matching the deployed database.
@@ -72,6 +73,7 @@ This document distinguishes code present in the repository from work that still 
 - [x] Added API-key page component tests for operator authentication feedback, in-memory-only token handling, and one-time secret reveal.
 - [x] Added component tests for empty API-key states, invalid/expired operator-token feedback, clipboard failure guidance, and audit-log pagination. Narrow-screen layout has responsive CSS; device/browser verification remains pending.
 - [x] React error boundary is mounted around the dashboard and has a regression test that verifies fallback messaging does not expose exception text.
+- [x] Added a Windows helper to create a least-privilege sandbox key, smoke-test it against localhost, and reveal the secret once, plus a PesaGuard backend integration guide.
 - [x] Registry records already use server-side pagination; audit logs now support server-side offset pagination, total counts, stable ordering, and dashboard Previous/Next controls.
 - [ ] Confirm frontend build-time VITE_API_BASE_URL is set for each deployment and no server secret enters the browser bundle.
 
