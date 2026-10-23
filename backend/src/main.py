@@ -47,7 +47,7 @@ async def warehouse_access_telemetry(request,call_next):
  path=request.url.path
  if not path.startswith('/api/v1/warehouse/'):
   return await call_next(request)
- started=time.perf_counter();request_id=request.headers.get('X-Correlation-ID') or str(uuid.uuid4())
+ started=time.perf_counter();request_id=getattr(request.state,'request_id',None) or request.headers.get('X-Correlation-ID') or str(uuid.uuid4())
  response=None;outcome='ERROR'
  try:
   response=await call_next(request)
