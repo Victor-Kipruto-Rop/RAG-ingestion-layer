@@ -31,7 +31,8 @@ This document distinguishes code present in the repository from work that still 
 
 ## Phase 4 — Data quality and entity resolution
 - [x] Quality summary, source freshness, validation-rule descriptions and fuzzy match candidates are exposed.
-- [x] Match candidates are explicitly review-only; name similarity never triggers automatic merges.\n- [x] Added an append-only manual review decision API and dashboard queue with explicit reopen, decision history, audit events, and a dedicated `reviews:write` scope. Canonical registry fields are not changed by reviewer decisions.
+- [x] Match candidates are explicitly review-only; name similarity never triggers automatic merges.
+- [x] Added an append-only manual review decision API and dashboard queue with explicit reopen, decision history, audit events, and a dedicated `reviews:write` scope. Canonical registry fields are not changed by reviewer decisions.
 - [x] Added a regression test for quality summary output and review-only fuzzy match candidates.
 - [ ] Add tests for conflicting identifiers, repeated imports, false positives and freshness boundaries.
 - [x] Add a durable, append-only reviewer decision workflow with reopen support; decisions are audited and never auto-merge or modify canonical registry fields.\n- [ ] Validate review workflow against PostgreSQL migration-backed staging and define reviewer identity/role policy before customer-facing use.
