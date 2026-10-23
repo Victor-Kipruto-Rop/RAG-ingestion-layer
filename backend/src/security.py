@@ -107,8 +107,10 @@ def _validate_customer_api_key(raw_key, request):
         if not key or key.status != "active":
             raise HTTPException(401, "Invalid or revoked API key")
         now = datetime.now(timezone.utc)
-        if key.expires_at and key.expires_at <= now:
-            raise HTTPException(401, "This API key has expired")
+        if key.expires_at:
+            expires_at = key.expires_at if key.expires_at.tzinfo else key.expires_at.replace(tzinfo=timezone.utc)
+            if expires_at <= now:
+                raise HTTPException(401, "This API key has expired")
         if key.environment != runtime_environment:
             _audit_key_security_event(key, request, "api_key.environment_mismatch", {
                 "key_environment":key.environment,"requested_environment":runtime_environment,
