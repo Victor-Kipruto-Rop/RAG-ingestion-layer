@@ -40,3 +40,71 @@ def test_scope_mapping_for_sensitive_routes():
     assert _required_scope(request) == 'registry:read'
     request = SimpleNamespace(url=SimpleNamespace(path='/api/v1/warehouse/query-organization'), method='GET')
     assert _required_scope(request) == 'registry:read'
+
+
+def test_managed_key_prefix_never_falls_back_to_legacy_auth(monkeypatch):
+    from fastapi import Depends, FastAPI
+    from fastapi.testclient import TestClient
+    from src.security import require_api_key
+
+    app = FastAPI()
+
+    @app.get('/protected')
+    async def protected(identity=Depends(require_api_key)):
+        return {'identity': identity}
+
+    # A managed-looking key must not be accepted as a legacy key when managed
+    # key support is disabled, even if it is accidentally placed in the allowlist.
+    monkeypatch.setattr(settings, 'managed_api_keys_enabled', False)
+    monkeypatch.setattr(settings, 'require_hmac', False)
+    monkeypatch.setattr(settings, 'registry_api_keys', 'pg_sandbox_example_secret')
+    response = TestClient(app).get('/protected', headers={'X-API-Key': 'pg_sandbox_example_secret'})
+    assert response.status_code == 503
+    assert 'cannot fall back' in response.json()['detail'].lower()
+
+
+def test_sandbox_key_is_rejected_in_production_and_audited(monkeypatch):
+    from datetime import datetime, timezone
+    from fastapi import Depends, FastAPI
+    from fastapi.testclient import TestClient
+    from sqlalchemy import create_engine, select
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+    from src.database import Base
+    from src.models import ManagedAPIKey, APIKeySecurityEvent
+    import src.security as security
+
+    engine = create_engine('sqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    TestSession = sessionmaker(bind=engine, expire_on_commit=False)
+    monkeypatch.setattr(security, 'SessionLocal', TestSession)
+    monkeypatch.setattr(settings, 'datasource_environment', 'production')
+    monkeypatch.setattr(settings, 'app_env', 'development')
+    monkeypatch.setattr(settings, 'managed_api_keys_enabled', True)
+    monkeypatch.setattr(settings, 'require_hmac', False)
+    monkeypatch.setattr(settings, 'registry_api_keys', '')
+    prefix, secret, digest = new_key('sandbox')
+    with TestSession() as db:
+        db.add(ManagedAPIKey(
+            id='sandbox-test-key', name='test sandbox key', environment='sandbox',
+            key_prefix=prefix, secret_hash=digest, scopes=['registry:read'],
+            status='active', created_by='test', created_at=datetime.now(timezone.utc),
+        ))
+        db.commit()
+
+    app = FastAPI()
+
+    @app.get('/api/v1/registry/search')
+    async def protected(identity=Depends(security.require_api_key)):
+        return {'identity': identity}
+
+    response = TestClient(app).get('/api/v1/registry/search?q=sample', headers={'X-API-Key': secret})
+    assert response.status_code == 403
+    assert response.json()['detail']['code'] == 'API_KEY_ENVIRONMENT_MISMATCH'
+    with TestSession() as db:
+        event = db.scalar(select(APIKeySecurityEvent).where(APIKeySecurityEvent.event_type == 'environment_mismatch'))
+        assert event is not None
+        assert event.expected_environment == 'production'
+        assert event.key_environment == 'sandbox'
+        assert secret not in str(event.details)
+    engine.dispose()
