@@ -1,5 +1,4 @@
 import uuid
-from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -12,8 +11,6 @@ from .models import Organization, OrganizationReviewDecision, AuditLog
 from .security import require_api_key
 
 router = APIRouter(prefix="/api/v1/reviews", tags=["manual review"], dependencies=[Depends(require_api_key)])
-
-DECISIONS = {"possible_duplicate", "not_duplicate", "needs_more_evidence", "record_incorrect", "reopened"}
 
 
 class ReviewDecisionInput(BaseModel):
