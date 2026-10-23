@@ -143,3 +143,58 @@ def test_revoked_key_cannot_authenticate(monkeypatch):
         if row:
             db.delete(row)
         db.commit()
+
+
+def test_expired_managed_key_cannot_authenticate(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    monkeypatch.setattr(settings, "datasource_admin_token", "test-operator-token")
+    monkeypatch.setattr(settings, "datasource_environment", "sandbox")
+    created = client.post(
+        "/api/v1/admin/api-keys",
+        headers=admin_headers(),
+        json={"name": f"expired-{uuid.uuid4().hex[:8]}", "environment": "sandbox", "scopes": ["registry:read"]},
+    )
+    assert created.status_code == 201, created.text
+    item = created.json()["item"]
+    secret = created.json()["secret"]
+
+    with SessionLocal() as db:
+        row = db.get(ManagedAPIKey, item["id"])
+        assert row is not None
+        row.expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+        db.commit()
+
+    response = client.get("/api/v1/registry/search", params={"q": "example"}, headers={"X-API-Key": secret})
+    assert response.status_code == 401
+
+    with SessionLocal() as db:
+        row = db.get(ManagedAPIKey, item["id"])
+        if row:
+            db.delete(row)
+        db.commit()
+
+
+def test_production_key_is_rejected_in_sandbox(monkeypatch):
+    monkeypatch.setattr(settings, "datasource_admin_token", "test-operator-token")
+    monkeypatch.setattr(settings, "datasource_environment", "production")
+    created = client.post(
+        "/api/v1/admin/api-keys",
+        headers=admin_headers(),
+        json={"name": f"reverse-mismatch-{uuid.uuid4().hex[:8]}", "environment": "production", "scopes": ["registry:read"]},
+    )
+    assert created.status_code == 201, created.text
+    item = created.json()["item"]
+    secret = created.json()["secret"]
+
+    monkeypatch.setattr(settings, "datasource_environment", "sandbox")
+    response = client.get("/api/v1/registry/search", params={"q": "example"}, headers={"X-API-Key": secret})
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "API_KEY_ENVIRONMENT_MISMATCH"
+    assert "production" in response.json()["detail"]["message"].lower()
+
+    with SessionLocal() as db:
+        row = db.get(ManagedAPIKey, item["id"])
+        if row:
+            db.delete(row)
+        db.commit()
