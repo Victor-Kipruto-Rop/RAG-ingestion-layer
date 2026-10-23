@@ -12,7 +12,6 @@ _CORPORATE_COMPLIANCE_FIELDS={'company_status','entity_status','compliance_statu
 def _is_personal_payload_field(key):
  normalized=re.sub(r'[^a-z0-9]+','_',str(key).strip().lower()).strip('_')
  if normalized in _CORPORATE_COMPLIANCE_FIELDS:return False
- parts=set(normalized.split('_'))
  return any(re.search(rf'(?:^|_){re.escape(token)}(?:_|$)',normalized) for token in _PERSONAL_FIELD_TOKENS)
 
 PERSONAL_PAYLOAD_TOKENS={'director','shareholder','owner','individual','person','first_name','middle_name','last_name','email','phone','mobile','national_id','passport','date_of_birth','dob','residential','personal','contact_person','id_number','identity_number'}
