@@ -74,10 +74,19 @@ def process_job(job_id):
     db.add(AuditLog(action='registry_pdf_extraction_diagnostics',actor='ingestion-worker',file_name=job.file_name,details={'job_id':job.id,'page_count':diagnostics.page_count,'extracted_characters':diagnostics.extracted_characters,'needs_ocr':diagnostics.needs_ocr,'ocr_attempted':diagnostics.ocr_attempted,'ocr_available':diagnostics.ocr_available,'ocr_pages_processed':diagnostics.ocr_pages_processed,'manual_review_required':True}))
     db.commit();return
    if raw_import:raw_import.import_status='PROCESSING';db.flush()
-   processed=inserted=updated=skipped=0
+   processed=job.records_processed or 0
+   inserted=job.records_inserted or 0
+   updated=job.records_updated or 0
+   skipped=job.records_skipped or 0
    changed_lookup_keys=set()
+   batch_count=0
+   last_row_number=job.last_processed_row or 1
    for row_num,row in iter_csv_records_from_storage(job.object_key,settings.max_records_per_file):
+    if row_num <= last_row_number:
+     continue
     processed+=1
+    batch_count+=1
+    last_row_number=row_num
     try:
      rec=normalize_record(row);reg=rec.get('normalized_registration_number');pin=rec.get('normalized_tax_pin')
      if reg:changed_lookup_keys.add(f'registry:lookup:reg:{reg}')
