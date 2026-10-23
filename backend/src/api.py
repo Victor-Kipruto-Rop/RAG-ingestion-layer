@@ -135,6 +135,42 @@ def complete_direct_upload(job_id:str,db:Session=Depends(get_db)):
  db.add(AuditLog(action='registry_direct_upload_completed',actor='internal-service',file_name=job.file_name,details={'job_id':job.id,'correlation_id':job.correlation_id,'byte_size':actual_size}))
  db.commit()
  return {'job_id':job.id,'status':job.status,'file_name':job.file_name,'correlation_id':job.correlation_id,'message':'Object verified in private storage and queued for background processing.'}
+@router.post('/api/v1/ingestion/preview',dependencies=[Depends(require_api_key)])
+async def preview_upload(file:UploadFile=File(...)):
+ name=(file.filename or 'upload.csv').replace(chr(92),'/').split('/')[-1]
+ suffix='.'+name.rsplit('.',1)[-1].lower() if '.' in name else ''
+ if suffix not in {'.csv','.xlsx'}:raise HTTPException(415,'Preview supports CSV and XLSX files; PDF remains manual-review-only')
+ data=await file.read(5*1024*1024+1)
+ if len(data)>5*1024*1024:raise HTTPException(413,'Preview is limited to 5 MiB; submit the full file to create an ingestion job')
+ if not data:raise HTTPException(400,'Uploaded file is empty')
+ if suffix=='.xlsx':
+  if not data.startswith(b'PK\\x03\\x04'):raise HTTPException(415,'XLSX file signature is invalid')
+  from itertools import islice
+  from .ingestion.parser_xlsx import iter_xlsx_records
+  try:
+   iterator=iter_xlsx_records(data,21)
+   sample=list(islice(iterator,21))
+   iterator.close()
+  except ValueError as exc:raise HTTPException(422,str(exc)) from exc
+  columns=list(sample[0][1].keys()) if sample else []
+ else:
+  if b'\\x00' in data[:4096]:raise HTTPException(415,'CSV contains binary data')
+  try:text_data=data.decode('utf-8-sig')
+  except UnicodeDecodeError:
+   try:text_data=data.decode('cp1252')
+   except UnicodeDecodeError as exc:raise HTTPException(415,'CSV encoding is unsupported') from exc
+  try:
+   dialect=csv.Sniffer().sniff(text_data[:8192],delimiters=',;\\t|')
+  except csv.Error:dialect=csv.excel
+  reader=csv.DictReader(io.StringIO(text_data,newline=''),dialect=dialect)
+  columns=[str(h or '').strip() for h in (reader.fieldnames or [])]
+  if not columns or not any(columns):raise HTTPException(422,'CSV has no usable header row')
+  sample=[]
+  for index,row in enumerate(reader):
+   if index>=21:break
+   sample.append((index+2,{str(k or '').strip():str(v or '').strip()[:500] for k,v in row.items() if k is not None}))
+ return {'file_name':name,'file_type':suffix[1:],'columns':columns,'sample_rows':[{'row_number':number,'values':values} for number,values in sample[:20]],'sample_count':min(len(sample),20),'has_more':len(sample)>20,'preview_limit_bytes':5*1024*1024,'persisted':False,'message':'Preview only. No ingestion job or registry record was created.'}
+
 @router.post('/api/v1/ingestion/uploads',dependencies=[Depends(require_api_key)],status_code=202)
 async def upload(request:Request,file:UploadFile=File(...),db:Session=Depends(get_db),correlation_id:str|None=Header(default=None,alias='X-Correlation-ID'),idempotency_key:str|None=Header(default=None,alias='Idempotency-Key'),source_key:str|None=Header(default=None,alias='X-Registry-Source')):
  correlation_id=(correlation_id or getattr(request.state,'request_id',None) or str(uuid.uuid4()))[:100]
