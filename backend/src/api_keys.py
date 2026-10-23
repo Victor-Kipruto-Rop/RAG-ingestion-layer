@@ -52,6 +52,14 @@ def require_user_claims(authorization: str | None = Header(default=None, alias="
         raise HTTPException(401, "Invalid access token audience")
     return claims
 
+def _roles(claims: dict) -> set[str]:
+    roles = _roles(claims)
+    return set(roles)
+
+def _require_org_admin(claims: dict):
+    if not ({"owner", "admin"} & _roles(claims)):
+        raise HTTPException(403, "Only an organization owner or admin can rotate or revoke API keys")
+
 def _audit(db: Session, *, org_id: str, actor: str, action: str, key_id: str | None = None, details: dict | None = None):
     db.add(ApiKeyAuditEvent(
         organization_id=org_id[:200], actor_user_id=str(actor)[:200], api_key_id=key_id,
@@ -116,6 +124,7 @@ def create_api_key(payload: CreateApiKey, claims: dict = Depends(require_user_cl
 
 @router.post("/{key_id}/rotate", status_code=201)
 def rotate_api_key(key_id: str, claims: dict = Depends(require_user_claims), db: Session = Depends(get_db)):
+    _require_org_admin(claims)
     row = db.scalar(select(ApiKey).where(ApiKey.id == key_id, ApiKey.organization_id == str(claims["org_id"])))
     if not row:
         raise HTTPException(404, "API key not found")
@@ -129,6 +138,7 @@ def rotate_api_key(key_id: str, claims: dict = Depends(require_user_claims), db:
 
 @router.delete("/{key_id}", status_code=204)
 def revoke_api_key(key_id: str, claims: dict = Depends(require_user_claims), db: Session = Depends(get_db)):
+    _require_org_admin(claims)
     row = db.scalar(select(ApiKey).where(ApiKey.id == key_id, ApiKey.organization_id == str(claims["org_id"])))
     if not row:
         raise HTTPException(404, "API key not found")
