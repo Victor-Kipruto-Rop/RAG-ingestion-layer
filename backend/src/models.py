@@ -157,7 +157,7 @@ class ManagedAPIKey(Base):
 
 class APIKeySecurityEvent(Base):
  __tablename__='api_key_security_events'
- __table_args__=(Index('ix_api_key_security_events_created_at','created_at'),Index('ix_api_key_security_events_key_id','key_id'))
+ __table_args__=(Index('ix_api_key_security_events_created_at','created_at'),)
  id:Mapped[str]=mapped_column(String(36),primary_key=True,default=lambda:str(uuid.uuid4()))
  key_id:Mapped[str|None]=mapped_column(String(36),index=True)
  key_prefix:Mapped[str|None]=mapped_column(String(80))
