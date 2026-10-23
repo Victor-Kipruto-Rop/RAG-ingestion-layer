@@ -373,7 +373,7 @@ export function APIKeysPage() {
         <label>Environment<select value={environment} onChange={e => setEnvironment(e.target.value)}><option value="sandbox">Sandbox · testing only</option><option value="production">Production · live requests</option></select></label>
         <label>Expiry<select value={expires} onChange={e => setExpires(e.target.value)}><option value="30">30 days</option><option value="90">90 days</option><option value="180">180 days</option><option value="365">365 days</option><option value="">No expiry</option></select></label>
         <div className="keys-scope-field"><span>Permissions</span><div className="keys-scopes">
-          {['registry:read','ingestion:write','sources:write','exports:read'].map(scope => <label key={scope}><input type="checkbox" checked={scopes.includes(scope)} onChange={() => toggleScope(scope)}/><span>{scope}</span></label>)}
+          {['registry:read','ingestion:write','sources:write','exports:read','reviews:write'].map(scope => <label key={scope}><input type="checkbox" checked={scopes.includes(scope)} onChange={() => toggleScope(scope)}/><span>{scope}</span></label>)}
         </div></div>
         <div className="keys-environment-warning"><ShieldCheck size={17}/><span><strong>Environment lock</strong> — sandbox credentials are rejected by production deployments, return API_KEY_ENVIRONMENT_MISMATCH, and generate a security event. The server deployment's DATASOURCE_ENVIRONMENT determines the target; a client header cannot override it.</span></div>
         <button className="button-primary" disabled={loading || !token.trim() || scopes.length === 0}><KeyRound size={16}/> Generate {environment === 'sandbox' ? 'sandbox' : 'production'} key</button>
