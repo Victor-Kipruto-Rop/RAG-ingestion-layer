@@ -31,11 +31,11 @@ if ($envText -match "(?m)^\s*REGISTRY_API_KEYS\s*=\s*(change-this-local-only-key
 }
 
 Write-Host "Validating local Compose configuration..."
-docker compose -f docker-compose.windows.local.yml config --quiet
+docker compose config --quiet
 if ($LASTEXITCODE -ne 0) { throw "Compose configuration validation failed." }
 
 Write-Host "Building and starting local API, worker, and dashboard..."
-docker compose -f docker-compose.windows.local.yml up -d --build
+docker compose up -d --build
 if ($LASTEXITCODE -ne 0) { throw "Local stack failed to start. Inspect Docker Compose logs." }
 
 Write-Host "Waiting for API readiness..."
@@ -49,8 +49,8 @@ for ($i = 0; $i -lt 60; $i++) {
     }
 }
 if (-not $apiReady) {
-    docker compose -f docker-compose.windows.local.yml ps
-    docker compose -f docker-compose.windows.local.yml logs --tail 80 registry-api
+    docker compose ps
+    docker compose logs --tail 80 registry-api
     throw "API did not become ready within 120 seconds. Review the API logs above."
 }
 
@@ -65,12 +65,12 @@ for ($i = 0; $i -lt 60; $i++) {
     }
 }
 if (-not $frontendReady) {
-    docker compose -f docker-compose.windows.local.yml ps
-    docker compose -f docker-compose.windows.local.yml logs --tail 80 registry-frontend
+    docker compose ps
+    docker compose logs --tail 80 registry-frontend
     throw "Dashboard did not respond within 120 seconds. Review the frontend logs above."
 }
 
-docker compose -f docker-compose.windows.local.yml ps
+docker compose ps
 Write-Host ""
 Write-Host "Local stack passed HTTP readiness checks." -ForegroundColor Green
 Write-Host "Dashboard: http://localhost:5173" -ForegroundColor Green
