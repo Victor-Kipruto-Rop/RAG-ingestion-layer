@@ -140,7 +140,7 @@ async def upload(request:Request,file:UploadFile=File(...),db:Session=Depends(ge
  correlation_id=(correlation_id or getattr(request.state,'request_id',None) or str(uuid.uuid4()))[:100]
  name=(file.filename or 'upload.csv').replace(chr(92), '/').split('/')[-1]
  suffix='.'+name.rsplit('.',1)[-1].lower() if '.' in name else ''
- if suffix not in {'.csv','.pdf'}:raise HTTPException(415,'Only CSV, XLSX, and PDF files are accepted')
+ if suffix not in {'.csv','.pdf','.xlsx'}:raise HTTPException(415,'Only CSV, XLSX, and PDF files are accepted')
  if idempotency_key:
   prior=db.scalar(select(IngestionJob).where(IngestionJob.idempotency_key==idempotency_key))
   if prior:return {'job_id':prior.id,'status':prior.status,'idempotent_replay':True}
