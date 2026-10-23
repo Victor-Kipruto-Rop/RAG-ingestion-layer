@@ -127,6 +127,8 @@ def complete_direct_upload(job_id:str,db:Session=Depends(get_db)):
   job.status='FAILED';job.error_summary='PDF signature validation failed.';job.completed_at=datetime.now(timezone.utc);raw.import_status='FAILED';db.commit();raise HTTPException(415,'PDF file signature is invalid')
  if suffix=='.csv' and b'\\x00' in prefix:
   job.status='FAILED';job.error_summary='CSV binary signature validation failed.';job.completed_at=datetime.now(timezone.utc);raw.import_status='FAILED';db.commit();raise HTTPException(415,'CSV contains binary data')
+ if suffix=='.xlsx' and not prefix.startswith(b'PK'):
+  job.status='FAILED';job.error_summary='XLSX ZIP signature validation failed.';job.completed_at=datetime.now(timezone.utc);raw.import_status='FAILED';db.commit();raise HTTPException(415,'XLSX file signature is invalid')
  raw.byte_size=actual_size;raw.import_status='QUEUED'
  raw.metadata_json={**(raw.metadata_json or {}),'r2_etag':str(metadata.get('ETag','')).strip('"'),'upload_completed_at':datetime.now(timezone.utc).isoformat()}
  job.status='QUEUED';job.error_summary=None
@@ -154,6 +156,7 @@ async def upload(request:Request,file:UploadFile=File(...),db:Session=Depends(ge
  if size==0:raise HTTPException(400,'Uploaded file is empty')
  if suffix=='.pdf' and not prefix.startswith(b'%PDF-'):raise HTTPException(415,'File extension is PDF but the file signature is invalid')
  if suffix=='.csv' and b'\x00' in prefix:raise HTTPException(415,'CSV contains binary data')
+ if suffix=='.xlsx' and not prefix.startswith(b'PK'):raise HTTPException(415,'XLSX file signature is invalid')
  digest_hex=digest.hexdigest()
  if idempotency_key:
   prior=db.scalar(select(IngestionJob).where(IngestionJob.idempotency_key==idempotency_key))
