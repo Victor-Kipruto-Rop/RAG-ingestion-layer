@@ -63,10 +63,6 @@ def validate_runtime_config():
   missing.append('R2_ACCOUNT_ID/R2_ACCESS_KEY_ID/R2_SECRET_ACCESS_KEY/R2_BUCKET_NAME')
  if settings.require_hmac and not settings.hmac_shared_secret:
   missing.append('HMAC_SHARED_SECRET')
- if settings.datasource_environment.strip().lower() not in {'production','sandbox'}:
-  missing.append('DATASOURCE_ENVIRONMENT must be explicitly set to production or sandbox')
- if not settings.datasource_admin_token:
-  missing.append('DATASOURCE_ADMIN_TOKEN (operator API-key management)')
  if settings.require_hmac and not settings.redis_url:
   missing.append('REDIS_URL (required for distributed HMAC replay protection)')
  if missing:
