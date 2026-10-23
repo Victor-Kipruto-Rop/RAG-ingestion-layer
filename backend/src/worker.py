@@ -9,7 +9,7 @@ from .models import IngestionJob,Organization,OrganizationRecordVersion,Ingestio
 from .storage import download_bytes
 from .ingestion.parser_csv import iter_csv_records_from_storage
 from .ingestion.normalizer import normalize_record
-from .entity_resolution import similarity_score
+from .entity_resolution import similarity_score, find_existing_organization
 from .cache import invalidate_lookup_keys
 structlog.configure(processors=[structlog.processors.TimeStamper(fmt='iso'),structlog.processors.add_log_level,structlog.processors.format_exc_info,structlog.processors.JSONRenderer()],logger_factory=structlog.stdlib.LoggerFactory())
 logging.basicConfig(level=logging.INFO,format='%(message)s')
@@ -95,9 +95,7 @@ def process_job(job_id):
      rec=normalize_record(row);reg=rec.get('normalized_registration_number');pin=rec.get('normalized_tax_pin')
      if reg:changed_lookup_keys.add(f'registry:lookup:reg:{reg}')
      if pin:changed_lookup_keys.add(f'registry:lookup:pin:{pin}')
-     existing=None
-     if reg:existing=db.scalar(select(Organization).where(Organization.normalized_registration_number==reg).limit(1))
-     if existing is None and not reg and pin:existing=db.scalar(select(Organization).where(Organization.normalized_tax_pin==pin).limit(1))
+     existing=find_existing_organization(db,reg,pin)
      potential_duplicates=[]
      if existing is None and rec.get('legal_name'):
       name_tokens=rec['normalized_legal_name'].split()
@@ -127,8 +125,11 @@ def process_job(job_id):
     except ValueError as exc:
      skipped+=1
      message=_sanitize_diagnostic(exc,row)[:1000]
-     db.add(IngestionRowError(job_id=job.id,row_number=row_num,error_code='INVALID_ROW',message=message))
-     db.add(FailedImportDLQ(job_id=job.id,row_number=row_num,error_code='INVALID_ROW',error_type=type(exc).__name__,message=message,sanitized_row=_sanitize_dlq_row(row),traceback_text=_sanitize_diagnostic(traceback.format_exc(),row)))
+     error_code='IDENTIFIER_CONFLICT' if str(exc).startswith('identifier_conflict:') else 'INVALID_ROW'
+     db.add(IngestionRowError(job_id=job.id,row_number=row_num,error_code=error_code,message=message))
+     db.add(FailedImportDLQ(job_id=job.id,row_number=row_num,error_code=error_code,error_type='IdentityConflict' if error_code=='IDENTIFIER_CONFLICT' else type(exc).__name__,message=message,sanitized_row=_sanitize_dlq_row(row),traceback_text=_sanitize_diagnostic(traceback.format_exc(),row)))
+     if error_code=='IDENTIFIER_CONFLICT':
+      db.add(AuditLog(action='registry_identifier_conflict',actor='ingestion-worker',file_name=job.file_name,details={'job_id':job.id,'row_number':row_num,'error_code':error_code,'decision':'manual_review_required'}))
     except Exception:
      raise
     if batch_count >= max(1, settings.ingestion_batch_size):
