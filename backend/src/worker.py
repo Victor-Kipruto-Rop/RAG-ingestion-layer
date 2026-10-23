@@ -4,7 +4,7 @@ from datetime import datetime,timezone,timedelta
 from sqlalchemy import select
 from .config import settings
 from .database import SessionLocal
-from .models import IngestionJob,Organization,OrganizationRecordVersion,IngestionRowError,AuditLog
+from .models import IngestionJob,Organization,OrganizationRecordVersion,IngestionRowError,AuditLog,WarehouseRawImport
 from .storage import download_bytes
 from .ingestion.parser_csv import iter_csv_records
 from .ingestion.normalizer import normalize_record
@@ -27,8 +27,12 @@ def process_job(job_id):
   try:
    if not job.object_key:raise RuntimeError('Ingestion source object is missing')
    suffix='.'+job.file_name.rsplit('.',1)[-1].lower() if '.' in job.file_name else ''
+   raw_import=db.scalar(select(WarehouseRawImport).where(WarehouseRawImport.ingestion_job_id==job.id))
    if suffix=='.pdf':
-    job.status='NEEDS_PDF_PROCESSING';job.error_summary='PDF extraction/OCR is not enabled; upload is retained for a future processing adapter.';job.completed_at=now();db.commit();return
+    job.status='NEEDS_PDF_PROCESSING';job.error_summary='PDF extraction/OCR is not enabled; upload is retained for a future processing adapter.';job.completed_at=now()
+    if raw_import:raw_import.import_status='NEEDS_PDF_PROCESSING'
+    db.commit();return
+   if raw_import:raw_import.import_status='PROCESSING';db.flush()
    data=download_bytes(job.object_key)
    processed=inserted=updated=skipped=0
    for row_num,row in iter_csv_records(data,settings.max_records_per_file):
@@ -53,7 +57,9 @@ def process_job(job_id):
     except Exception:
      raise
    job.records_processed=processed;job.records_inserted=inserted;job.records_updated=updated;job.records_skipped=skipped
-   job.status='COMPLETED_WITH_ERRORS' if skipped else 'COMPLETED';job.error_summary=f'{skipped} row(s) were skipped; see row-errors endpoint.' if skipped else None;job.completed_at=now()
+   job.status='COMPLETED_WITH_ERRORS' if skipped else 'COMPLETED'
+   if raw_import:raw_import.import_status=job.status
+   job.error_summary=f'{skipped} row(s) were skipped; see row-errors endpoint.' if skipped else None;job.completed_at=now()
    db.add(AuditLog(action='registry_ingestion_completed',actor='ingestion-worker',file_name=job.file_name,details={'job_id':job.id,'processed':processed,'inserted':inserted,'updated':updated,'skipped':skipped}))
    db.commit()
   except Exception as exc:
@@ -61,10 +67,15 @@ def process_job(job_id):
    with SessionLocal() as retry_db:
     job=retry_db.get(IngestionJob,job_id)
     if job:
+     raw_import=retry_db.scalar(select(WarehouseRawImport).where(WarehouseRawImport.ingestion_job_id==job.id))
      if job.attempts < settings.worker_max_attempts:
-      job.status='QUEUED';job.next_attempt_at=now()+timedelta(seconds=max(1,settings.worker_retry_seconds)*(2**max(0,job.attempts-1)));job.error_summary=f'Attempt {job.attempts} failed; retry scheduled. {str(exc)[:500]}'
+      job.status='QUEUED'
+      if raw_import:raw_import.import_status='QUEUED'
+      job.next_attempt_at=now()+timedelta(seconds=max(1,settings.worker_retry_seconds)*(2**max(0,job.attempts-1)));job.error_summary=f'Attempt {job.attempts} failed; retry scheduled. {str(exc)[:500]}'
      else:
-      job.status='FAILED';job.error_summary=f'Ingestion failed after {job.attempts} attempts: {str(exc)[:800]}';job.completed_at=now()
+      job.status='FAILED'
+      if raw_import:raw_import.import_status='FAILED'
+      job.error_summary=f'Ingestion failed after {job.attempts} attempts: {str(exc)[:800]}';job.completed_at=now()
      retry_db.commit()
    log.exception('Job processing failed job_id=%s',job_id)
 def recover_stale_jobs():
