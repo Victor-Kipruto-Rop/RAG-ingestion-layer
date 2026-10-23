@@ -5,7 +5,8 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from src.config import settings
-from src.database import Base
+from src.api_keys import router as api_keys_router
+from src.database import Base, get_db
 from src.managed_keys import APIKeySecurityEvent, ManagedAPIKey, issue_key, key_public
 from src.security import require_api_key
 
@@ -72,3 +73,51 @@ def test_key_public_serializer_never_exposes_secret_or_hash():
     assert "secret" not in payload
     assert "key_hash" not in payload
     assert issued["secret"] not in str(payload)
+
+
+
+def test_operator_can_create_list_and_revoke_key_without_revealing_secret(monkeypatch):
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    TestingSession = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+
+    def override_db():
+        with TestingSession() as db:
+            yield db
+
+    monkeypatch.setattr("src.managed_keys.SessionLocal", TestingSession)
+    monkeypatch.setattr(settings, "key_management_token", "test-only-management-token")
+    monkeypatch.setattr(settings, "datasource_environment", "development")
+    monkeypatch.setattr(settings, "registry_api_keys", "")
+
+    app = FastAPI()
+    app.include_router(api_keys_router)
+    app.dependency_overrides[get_db] = override_db
+
+    client = TestClient(app)
+    headers = {"X-Key-Management-Token": "test-only-management-token"}
+    created = client.post(
+        "/api/v1/admin/api-keys",
+        headers=headers,
+        json={
+            "name": "Sandbox test key",
+            "environment": "sandbox",
+            "scopes": ["registry:read"],
+            "expires_in_days": 30,
+        },
+    )
+    assert created.status_code == 201
+    payload = created.json()
+    secret = payload["secret"]
+    key_id = payload["key"]["id"]
+    assert secret.startswith("pg_sandbox_")
+    assert "key_hash" not in payload["key"]
+
+    listed = client.get("/api/v1/admin/api-keys?environment=sandbox", headers=headers)
+    assert listed.status_code == 200
+    assert secret not in listed.text
+    assert listed.json()["count"] == 1
+
+    revoked = client.post(f"/api/v1/admin/api-keys/{key_id}/revoke", headers=headers)
+    assert revoked.status_code == 200
+    assert revoked.json()["key"]["status"] == "revoked"
