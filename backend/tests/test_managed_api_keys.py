@@ -2,7 +2,7 @@ from pathlib import Path
 from types import SimpleNamespace
 import hashlib
 from src.key_management import new_key, ALLOWED_SCOPES
-from src.security import _effective_environment, _required_scope
+from src.security import _effective_environment, _required_scope, _scope_is_allowed
 from src.config import settings
 
 def test_sandbox_key_has_environment_specific_prefix_and_hash_only_material():
@@ -50,3 +50,9 @@ def test_managed_key_sql_migration_uses_valid_dollar_quoting_and_locks_down_brow
     assert 'ENABLE ROW LEVEL SECURITY' in sql
     assert "REVOKE ALL ON TABLE public.managed_api_keys FROM anon" in sql
     assert "REVOKE ALL ON TABLE public.api_key_security_events FROM authenticated" in sql
+
+
+def test_managed_keys_fail_closed_when_a_protected_route_has_no_scope_mapping():
+    assert _scope_is_allowed(['registry:read'], 'registry:read') is True
+    assert _scope_is_allowed(['registry:read'], 'sources:write') is False
+    assert _scope_is_allowed(['registry:read', 'sources:write'], None) is False
