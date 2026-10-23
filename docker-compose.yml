@@ -4,11 +4,23 @@ services:
     env_file: .env
     ports:
       - "8000:8000"
+    volumes:
+      - registry_uploads:/app/.registry-uploads
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=3)"]
       interval: 30s
       timeout: 5s
       retries: 3
+  registry-worker:
+    build: ./backend
+    env_file: .env
+    command: ["python", "-m", "src.worker"]
+    volumes:
+      - registry_uploads:/app/.registry-uploads
+    depends_on:
+      registry-api:
+        condition: service_healthy
+    restart: unless-stopped
   registry-frontend:
     image: node:22-alpine
     working_dir: /app
@@ -22,3 +34,5 @@ services:
       VITE_API_BASE_URL: http://localhost:8000
     depends_on:
       - registry-api
+volumes:
+  registry_uploads:
