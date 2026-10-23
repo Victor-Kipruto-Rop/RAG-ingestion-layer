@@ -1,8 +1,7 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { api } from './api.js';
 import { AlertTriangle, Check, Copy, KeyRound, Plus, RefreshCw, ShieldCheck, Trash2, Eye, EyeOff } from 'lucide-react';
 
-const TOKEN_SLOT = 'pesaguard.datasource.user_access_token';
 const dateLabel = value => value ? new Date(value).toLocaleString() : 'Never';
 async function request(path, token, options = {}) {
   const response = await api(path, { ...options, headers: { ...(options.headers || {}), Authorization: `Bearer ${token}` } });
@@ -14,7 +13,7 @@ function friendlyError(error) {
 }
 
 export default function ApiKeysPanel() {
-  const [token, setToken] = useState(() => sessionStorage.getItem(TOKEN_SLOT) || '');
+  const [token, setToken] = useState('');
   const [connected, setConnected] = useState(false);
   const [items, setItems] = useState([]);
   const [events, setEvents] = useState([]);
@@ -37,12 +36,10 @@ export default function ApiKeysPanel() {
         request('/api/v1/keys/audit/events?limit=50', token),
       ]);
       setItems(keyResult.items || []); setEvents(auditResult.items || []);
-      sessionStorage.setItem(TOKEN_SLOT, token.trim());
       setConnected(true);
     } catch (e) { setConnected(false); setError(friendlyError(e)); }
     finally { setBusy(false); }
   }, [token]);
-  useEffect(() => { if (token) refresh(); }, []); // validate a previously entered session token once on mount
 
   const create = async (e) => {
     e.preventDefault(); setBusy(true); setError(''); setMessage(''); setSecret('');
@@ -73,7 +70,7 @@ export default function ApiKeysPanel() {
   return <div className="api-keys-page">
     <div className="page-heading"><div><div className="eyebrow-label">ACCESS & SECURITY</div><h1>API keys</h1><p>Create separate credentials for sandbox testing and live production integrations.</p></div><button className="button-secondary" onClick={refresh} disabled={busy || !token}><RefreshCw size={15} /> Refresh</button></div>
     <div className="key-security-note"><ShieldCheck size={20} /><div><strong>Environment isolation is enforced by the API</strong><p>Sandbox keys only work on the sandbox deployment. Production keys only work on production. Changing a dropdown or request header cannot override the server environment.</p></div></div>
-    {!connected && <section className="panel key-auth-panel"><div className="panel-heading"><div><h2>Connect your PesaGuard account</h2><p>Paste a short-lived access token issued by the trusted PesaGuard identity service. This is not your datasource service API key.</p></div><KeyRound size={20} /></div><label className="key-field-label">PesaGuard user access token<input type="password" value={token} onChange={e => setToken(e.target.value)} autoComplete="off" placeholder="Bearer token (value only)" /></label><div className="key-form-actions"><button className="button-primary" onClick={refresh} disabled={!token.trim() || busy}>Connect account</button><span>Stored in this browser tab only.</span></div></section>}
+    {!connected && <section className="panel key-auth-panel"><div className="panel-heading"><div><h2>Connect your PesaGuard account</h2><p>Paste a short-lived access token issued by the trusted PesaGuard identity service. This is not your datasource service API key.</p></div><KeyRound size={20} /></div><label className="key-field-label">PesaGuard user access token<input type="password" value={token} onChange={e => setToken(e.target.value)} autoComplete="off" placeholder="Bearer token (value only)" /></label><div className="key-form-actions"><button className="button-primary" onClick={refresh} disabled={!token.trim() || busy}>Connect account</button><span>Kept in memory only; re-enter after reload or when you leave this page.</span></div></section>}
     {error && <div className="alert-banner error"><AlertTriangle size={17} /><span>{error}</span><button onClick={() => setError('')} aria-label="Dismiss error">×</button></div>}
     {message && <div className="alert-banner success"><Check size={17} /><span>{message}</span><button onClick={() => setMessage('')} aria-label="Dismiss message">×</button></div>}
     {secret && <section className="panel generated-secret"><div className="secret-heading"><div className="heading-icon"><KeyRound size={18} /></div><div><h2>Copy your new API key</h2><p>This secret is shown only once. Store it in a secrets manager and never expose it in frontend code.</p></div></div><div className="secret-value"><code>{showSecret ? secret : '•'.repeat(36)}</code><button className="icon-button" onClick={() => setShowSecret(v => !v)} aria-label={showSecret ? 'Hide secret' : 'Show secret'}>{showSecret ? <EyeOff size={17} /> : <Eye size={17} />}</button><button className="button-secondary" onClick={copySecret}><Copy size={15} /> Copy</button></div><button className="button-link" onClick={() => { setSecret(''); setShowSecret(false); }}>I have stored the key</button></section>}
