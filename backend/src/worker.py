@@ -96,11 +96,17 @@ def recover_stale_jobs():
  with SessionLocal() as db:
   stale=db.scalars(select(IngestionJob).where(IngestionJob.status=='PROCESSING',IngestionJob.started_at<cutoff)).all()
   for job in stale:
+   raw_import=db.scalar(select(WarehouseRawImport).where(WarehouseRawImport.ingestion_job_id==job.id))
    if job.attempts < settings.worker_max_attempts:
     job.status='QUEUED';job.next_attempt_at=now()+timedelta(seconds=max(1,settings.worker_retry_seconds));job.error_summary='Recovered stale processing job after worker interruption.'
+    if raw_import:raw_import.import_status='QUEUED'
    else:
     job.status='FAILED';job.completed_at=now();job.error_summary='Worker interrupted repeatedly; maximum attempts reached.'
-  if stale:db.commit();log.warning('Recovered stale jobs: %s',len(stale))
+    if raw_import:raw_import.import_status='FAILED'
+   db.add(AuditLog(action='registry_stale_job_recovered',actor='ingestion-worker',file_name=job.file_name,details={'job_id':job.id,'attempts':job.attempts,'recovered_status':job.status}))
+  if stale:
+   db.commit()
+   log.warning('Recovered stale jobs: %s',len(stale))
 def run_batch(max_jobs=None):
  """Process a bounded number of eligible jobs, then exit for scheduled runners."""
  logging.basicConfig(level=logging.INFO)
