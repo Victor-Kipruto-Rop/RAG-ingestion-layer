@@ -286,7 +286,7 @@ function ValidationRulesPage({ request }) {
   </div>;
 }
 
-function APIKeysPage() {
+export function APIKeysPage() {
   const [token, setToken] = useState('');
   const [items, setItems] = useState([]);
   const [events, setEvents] = useState([]);
