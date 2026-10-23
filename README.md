@@ -1,27 +1,59 @@
-# PesaGuard Internal Registry System
+# PesaGuard Registry Datasource
 
-FastAPI service for importing authorized corporate registry CSV datasets, normalizing company records, and providing authenticated internal lookups to PesaGuard. Local records are not authoritative KYB verification.
+A standalone organization-data warehouse for PesaGuard. It imports authorized registry datasets, normalizes and searches organization records, preserves source provenance and change history, and exposes a protected internal API.
 
-## Quick start
-1. Copy `.env.example` to `.env` and set a long random `REGISTRY_API_KEYS` value.
-2. Use PostgreSQL/Supabase in production; SQLite is supported for local smoke testing.
-3. `python -m venv .venv` and activate it.
-4. `pip install -r backend/requirements.txt`
-5. `uvicorn src.main:app --app-dir backend --reload --port 8000`
-6. `cd frontend && npm install && npm run dev`
-7. Run tests with `pip install -r backend/requirements.txt && pytest -q` from the repository root after setting `PYTHONPATH=backend`.
+This is a datasource, not the PesaGuard customer onboarding system and not an authority that independently certifies companies. Imported data is marked unverified unless a trusted verification workflow establishes otherwise.
 
-Set `DATABASE_URL` to a SQLAlchemy PostgreSQL URL. Configure private R2 credentials to preserve original uploads. Never commit `.env` or production secrets. In production, apply `database/migrations/001_initial.sql` and set `APP_ENV=production`; the service intentionally does not auto-create production tables.
+## Local development
 
-## API
-- `GET /health/live` process liveness
-- `GET /health/ready` database readiness
-- `GET /api/v1/registry/lookup?reg_no=...` authenticated exact lookup
-- `GET /api/v1/registry/search?q=...` authenticated search
-- `GET /api/v1/organizations` authenticated paginated records
-- `POST /api/v1/ingestion/uploads` authenticated CSV/PDF upload
-- `GET /api/v1/ingestion/jobs` authenticated ingestion history
-- `GET /api/v1/metrics/summary` authenticated dashboard metrics
-- `GET /api/v1/exports/organizations.csv` authenticated CSV export
+1. Copy .env.example to .env; set a long random REGISTRY_API_KEYS secret.
+2. For local smoke tests, SQLite is supported. For production, use Supabase PostgreSQL and private Cloudflare R2.
+3. Create and activate a Python virtual environment.
+4. Install backend dependencies: pip install -r backend/requirements.txt.
+5. Start the API from the repository root: uvicorn src.main:app --app-dir backend --reload --port 8000.
+6. In another terminal: cd frontend && npm install && npm run dev.
+7. Tests: PYTHONPATH=backend pytest -q.
 
-Pass `X-API-Key`. This first implementation imports CSV synchronously within bounded request limits; move large imports to a durable worker before high-volume production use. PDF upload is tracked but not yet imported into records. OCR and external provider fallback are not configured. Do not represent this implementation as complete authoritative KYB verification.
+Do not commit .env, API keys, database URLs, or R2 credentials.
+
+## Database migrations
+
+Apply in order to PostgreSQL/Supabase:
+1. database/migrations/001_initial.sql
+2. database/migrations/002_provenance_and_versions.sql
+
+Set APP_ENV=production only after migrations are applied. Production startup intentionally does not create tables automatically.
+
+## PesaGuard service connection
+
+Configure REGISTRY_API_KEYS on this service and the matching secret in the PesaGuard backend only. PesaGuard should call this service over HTTPS with X-API-Key. Never place this service key in React, a mobile application, or any browser-visible environment variable. Use a separate admin authentication mechanism for the dashboard.
+
+Example request:
+
+    GET /api/v1/registry/lookup?reg_no=CPR-123456
+    X-API-Key: <server-side-secret>
+
+The API returns found, a matching organization when present, source metadata, data-quality state, and timestamps. A local record is not proof of current legal status or authoritative KYB verification.
+
+## Core endpoints
+
+- GET /health/live
+- GET /health/ready
+- GET /api/v1/registry/lookup?reg_no=...
+- GET /api/v1/registry/lookup?tax_pin=...
+- GET /api/v1/registry/search?q=...
+- GET /api/v1/organizations?page=1&page_size=25
+- POST /api/v1/ingestion/uploads
+- GET /api/v1/ingestion/jobs
+- GET /api/v1/metrics/summary
+- GET /api/v1/exports/organizations.csv
+
+## Current limitations
+
+- CSV import is synchronous and bounded; durable background workers and streaming uploads are required for large-scale ingestion.
+- PDF uploads are tracked but PDF extraction/OCR and record import are not implemented.
+- The React dashboard currently uses the internal API key in its browser request flow. Do not deploy that dashboard for production administration until a separate admin authentication layer is implemented. The PesaGuard-to-registry integration key must remain server-side.
+- External government or commercial registry integrations are not activated.
+- Run CI and production integration tests before relying on this service for live decisions.
+
+See docs/ARCHITECTURE.md for the operating contract and scale roadmap.
