@@ -37,14 +37,14 @@ def test_tab_delimited_csv_is_detected():
     assert rows == [(2, {"legal_name": "Alpha Ltd", "status": "ACTIVE"})]
 
 
-def test_extra_columns_are_rejected_instead_of_silently_dropped():
-    with pytest.raises(ValueError, match="more values"):
-        list(iter_csv_records(b"legal_name,status\nAlpha Ltd,ACTIVE,UNEXPECTED\n", 10))
+def test_extra_columns_are_marked_for_dead_letter_handling():
+    rows = list(iter_csv_records(b"legal_name,status\nAlpha Ltd,ACTIVE,UNEXPECTED\n", 10))
+    assert rows == [(2, {"__csv_parse_error__": "CSV row contains more values than the header"})]
 
 
-def test_missing_trailing_values_are_rejected():
-    with pytest.raises(ValueError, match="fewer values"):
-        list(iter_csv_records(b"legal_name,status\nAlpha Ltd\n", 10))
+def test_missing_trailing_values_are_marked_for_dead_letter_handling():
+    rows = list(iter_csv_records(b"legal_name,status\nAlpha Ltd\n", 10))
+    assert rows == [(2, {"__csv_parse_error__": "CSV row contains fewer values than the header"})]
 
 
 def test_duplicate_headers_are_rejected_case_insensitively():
