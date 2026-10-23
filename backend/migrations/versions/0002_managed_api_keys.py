@@ -92,12 +92,12 @@ def upgrade():
             DO $
             BEGIN
               IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
-                REVOKE ALL ON TABLE public.managed_api_keys FROM anon;
-                REVOKE ALL ON TABLE public.api_key_security_events FROM anon;
+                EXECUTE 'REVOKE ALL ON TABLE public.managed_api_keys FROM anon';
+                EXECUTE 'REVOKE ALL ON TABLE public.api_key_security_events FROM anon';
               END IF;
               IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
-                REVOKE ALL ON TABLE public.managed_api_keys FROM authenticated;
-                REVOKE ALL ON TABLE public.api_key_security_events FROM authenticated;
+                EXECUTE 'REVOKE ALL ON TABLE public.managed_api_keys FROM authenticated';
+                EXECUTE 'REVOKE ALL ON TABLE public.api_key_security_events FROM authenticated';
               END IF;
             END $;
         """)
