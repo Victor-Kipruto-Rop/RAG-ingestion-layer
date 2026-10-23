@@ -76,6 +76,7 @@ The API returns found, a matching organization when present, source metadata, da
 - `GET/POST /api/v1/sources`
 - `POST /api/v1/ingestion/uploads`
 - `GET /api/v1/ingestion/jobs`
+- `POST /api/v1/ingestion/jobs/{job_id}/retry` (failed CSV/XLSX jobs only; preserves committed row progress)
 - `GET /api/v1/ingestion/jobs/{job_id}/errors`
 - `GET /api/v1/metrics/summary`
 - `GET /api/v1/exports/organizations.csv`
