@@ -30,7 +30,7 @@ def test_name_required():
  else:raise AssertionError('Expected missing legal name validation')
 def test_csv_ingestion_is_queued_then_processed_with_provenance(monkeypatch):
  reg='TEST'+uuid.uuid4().hex[:12].upper()
- csv_data=f'Company Name,Registration No,Tax PIN\nFirst Example Limited,{reg},P000001\nUpdated Example Limited,{reg},\n,INVALID-ROW,P000002\n'
+ csv_data=f'Company Name,Registration No,Tax PIN\nFirst Example Limited,{reg},P000001\nUpdated Example Limited,{reg},\n,INVALID-ROW,P000002\nMalformed Row,INVALID-EXTRA,P000003,EXTRA\n'
  correlation_id='test-correlation-'+uuid.uuid4().hex
  response=client.post('/api/v1/ingestion/uploads',headers={**HEADERS,'Idempotency-Key':'test-'+uuid.uuid4().hex,'X-Correlation-ID':correlation_id},files={'file':('organizations.csv',csv_data,'text/csv')})
  assert response.status_code==202,response.text
@@ -40,7 +40,7 @@ def test_csv_ingestion_is_queued_then_processed_with_provenance(monkeypatch):
  old_batch_size=settings.ingestion_batch_size
  original_normalize=worker.normalize_record
  def fail_once_on_malformed_row(row):
-  if not row.get('Company Name'):
+  if not row.get('Company Name') and not row.get('__csv_parse_error__'):
    raise RuntimeError('simulated transient worker failure')
   return original_normalize(row)
  settings.ingestion_batch_size=2
@@ -56,10 +56,10 @@ def test_csv_ingestion_is_queued_then_processed_with_provenance(monkeypatch):
  process_job(job['job_id'])
  jobs=client.get('/api/v1/ingestion/jobs',headers=HEADERS).json()['items']
  completed=next(j for j in jobs if j['id']==job['job_id'])
- assert completed['records_processed']==3
+ assert completed['records_processed']==4
  assert completed['records_inserted']==1
  assert completed['records_updated']==1
- assert completed['records_skipped']==1
+ assert completed['records_skipped']==2
  assert completed['status']=='COMPLETED_WITH_ERRORS'
  lookup=client.get('/api/v1/registry/lookup',params={'reg_no':reg},headers=HEADERS)
  assert lookup.status_code==200
@@ -70,7 +70,7 @@ def test_csv_ingestion_is_queued_then_processed_with_provenance(monkeypatch):
  assert body['organization']['data_quality_status']=='IMPORTED_UNVERIFIED'
  assert body['organization']['source']['file']=='organizations.csv'
  errors=client.get(f"/api/v1/ingestion/jobs/{job['job_id']}/errors",headers=HEADERS)
- assert errors.status_code==200 and errors.json()['total']==1
+ assert errors.status_code==200 and errors.json()['total']==2
 def test_source_catalogue_create_and_list():
  key='test-source-'+uuid.uuid4().hex[:8]
  created=client.post('/api/v1/sources',headers=HEADERS,json={'source_key':key,'display_name':'Test dataset','jurisdiction':'KE','licence_reference':'test licence','freshness_sla_hours':24})
