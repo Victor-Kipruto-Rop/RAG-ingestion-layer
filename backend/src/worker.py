@@ -1,5 +1,6 @@
 """Run with: python -m src.worker. PostgreSQL is recommended for multiple workers."""
 import argparse,logging,time,traceback
+import structlog
 from datetime import datetime,timezone,timedelta
 from sqlalchemy import select
 from .config import settings
@@ -9,7 +10,9 @@ from .storage import download_bytes
 from .ingestion.parser_csv import iter_csv_records_from_storage
 from .ingestion.normalizer import normalize_record
 from .cache import invalidate_lookup_keys
-log=logging.getLogger('registry.worker')
+structlog.configure(processors=[structlog.processors.TimeStamper(fmt='iso'),structlog.processors.add_log_level,structlog.processors.format_exc_info,structlog.processors.JSONRenderer()],logger_factory=structlog.stdlib.LoggerFactory())
+logging.basicConfig(level=logging.INFO,format='%(message)s')
+log=structlog.get_logger('registry.worker')
 
 _SENSITIVE_KEY_PARTS=('tax_pin','kra_pin','pin','phone','mobile','email','password','secret','token','account_number','identity_number','id_number')
 def _sanitize_dlq_row(row):
@@ -111,7 +114,7 @@ def process_job(job_id):
       if raw_import:raw_import.import_status='FAILED'
       job.error_summary=f'Ingestion failed after {job.attempts} attempts: {str(exc)[:800]}';job.completed_at=now()
      retry_db.commit()
-   log.exception('Job processing failed job_id=%s',job_id)
+   log.exception('job_processing_failed',job_id=job_id)
 def recover_stale_jobs():
  cutoff=now()-timedelta(seconds=max(60,settings.worker_stale_after_seconds))
  with SessionLocal() as db:
@@ -127,12 +130,12 @@ def recover_stale_jobs():
    db.add(AuditLog(action='registry_stale_job_recovered',actor='ingestion-worker',file_name=job.file_name,details={'job_id':job.id,'attempts':job.attempts,'recovered_status':job.status}))
   if stale:
    db.commit()
-   log.warning('Recovered stale jobs: %s',len(stale))
+   log.warning('stale_jobs_recovered',count=len(stale))
 def run_batch(max_jobs=None):
  """Process a bounded number of eligible jobs, then exit for scheduled runners."""
- logging.basicConfig(level=logging.INFO)
+ logging.basicConfig(level=logging.INFO,format='%(message)s')
  limit=max(1, int(max_jobs if max_jobs is not None else settings.worker_max_jobs_per_run))
- log.info('Scheduled ingestion batch starting; max_jobs=%s', limit)
+ log.info('scheduled_ingestion_batch_starting', max_jobs=limit)
  recover_stale_jobs()
  processed=0
  for _ in range(limit):
@@ -141,11 +144,11 @@ def run_batch(max_jobs=None):
    break
   process_job(job_id)
   processed+=1
- log.info('Scheduled ingestion batch finished; claimed_jobs=%s', processed)
+ log.info('scheduled_ingestion_batch_finished', claimed_jobs=processed)
  return processed
 
 def run_forever():
- logging.basicConfig(level=logging.INFO);log.info('Ingestion worker starting')
+ logging.basicConfig(level=logging.INFO,format='%(message)s');log.info('ingestion_worker_starting')
  while True:
   try:
    recover_stale_jobs()
@@ -153,7 +156,7 @@ def run_forever():
    if job_id:process_job(job_id)
    else:time.sleep(max(0.25,settings.worker_poll_seconds))
   except KeyboardInterrupt:break
-  except Exception:log.exception('Worker loop error');time.sleep(max(1,settings.worker_retry_seconds))
+  except Exception:log.exception('worker_loop_error');time.sleep(max(1,settings.worker_retry_seconds))
 
 if __name__=='__main__':
  parser=argparse.ArgumentParser(description='PesaGuard ingestion worker')
