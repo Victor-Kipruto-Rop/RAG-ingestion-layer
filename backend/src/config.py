@@ -28,6 +28,7 @@ class Settings(BaseSettings):
  hmac_nonce_ttl_seconds:int=600
  registry_rate_limit_capacity:int=60
  registry_rate_limit_refill_per_second:float=1.0
+ metrics_token:str=''
  db_pool_size:int=5
  db_max_overflow:int=5
  db_pool_timeout_seconds:int=30
@@ -40,3 +41,21 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings(): return Settings()
 settings=get_settings()
+
+
+def validate_runtime_config():
+ if settings.app_env.lower()!='production':
+  return
+ missing=[]
+ if not settings.api_key_list or 'change-this-local-only-key-before-use' in settings.api_key_list:
+  missing.append('REGISTRY_API_KEYS')
+ if settings.database_url.startswith('sqlite'):
+  missing.append('DATABASE_URL (PostgreSQL required in production)')
+ if not all([settings.r2_account_id,settings.r2_access_key_id,settings.r2_secret_access_key,settings.r2_bucket_name]):
+  missing.append('R2_ACCOUNT_ID/R2_ACCESS_KEY_ID/R2_SECRET_ACCESS_KEY/R2_BUCKET_NAME')
+ if settings.require_hmac and not settings.hmac_shared_secret:
+  missing.append('HMAC_SHARED_SECRET')
+ if settings.require_hmac and not settings.redis_url:
+  missing.append('REDIS_URL (required for distributed HMAC replay protection)')
+ if missing:
+  raise RuntimeError('Invalid production configuration: '+', '.join(missing))
