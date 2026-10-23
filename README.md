@@ -13,8 +13,8 @@ This is a datasource, not the PesaGuard customer onboarding system and not an au
 5. Open the dashboard at `http://localhost:5173`, API docs at `http://localhost:8000/docs`, liveness at `http://localhost:8000/health/live`, and readiness at `http://localhost:8000/health/ready`. Enter only the local API key in the dashboard.
 6. Follow [`docs/windows-local-worker.md`](docs/windows-local-worker.md) to upload the fictional CSV fixture and verify end-to-end worker processing.
 7. Follow [`docs/pesaguard-sandbox-integration.md`](docs/pesaguard-sandbox-integration.md) to create a managed sandbox key and configure the PesaGuard backend to use it safely.
-7. View service status and logs with `docker compose ps` and `docker compose logs -f registry-api registry-worker registry-frontend`. Stop with `docker compose down`; use `docker compose down -v` only when you intentionally want to delete local test data.
-8. For Windows, run `scripts/start-windows-local.ps1`, then run `scripts/test-local-stack.ps1` for an end-to-end API → worker smoke test; stop with `scripts/stop-windows-local.ps1`. Backend tests: `PYTHONPATH=backend pytest -q` from a Python environment with backend requirements installed.
+8. View service status and logs with `docker compose ps` and `docker compose logs -f registry-api registry-worker registry-frontend`. Stop with `docker compose down`; use `docker compose down -v` only when you intentionally want to delete local test data.
+9. For Windows, run `scripts/start-windows-local.ps1`, then run `scripts/test-local-stack.ps1` for an end-to-end API → worker smoke test; stop with `scripts/stop-windows-local.ps1`. Backend tests: `PYTHONPATH=backend pytest -q` from a Python environment with backend requirements installed.
 
 Do not commit `.env`, API keys, database URLs, or R2 credentials.
 
@@ -29,6 +29,7 @@ Apply in order to PostgreSQL/Supabase:
 6. `database/migrations/006_failed_imports_dlq.sql`
 7. `database/migrations/007_ingestion_row_progress.sql`
 8. `database/migrations/008_job_correlation_id.sql`
+9. `database/migrations/009_managed_api_keys.sql`
 
 Set `APP_ENV=production` only after migrations are applied. Production startup intentionally does not create tables automatically.
 
