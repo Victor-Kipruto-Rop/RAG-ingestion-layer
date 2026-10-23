@@ -16,15 +16,18 @@ router = APIRouter(prefix="/api/v1/keys", tags=["API key management"])
 def _b64url_decode(value: str) -> bytes:
     return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
 
+
 def require_user_claims(authorization: str | None = Header(default=None, alias="Authorization")):
     secret = settings.api_key_auth_jwt_secret
     if not secret:
         raise HTTPException(503, "API key management authentication is not configured")
-    if not authorization or not authorization.startswith("Bearer "):
+    if not isinstance(authorization, str) or not authorization.lower().startswith("bearer "):
         raise HTTPException(401, "A valid PesaGuard user access token is required")
-    token = authorization[7:].strip()
+    token = authorization.split(None, 1)[1].strip()
+    if not token or len(token) > 8192:
+        raise HTTPException(401, "Invalid access token")
     parts = token.split(".")
-    if len(parts) != 3:
+    if len(parts) != 3 or any(not part for part in parts):
         raise HTTPException(401, "Invalid access token")
     try:
         header = json.loads(_b64url_decode(parts[0]))
@@ -32,25 +35,44 @@ def require_user_claims(authorization: str | None = Header(default=None, alias="
         signature = _b64url_decode(parts[2])
     except Exception:
         raise HTTPException(401, "Invalid access token")
+    if not isinstance(header, dict) or not isinstance(claims, dict):
+        raise HTTPException(401, "Invalid access token")
     if header.get("alg") != "HS256" or header.get("typ", "JWT") != "JWT":
         raise HTTPException(401, "Unsupported access token")
+    if len(signature) != hashlib.sha256().digest_size:
+        raise HTTPException(401, "Invalid access token signature")
     expected = hmac.new(secret.encode(), f"{parts[0]}.{parts[1]}".encode(), hashlib.sha256).digest()
     if not hmac.compare_digest(signature, expected):
         raise HTTPException(401, "Invalid access token signature")
-    if not isinstance(claims.get("exp"), (int, float)) or claims["exp"] <= time.time():
+    now = time.time()
+    expires = claims.get("exp")
+    if isinstance(expires, bool) or not isinstance(expires, (int, float)) or expires <= now:
         raise HTTPException(401, "Access token has expired")
-    if isinstance(claims.get("nbf"), (int, float)) and claims["nbf"] > time.time():
+    not_before = claims.get("nbf")
+    if isinstance(not_before, bool) or (not_before is not None and not isinstance(not_before, (int, float))):
+        raise HTTPException(401, "Invalid access token")
+    if isinstance(not_before, (int, float)) and not_before > now:
         raise HTTPException(401, "Access token is not valid yet")
-    if not claims.get("sub") or not claims.get("org_id"):
+    issued_at = claims.get("iat")
+    if isinstance(issued_at, bool) or (issued_at is not None and not isinstance(issued_at, (int, float))):
+        raise HTTPException(401, "Invalid access token")
+    if isinstance(issued_at, (int, float)) and issued_at > now + 60:
+        raise HTTPException(401, "Access token issued in the future")
+    if not isinstance(claims.get("sub"), str) or not claims["sub"].strip() or len(claims["sub"]) > 200:
+        raise HTTPException(403, "Access token must identify a user and organization")
+    if not isinstance(claims.get("org_id"), str) or not claims["org_id"].strip() or len(claims["org_id"]) > 200:
         raise HTTPException(403, "Access token must identify a user and organization")
     expected_issuer = settings.api_key_auth_jwt_issuer
     expected_audience = settings.api_key_auth_jwt_audience
-    if settings.app_env.lower() == 'production' and (not expected_issuer or not expected_audience):
-        raise HTTPException(503, 'API key management requires configured JWT issuer and audience')
+    if settings.app_env.lower() == "production" and (not expected_issuer or not expected_audience):
+        raise HTTPException(503, "API key management requires configured JWT issuer and audience")
     if expected_issuer and claims.get("iss") != expected_issuer:
         raise HTTPException(401, "Invalid access token issuer")
     audience = claims.get("aud")
-    if expected_audience and not (audience == expected_audience or isinstance(audience, list) and expected_audience in audience):
+    if expected_audience and not (
+        audience == expected_audience
+        or isinstance(audience, list) and expected_audience in audience
+    ):
         raise HTTPException(401, "Invalid access token audience")
     return claims
 
@@ -58,7 +80,9 @@ def _roles(claims: dict) -> set[str]:
     roles = claims.get("roles", [])
     if isinstance(roles, str):
         roles = [roles]
-    return set(roles)
+    if not isinstance(roles, list):
+        return set()
+    return {role for role in roles if isinstance(role, str)}
 
 def _require_org_admin(claims: dict):
     if not ({"owner", "admin"} & _roles(claims)):

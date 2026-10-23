@@ -17,7 +17,11 @@ Do not commit `.env`, API keys, database URLs, or R2 credentials.
 
 ## Database migrations
 
-Apply in order to PostgreSQL/Supabase:
+Choose **one migration path per database**. Do not apply the SQL and Alembic histories to the same database as if they were one linear sequence.
+
+### SQL/Supabase path
+
+Apply the hand-maintained SQL migrations in order:
 1. `database/migrations/001_initial.sql`
 2. `database/migrations/002_provenance_and_versions.sql`
 3. `database/migrations/003_durable_ingestion_sources.sql`
@@ -28,7 +32,20 @@ Apply in order to PostgreSQL/Supabase:
 8. `database/migrations/008_job_correlation_id.sql`
 9. `database/migrations/009_environment_scoped_api_keys.sql`
 
-Set `APP_ENV=production` only after migrations are applied. Production startup intentionally does not create tables automatically.
+### Alembic path
+
+For a **fresh disposable database**, run from `backend/`:
+```sh
+python -m alembic -c alembic.ini upgrade head
+python -m alembic -c alembic.ini current
+```
+Alembic revision `0005_environment_scoped_api_keys` creates the environment-scoped customer API-key and audit tables. CI smoke-tests this path on disposable SQLite.
+
+### Existing database warning
+
+Existing SQL/Supabase databases must be schema-reconciled against the full baseline before Alembic is stamped or upgraded. Do not run `stamp` or `upgrade head` on production without a reviewed schema comparison, a recent backup, a restored staging test, and explicit approval. Production startup intentionally does not create tables automatically.
+
+For customer API keys, configure `API_ENVIRONMENT=sandbox` on sandbox and `API_ENVIRONMENT=production` on production. Configure the trusted JWT issuer, audience, and signing secret server-side; see [environment-scoped API keys](docs/environment-scoped-api-keys.md). Production and sandbox must use separate databases and storage.
 
 ## Warehouse layers\n\n- **Bronze:** `warehouse_raw_imports` records raw object metadata, checksum, source, size, and ingestion status; raw files are stored in private R2.\n- **Silver:** `warehouse_organizations` is a read-only view over canonical `internal_organizations` records, with normalization, provenance and data-quality state.\n- **Gold:** `warehouse_access_logs` stores lookup/API performance telemetry without API keys or raw credentials.\n\nConfigure `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `R2_BUCKET_NAME` in the deployment environment. Create the private bucket in Cloudflare R2 first; the repository cannot create a Cloudflare account resource without authorized Cloudflare access.\n\n
 ## Production hardening
