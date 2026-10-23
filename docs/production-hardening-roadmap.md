@@ -6,12 +6,15 @@ This roadmap is the release checklist for taking PesaGuard Registry Datasource f
 - [ ] Re-run CI and resolve the first failing step from its logs; the earlier run's log artifacts were unavailable, so the original failure cause is not yet confirmed. CI steps are now explicitly named to make fresh failures actionable.
 - [x] Verify the streaming CSV parser and add a regression test that exercises a multi-thousand-row fixture through the file iterator.
 - [ ] Record test results from a fresh successful CI run and complete a read-only production health check. Render service configuration was inspected without mutation; its health-check path is currently unset.
-- [ ] Keep streaming work isolated until CI passes; do not merge or deploy as part of baseline verification.\n\nThe managed-key migration and regression tests in this branch are implementation work only; CI must pass before this phase is considered complete.
+- [ ] Keep streaming work isolated until CI passes; do not merge or deploy as part of baseline verification.
+
+The managed-key migration and regression tests in this branch are implementation work only; CI must pass before this phase is considered complete.
 
 ## Phase 2 — Database migrations and warehouse integrity
 - [x] Add Alembic as the schema-change entry point; managed API-key tables now have a forward-only Alembic revision.
 - [ ] Reconcile Alembic with existing SQL migration history before stamping any deployed database.
-- [x] Test clean-database bootstrap includes the managed API-key tables on disposable SQLite.\n- [ ] Test an existing-schema upgrade against a restored staging copy.
+- [x] Test clean-database bootstrap includes the managed API-key tables on disposable SQLite.
+- [ ] Test an existing-schema upgrade against a restored staging copy.
 - [ ] Tune connection pools for the actual Render/Supabase connection mode.
 - [ ] Review unique identifier indexes and add supported text-search indexes only after duplicate/data checks.
 
