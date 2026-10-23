@@ -33,10 +33,14 @@ def process_job(job_id):
     data=download_bytes(job.object_key)
     diagnostics=extract_pdf_text(data, enable_ocr=settings.pdf_ocr_enabled, max_ocr_pages=settings.pdf_ocr_max_pages)
     job.status='NEEDS_PDF_PROCESSING'
-    if diagnostics.needs_ocr:
+    if diagnostics.needs_ocr and diagnostics.extracted_characters:
+     job.error_summary=f'Extracted {diagnostics.extracted_characters} character(s) from {diagnostics.page_count} page(s), but OCR coverage is incomplete; manual review is required.'
+    elif diagnostics.needs_ocr and diagnostics.ocr_attempted and not diagnostics.ocr_available:
+     job.error_summary=f'PDF has {diagnostics.page_count} page(s); OCR was unavailable or failed, so manual review is required.'
+    elif diagnostics.needs_ocr:
      job.error_summary=f'PDF has {diagnostics.page_count} page(s) but no searchable text; OCR and manual review are required.'
     else:
-     job.error_summary=f'Extracted {diagnostics.extracted_characters} searchable character(s) from {diagnostics.page_count} page(s); manual review is required. Extracted text is not treated as verified data.'
+     job.error_summary=f'Extracted {diagnostics.extracted_characters} character(s) from {diagnostics.page_count} page(s); manual review is required. Extracted text is not treated as verified data.'
     if raw_import:
      raw_import.import_status='NEEDS_PDF_PROCESSING'
      metadata=dict(raw_import.metadata_json or {})
@@ -96,11 +100,17 @@ def recover_stale_jobs():
  with SessionLocal() as db:
   stale=db.scalars(select(IngestionJob).where(IngestionJob.status=='PROCESSING',IngestionJob.started_at<cutoff)).all()
   for job in stale:
+   raw_import=db.scalar(select(WarehouseRawImport).where(WarehouseRawImport.ingestion_job_id==job.id))
    if job.attempts < settings.worker_max_attempts:
     job.status='QUEUED';job.next_attempt_at=now()+timedelta(seconds=max(1,settings.worker_retry_seconds));job.error_summary='Recovered stale processing job after worker interruption.'
+    if raw_import:raw_import.import_status='QUEUED'
    else:
     job.status='FAILED';job.completed_at=now();job.error_summary='Worker interrupted repeatedly; maximum attempts reached.'
-  if stale:db.commit();log.warning('Recovered stale jobs: %s',len(stale))
+    if raw_import:raw_import.import_status='FAILED'
+   db.add(AuditLog(action='registry_stale_job_recovered',actor='ingestion-worker',file_name=job.file_name,details={'job_id':job.id,'attempts':job.attempts,'recovered_status':job.status}))
+  if stale:
+   db.commit()
+   log.warning('Recovered stale jobs: %s',len(stale))
 def run_batch(max_jobs=None):
  """Process a bounded number of eligible jobs, then exit for scheduled runners."""
  logging.basicConfig(level=logging.INFO)
