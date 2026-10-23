@@ -85,6 +85,32 @@ async def request_observability(request:Request,call_next):
   HTTP_DURATION.labels(request.method,route).observe(duration)
   log.info('http_request',request_id=request_id,method=request.method,route=route,status_code=status,duration_ms=round(duration*1000,3))
 
+@app.middleware('http')
+async def api_key_usage_telemetry(request:Request,call_next):
+ started=time.perf_counter()
+ response=None
+ try:
+  response=await call_next(request)
+  return response
+ finally:
+  key_id=getattr(request.state,'api_key_id',None)
+  if key_id and request.url.path.startswith('/api/v1/'):
+   try:
+    with SessionLocal() as db:
+     db.add(models.ApiKeyUsageEvent(
+      api_key_id=key_id,
+      key_prefix=getattr(request.state,'api_key_prefix',None),
+      environment=getattr(request.state,'api_key_environment',None),
+      endpoint=request.url.path[:300],
+      http_method=request.method[:12],
+      response_status=response.status_code if response else 500,
+      duration_ms=round(max(0.0,time.perf_counter()-started)*1000,3),
+      request_id=getattr(request.state,'request_id',None),
+     ))
+     db.commit()
+   except Exception:
+    log.exception('api_key_usage_telemetry_persist_failed',request_id=getattr(request.state,'request_id',None))
+
 @app.get('/metrics',include_in_schema=False)
 def metrics(x_metrics_token:str|None=Header(default=None,alias='X-Metrics-Token')):
  if not settings.metrics_token or not x_metrics_token or not hmac.compare_digest(settings.metrics_token,x_metrics_token):
