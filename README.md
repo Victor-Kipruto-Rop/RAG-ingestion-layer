@@ -56,7 +56,8 @@ The API returns found, a matching organization when present, source metadata, da
 ## Ingestion flow
 
 - `GET /api/v1/quality/summary` (identifier coverage and duplicate-review indicators; not authoritative verification)
-- `POST /api/v1/ingestion/uploads` validates the file size/type, stores the original in R2 (or local development storage), creates a durable queued job, and returns HTTP 202.
+- `POST /api/v1/ingestion/preview` returns a non-persistent sample of CSV/XLSX files up to 5 MiB; it does not create an ingestion job.
+- `POST /api/v1/ingestion/uploads` validates file size/type and signatures, stores the original in R2 (or local development storage), creates a durable queued job, and returns HTTP 202. CSV is streamed; XLSX uses read-only parsing with compressed/uncompressed size and archive-entry limits.
 - Run one or more `registry-worker` processes to process queued CSVs. PostgreSQL row locks with `SKIP LOCKED` allow multiple workers to claim separate jobs.
 - Jobs use `Idempotency-Key` to safely replay a request when supplied; retries are bounded by `WORKER_MAX_ATTEMPTS`, use exponential delay from `WORKER_RETRY_SECONDS`, and stale processing jobs are recovered after `WORKER_STALE_AFTER_SECONDS`.
 - Row failures are persisted and can be queried through `GET /api/v1/ingestion/jobs/{job_id}/errors`.
