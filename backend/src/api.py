@@ -139,9 +139,6 @@ async def upload(request:Request,file:UploadFile=File(...),db:Session=Depends(ge
  name=(file.filename or 'upload.csv').replace(chr(92), '/').split('/')[-1]
  suffix='.'+name.rsplit('.',1)[-1].lower() if '.' in name else ''
  if suffix not in {'.csv','.pdf'}:raise HTTPException(415,'Only CSV and PDF files are accepted')
- if idempotency_key:
-  prior=db.scalar(select(IngestionJob).where(IngestionJob.idempotency_key==idempotency_key))
-  if prior:return {'job_id':prior.id,'status':prior.status,'idempotent_replay':True}
  source=None
  if source_key:
   source=db.scalar(select(RegistrySource).where(RegistrySource.source_key==source_key.strip().lower(),RegistrySource.enabled.is_(True)))
@@ -157,6 +154,22 @@ async def upload(request:Request,file:UploadFile=File(...),db:Session=Depends(ge
  if size==0:raise HTTPException(400,'Uploaded file is empty')
  if suffix=='.pdf' and not prefix.startswith(b'%PDF-'):raise HTTPException(415,'File extension is PDF but the file signature is invalid')
  if suffix=='.csv' and b'\x00' in prefix:raise HTTPException(415,'CSV contains binary data')
+ digest_hex=digest.hexdigest()
+ if idempotency_key:
+  prior=db.scalar(select(IngestionJob).where(IngestionJob.idempotency_key==idempotency_key))
+  if prior:
+   prior_raw=db.scalar(select(WarehouseRawImport).where(WarehouseRawImport.ingestion_job_id==prior.id))
+   same_source=prior.source_id==(source.id if source else None)
+   if prior.file_name!=name or not prior_raw or prior_raw.sha256_hex!=digest_hex or not same_source:
+    raise HTTPException(409,'Idempotency key is already associated with a different upload')
+   return {'job_id':prior.id,'status':prior.status,'idempotent_replay':True,'duplicate_upload':True}
+ existing_import=db.scalar(select(WarehouseRawImport).where(WarehouseRawImport.sha256_hex==digest_hex,WarehouseRawImport.source_id==(source.id if source else None)).order_by(WarehouseRawImport.created_at.desc()).limit(1))
+ if existing_import:
+  existing_job=db.get(IngestionJob,existing_import.ingestion_job_id)
+  if existing_job and existing_job.status not in {'FAILED','UPLOADING'}:
+   db.add(AuditLog(action='registry_duplicate_upload_detected',actor='internal-service',file_name=name,details={'existing_job_id':existing_job.id,'source_key':source.source_key if source else None,'sha256_prefix':digest_hex[:12]}))
+   db.commit()
+   return {'job_id':existing_job.id,'file_name':existing_job.file_name,'status':existing_job.status,'duplicate_upload':True,'message':'An identical file for this source already exists; the existing ingestion job was returned.'}
  file.file.seek(0)
  job=IngestionJob(file_name=name,correlation_id=correlation_id,content_type=file.content_type or 'application/octet-stream',status='QUEUED',source_id=source.id if source else None,source_name=source.source_key if source else 'uploaded_dataset',idempotency_key=idempotency_key)
  db.add(job);db.flush()
@@ -164,7 +177,7 @@ async def upload(request:Request,file:UploadFile=File(...),db:Session=Depends(ge
  try:
   upload_fileobj(key,file.file,file.content_type or 'application/octet-stream')
   job.object_key=key
-  db.add(WarehouseRawImport(ingestion_job_id=job.id,object_key=key,original_filename=name,content_type=file.content_type or 'application/octet-stream',byte_size=size,sha256_hex=digest.hexdigest(),source_id=source.id if source else None,source_name=source.source_key if source else 'uploaded_dataset',uploaded_by='internal-service',import_status='QUEUED',metadata_json={'correlation_id':correlation_id,'file_suffix':suffix}))
+  db.add(WarehouseRawImport(ingestion_job_id=job.id,object_key=key,original_filename=name,content_type=file.content_type or 'application/octet-stream',byte_size=size,sha256_hex=digest_hex,source_id=source.id if source else None,source_name=source.source_key if source else 'uploaded_dataset',uploaded_by='internal-service',import_status='QUEUED',metadata_json={'correlation_id':correlation_id,'file_suffix':suffix}))
   db.add(AuditLog(action='registry_ingestion_queued',actor='internal-service',file_name=name,details={'job_id':job.id,'source_key':source.source_key if source else None,'correlation_id':correlation_id}))
   db.commit();db.refresh(job)
   return {'job_id':job.id,'file_name':job.file_name,'correlation_id':job.correlation_id,'status':job.status,'records_processed':0,'records_inserted':0,'records_updated':0,'records_skipped':0,'message':'Upload stored; a worker will process this job asynchronously.'}
@@ -175,7 +188,7 @@ async def upload(request:Request,file:UploadFile=File(...),db:Session=Depends(ge
 @router.get('/api/v1/ingestion/jobs',dependencies=[Depends(require_api_key)])
 def jobs(page:int=Query(default=1,ge=1),page_size:int=Query(default=25,ge=1,le=100),db:Session=Depends(get_db)):
  rows=db.scalars(select(IngestionJob).order_by(IngestionJob.created_at.desc()).offset((page-1)*page_size).limit(page_size)).all()
- return {'items':[{'id':j.id,'file_name':j.file_name,'correlation_id':j.correlation_id,'status':j.status,'attempts':j.attempts,'source_name':j.source_name,'records_processed':j.records_processed,'records_inserted':j.records_inserted,'records_updated':j.records_updated,'records_skipped':j.records_skipped,'error_summary':j.error_summary,'created_at':j.created_at.isoformat() if j.created_at else None,'started_at':j.started_at.isoformat() if j.started_at else None,'completed_at':j.completed_at.isoformat() if j.completed_at else None} for j in rows]}
+ return {'items':[{'id':j.id,'file_name':j.file_name,'correlation_id':j.correlation_id,'status':j.status,'attempts':j.attempts,'source_name':j.source_name,'records_processed':j.records_processed,'records_inserted':j.records_inserted,'records_updated':j.records_updated,'records_skipped':j.records_skipped,'last_processed_row':j.last_processed_row,'error_summary':j.error_summary,'created_at':j.created_at.isoformat() if j.created_at else None,'started_at':j.started_at.isoformat() if j.started_at else None,'completed_at':j.completed_at.isoformat() if j.completed_at else None} for j in rows]}
 @router.get('/api/v1/ingestion/jobs/{job_id}/errors',dependencies=[Depends(require_api_key)])
 def job_errors(job_id:str,page:int=Query(default=1,ge=1),page_size:int=Query(default=100,ge=1,le=500),db:Session=Depends(get_db)):
  if not db.get(IngestionJob,job_id):raise HTTPException(404,'Ingestion job not found')
