@@ -43,6 +43,7 @@ This plan defines deliverables and release gates. It is intentionally honest abo
 
 ## Phase 6 — Operations and reliability
 - [x] Expand health/readiness diagnostics for database, configured object storage, Redis, queue depth/age, and explicitly report that worker heartbeat is not yet instrumented.
+- [x] Expose paginated ingestion audit logs and key-security events behind the management credential.
 - [ ] Add a persisted worker heartbeat, alert thresholds, incident runbooks, backup/restore drills, SLO dashboards, and controlled retry/replay tooling.
 - Add alert thresholds, incident runbooks, backup/restore drills, SLO dashboards, and controlled retry/replay tooling.
 - Release gate: tested failure scenarios and a documented recovery procedure.
