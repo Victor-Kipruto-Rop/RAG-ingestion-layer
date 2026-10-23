@@ -17,7 +17,7 @@ def iter_csv_file(file_obj, max_records: int):
         sample = sample_bytes.decode('cp1252')
         encoding = 'cp1252'
     try:
-        dialect = csv.Sniffer().sniff(sample, delimiters=',;\\t|')
+        dialect = csv.Sniffer().sniff(sample, delimiters=',;\t|')
     except csv.Error:
         dialect = csv.excel
     text_stream = io.TextIOWrapper(file_obj, encoding=encoding, newline='')
