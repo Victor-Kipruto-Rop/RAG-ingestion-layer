@@ -1,4 +1,5 @@
-import csv,io,logging,uuid,hashlib
+import csv,io,uuid,hashlib
+import structlog
 from datetime import datetime,timezone
 from fastapi import APIRouter,Depends,File,HTTPException,Query,UploadFile,Header,Request
 from pydantic import BaseModel,Field
@@ -11,7 +12,7 @@ from .models import Organization,OrganizationRecordVersion,IngestionJob,Ingestio
 from .security import require_api_key
 from .storage import upload_fileobj,StorageNotConfigured,presign_upload_url,head_object,read_object_prefix
 from .cache import get_json,set_json
-router=APIRouter();log=logging.getLogger(__name__)
+router=APIRouter();log=structlog.get_logger(__name__)
 def org_out(o):
  return {'id':o.id,'legal_name':o.legal_name,'registration_number':o.registration_number,'tax_pin':o.tax_pin,'status':o.status,'registry_payload':o.registry_payload or {},'source':{'name':o.source_name,'file':o.source_file,'row':o.source_row,'record_id':o.source_record_id,'published_at':o.source_published_at.isoformat() if o.source_published_at else None},'data_quality_status':o.data_quality_status,'last_seen_at':o.last_seen_at.isoformat() if o.last_seen_at else None,'created_at':o.created_at.isoformat() if o.created_at else None,'updated_at':o.updated_at.isoformat() if o.updated_at else None}
 def source_out(s):
@@ -169,7 +170,7 @@ async def upload(request:Request,file:UploadFile=File(...),db:Session=Depends(ge
   return {'job_id':job.id,'file_name':job.file_name,'correlation_id':job.correlation_id,'status':job.status,'records_processed':0,'records_inserted':0,'records_updated':0,'records_skipped':0,'message':'Upload stored; a worker will process this job asynchronously.'}
  except StorageNotConfigured as exc:db.rollback();raise HTTPException(503,'Object storage is not configured') from exc
  except Exception as exc:
-  db.rollback();log.exception('Unable to queue ingestion correlation_id=%s',correlation_id)
+  db.rollback();log.exception('ingestion_upload_queue_failed',correlation_id=correlation_id)
   raise HTTPException(502,'Unable to store or queue upload') from exc
 @router.get('/api/v1/ingestion/jobs',dependencies=[Depends(require_api_key)])
 def jobs(page:int=Query(default=1,ge=1),page_size:int=Query(default=25,ge=1,le=100),db:Session=Depends(get_db)):
