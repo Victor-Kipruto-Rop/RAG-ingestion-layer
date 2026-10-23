@@ -57,3 +57,21 @@ jobs:
         run: npm run build
       - name: Build production frontend container
         run: docker build -t pesaguard-registry-frontend:ci .
+
+  local-compose-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare safe local environment
+        run: cp example.env .env
+      - name: Validate connected local Docker stack
+        shell: bash
+        run: |
+          docker compose config --quiet
+          services="$(docker compose config --services)"
+          for service in registry-api registry-worker registry-frontend registry-redis; do
+            if ! grep -qx "$service" <<< "$services"; then
+              echo "Required local service is missing: $service" >&2
+              exit 1
+            fi
+          done
