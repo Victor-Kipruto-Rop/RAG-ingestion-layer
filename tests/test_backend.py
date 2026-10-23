@@ -82,3 +82,77 @@ def test_upload_rejects_unknown_type():
 def test_large_direct_upload_requires_private_r2_configuration():
  response=client.post('/api/v1/ingestion/uploads/presign',headers=HEADERS,json={'file_name':'large-dataset.csv','size_bytes':100*1024*1024})
  assert response.status_code==503
+
+
+def test_entity_match_review_is_audited_and_does_not_merge_records():
+    import hashlib
+    from datetime import datetime, timezone
+    from src.database import SessionLocal
+    from src.models import Organization, ManagedAPIKey, EntityMatchReview
+
+    suffix = uuid.uuid4().hex[:12]
+    secret = f"pg_sandbox_{suffix}_{uuid.uuid4().hex}"
+    prefix = f"pg_sandbox_{suffix}"
+    organization = Organization(
+        id=str(uuid.uuid4()),
+        legal_name="Review Workflow Example Limited",
+        normalized_legal_name="REVIEW WORKFLOW EXAMPLE LIMITED",
+        registration_number=f"REV-{suffix}",
+        normalized_registration_number=f"REV{suffix}",
+        registry_payload={"fixture": True},
+    )
+    managed_key = ManagedAPIKey(
+        id=str(uuid.uuid4()),
+        name="quality-review-test",
+        environment="sandbox",
+        key_prefix=prefix,
+        secret_hash=hashlib.sha256(secret.encode()).hexdigest(),
+        scopes=["registry:read", "quality:review"],
+        status="active",
+        created_by="test",
+    )
+    with SessionLocal() as db:
+        db.add(organization)
+        db.add(managed_key)
+        db.commit()
+        organization_id = organization.id
+        original_legal_name = organization.legal_name
+
+    response = client.post(
+        "/api/v1/quality/reviews",
+        headers={"X-API-Key": secret},
+        json={
+            "candidate_organization_id": organization_id,
+            "query_name": "Review Workflow Example Ltd",
+            "decision": "needs_more_evidence",
+            "comment": "Source identifier needs independent confirmation.",
+            "evidence": {"reason_code": "identifier_review", "source": "fictional-test"},
+        },
+    )
+    assert response.status_code == 201, response.text
+    payload = response.json()["item"]
+    assert payload["decision"] == "needs_more_evidence"
+    assert payload["effect"] == "review_only_no_record_merge"
+
+    listing = client.get("/api/v1/quality/reviews?limit=10", headers={"X-API-Key": secret})
+    assert listing.status_code == 200, listing.text
+    assert any(item["id"] == payload["id"] for item in listing.json()["items"])
+
+    with SessionLocal() as db:
+        unchanged = db.get(Organization, organization_id)
+        assert unchanged.legal_name == original_legal_name
+        assert db.get(EntityMatchReview, payload["id"]) is not None
+        db.delete(managed_key)
+        db.delete(organization)
+        db.commit()
+
+
+def test_registry_provider_adapters_do_not_claim_to_verify_when_unconfigured():
+    from src.provider_adapters import BRS_PROVIDER, KRA_PROVIDER
+
+    for adapter in (BRS_PROVIDER, KRA_PROVIDER):
+        result = adapter.lookup_registration("FICTIONAL-REG-001")
+        assert result.status == "NOT_CONFIGURED"
+        assert result.configured is False
+        assert result.verified is False
+        assert "not connected" in result.message.lower()
