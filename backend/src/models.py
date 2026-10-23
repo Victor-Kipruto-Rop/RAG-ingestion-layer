@@ -170,3 +170,15 @@ class APIKeySecurityEvent(Base):
  client_ip:Mapped[str|None]=mapped_column(String(80))
  details:Mapped[dict]=mapped_column(json_type,default=dict,nullable=False)
  created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
+
+
+class OrganizationReviewDecision(Base):
+ __tablename__='organization_review_decisions'
+ __table_args__=(Index('ix_org_review_decisions_org_created','organization_id','created_at','id'),Index('ix_org_review_decisions_decision_created','decision','created_at'))
+ id:Mapped[str]=mapped_column(String(36),primary_key=True,default=lambda:str(uuid.uuid4()))
+ organization_id:Mapped[str]=mapped_column(String(36),ForeignKey('internal_organizations.id',ondelete='RESTRICT'),nullable=False,index=True)
+ decision:Mapped[str]=mapped_column(String(40),nullable=False)
+ reason:Mapped[str]=mapped_column(Text,nullable=False)
+ evidence:Mapped[dict]=mapped_column(json_type,default=dict,nullable=False)
+ reviewer:Mapped[str]=mapped_column(String(200),nullable=False)
+ created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
