@@ -1,12 +1,12 @@
 import re,unicodedata
 def clean_text(value):
  if value is None:return None
- text=re.sub(r'\\s+',' ',unicodedata.normalize('NFKC',str(value)).strip())
+ text=re.sub(r'\s+',' ',unicodedata.normalize('NFKC',str(value)).strip())
  return text or None
 def normalize_legal_name(value):
  text=clean_text(value);return text.upper() if text else None
 def normalize_identifier(value):
- text=clean_text(value);return re.sub(r'[\\s-]+','',text).upper() if text else None
+ text=clean_text(value);return re.sub(r'[\s-]+','',text).upper() if text else None
 def normalize_record(row):
  lowered={re.sub(r'[^a-z0-9]+','_',str(k).strip().lower()).strip('_'):v for k,v in row.items()}
  def first(*keys):
