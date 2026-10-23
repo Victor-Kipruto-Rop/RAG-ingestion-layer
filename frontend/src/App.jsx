@@ -174,8 +174,6 @@ function ServiceStatus({ label, detail, icon: Icon, value, connected }) {
   return <div className="service-card"><div className="service-icon"><Icon size={19} /></div><div className="service-copy"><strong>{label}</strong><span>{detail}</span></div><StatusPill value={value || (connected ? 'Connected' : 'Unknown')} /></div>;
 }
 
-export default 
-
 function DataQualityPage({ request }) {
   const [summary, setSummary] = useState(null);
   const [rules, setRules] = useState([]);
@@ -396,7 +394,7 @@ export function APIKeysPage() {
   </div>;
 }
 
-function App() {
+export default function App() {
   const [page, setPage] = useState('Overview');
   const [key, setKey] = useState('');
   const [connected, setConnected] = useState(false);
