@@ -29,10 +29,17 @@ Apply in order to PostgreSQL/Supabase:
 9. `database/migrations/009_api_key_lifecycle.sql`
 10. `database/migrations/010_verification_orchestration.sql`
 11. `database/migrations/011_api_key_usage_events.sql`
+12. `database/migrations/012_quality_review_cases.sql`
 
 Set `APP_ENV=production` only after migrations are applied. Production startup intentionally does not create tables automatically.
 
 ## Warehouse layers\n\n- **Bronze:** `warehouse_raw_imports` records raw object metadata, checksum, source, size, and ingestion status; raw files are stored in private R2.\n- **Silver:** `warehouse_organizations` is a read-only view over canonical `internal_organizations` records, with normalization, provenance and data-quality state.\n- **Gold:** `warehouse_access_logs` stores lookup/API performance telemetry without API keys or raw credentials.\n\nConfigure `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `R2_BUCKET_NAME` in the deployment environment. Create the private bucket in Cloudflare R2 first; the repository cannot create a Cloudflare account resource without authorized Cloudflare access.\n\n
+## Quality review workflow
+
+The internal API exposes a durable manual-review queue at `/api/v1/quality/reviews`. Create a case for an existing organization and optionally link a second organization for comparison. Decisions require reviewer notes, are retained as an append-only history, and are written to the audit log. A `same_entity` decision records a human judgement only; it never merges records or rewrites identifiers. Managed API keys need `registry:write` permission to create cases or record decisions.
+
+Provider readiness is represented by `/api/v1/verification/providers`. BRS, KRA and Peleza remain `not_configured` until provider contracts, approved credentials, sandbox tests and data-processing terms are confirmed. Creating a verification case does not call a provider or certify an organization.
+
 ## Production hardening
 
 The current implementation work is tracked in [the phased production hardening roadmap](docs/production-hardening-roadmap.md). Review [database migration safety](docs/database-migrations.md) before running Alembic against any existing database, and see [internal API security](docs/internal-api-security.md) and [large-file ingestion](docs/large-file-ingestion.md) for HMAC signing, replay protection, rate limits, cache behavior and metrics.
