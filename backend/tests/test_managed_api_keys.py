@@ -108,3 +108,48 @@ def test_sandbox_key_is_rejected_in_production_and_audited(monkeypatch):
         assert event.key_environment == 'sandbox'
         assert secret not in str(event.details)
     engine.dispose()
+
+
+def test_wrong_environment_is_detected_without_a_database_key_row(monkeypatch):
+    """Environment mismatch remains explicit when sandbox and production DBs are isolated."""
+    from fastapi import Depends, FastAPI
+    from fastapi.testclient import TestClient
+    from sqlalchemy import create_engine, select
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+    from src.database import Base
+    from src.models import APIKeySecurityEvent
+    import src.security as security
+
+    isolated_engine = create_engine('sqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
+    Base.metadata.create_all(isolated_engine)
+    TestSession = sessionmaker(bind=isolated_engine, expire_on_commit=False)
+    monkeypatch.setattr(security, 'SessionLocal', TestSession)
+    monkeypatch.setattr(settings, 'datasource_environment', 'production')
+    monkeypatch.setattr(settings, 'app_env', 'development')
+    monkeypatch.setattr(settings, 'managed_api_keys_enabled', True)
+    monkeypatch.setattr(settings, 'require_hmac', False)
+    monkeypatch.setattr(settings, 'registry_api_keys', '')
+
+    app = FastAPI()
+
+    @app.get('/api/v1/registry/search')
+    async def protected(identity=Depends(security.require_api_key)):
+        return {'identity': identity}
+
+    prefix = 'pg_sandbox_deadbeef'
+    token = prefix + '_not-a-real-secret'
+    response = TestClient(app).get('/api/v1/registry/search?q=sample', headers={'X-API-Key': token})
+    assert response.status_code == 403
+    assert response.json()['detail']['code'] == 'API_KEY_ENVIRONMENT_MISMATCH'
+    assert response.json()['detail']['key_environment'] == 'sandbox'
+    assert response.json()['detail']['request_environment'] == 'production'
+
+    with TestSession() as db:
+        event = db.scalar(select(APIKeySecurityEvent).where(APIKeySecurityEvent.key_prefix == prefix))
+        assert event is not None
+        assert event.key_id is None
+        assert event.expected_environment == 'production'
+        assert event.key_environment == 'sandbox'
+        assert token not in str(event.details)
+    isolated_engine.dispose()
