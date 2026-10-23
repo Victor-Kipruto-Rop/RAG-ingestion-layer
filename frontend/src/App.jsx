@@ -201,15 +201,17 @@ export default function App() {
     if (!key) return;
     setLoading(true); setError('');
     try {
-      const [metricsResponse, orgResponse, jobsResponse] = await Promise.all([
+      const [metricsResponse, orgResponse, jobsResponse, qualityResponse] = await Promise.all([
         request('/api/v1/metrics/summary'),
         request(`/api/v1/organizations?page=${orgPage}&page_size=100${search ? `&q=${encodeURIComponent(search)}` : ''}`),
-        request('/api/v1/ingestion/jobs?page_size=50')
+        request('/api/v1/ingestion/jobs?page_size=50'),
+        request('/api/v1/data-quality/summary')
       ]);
       const metrics = await metricsResponse.json();
       const orgResult = await orgResponse.json();
       const jobsResult = await jobsResponse.json();
-      setSummary(metrics); setOrgs(orgResult.items || []); setOrgTotal(orgResult.total || 0);
+      const quality = await qualityResponse.json();
+      setSummary(metrics); setQualitySummary(quality); setOrgs(orgResult.items || []); setOrgTotal(orgResult.total || 0);
       setJobs(jobsResult.items || []); setConnected(true);
     } catch (e) { setConnected(false); setError(e.message || 'Unable to connect to the Registry API.'); }
     finally { setLoading(false); }
