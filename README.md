@@ -92,3 +92,31 @@ For a safe Windows/Docker Desktop smoke test that uses a shared local SQLite dat
 
 
 A safe Windows local environment template is provided as [`example.env`](example.env). Never commit `.env`, API keys, database URLs, or R2 credentials.
+
+
+## Managed sandbox and production API keys
+
+The managed-key feature is additive and is disabled operationally until the database migration and server settings are configured.
+
+1. Review and apply `database/migrations/009_managed_api_keys.sql` to the intended database. Do not run it against production without a schema backup and an approved change window.
+2. Set `DATASOURCE_ENVIRONMENT=sandbox` on the sandbox deployment and `DATASOURCE_ENVIRONMENT=production` on the production deployment. The server's configured environment is authoritative; client headers cannot override it.
+3. Set `DATASOURCE_ADMIN_TOKEN` to a strong secret in the server's secret manager. Do not add it to frontend build variables, source control, or a public-facing customer application.
+4. Open the dashboard's **API Keys** page and enter the operator token. The page keeps it in memory only. Generate a key, copy the secret once, and store it in a secret manager.
+5. Use sandbox keys only against the sandbox datasource URL. Production rejects sandbox keys with HTTP 403 and code `API_KEY_ENVIRONMENT_MISMATCH`; attempted misuse is recorded in `api_key_security_events` when the audit database is available.
+6. Use scopes to limit access. Rotate/revoke keys when a secret is exposed or no longer needed. The database stores a SHA-256 digest, not the plaintext secret.
+
+Managed key routes (operator token required):
+- `GET /api/v1/admin/api-keys`
+- `POST /api/v1/admin/api-keys`
+- `POST /api/v1/admin/api-keys/{id}/rotate`
+- `DELETE /api/v1/admin/api-keys/{id}`
+- `GET /api/v1/admin/security-events?limit=100`
+
+Data governance routes (API key required):
+- `GET /api/v1/quality/summary`
+- `GET /api/v1/quality/rules`
+- `GET /api/v1/registry/match-candidates?q=...`
+- `GET /api/v1/sources/freshness`
+- `GET /api/v1/audit/logs?limit=100`
+
+The operator token is a single-operator control, not end-user authentication. Do not expose key-management routes as customer self-service until a real identity provider, organization membership checks, and tenant-scoped authorization are implemented. Legacy `REGISTRY_API_KEYS` remain supported during migration and are not individually environment-scoped; migrate callers to managed keys before retiring the shared-key mechanism. BRS/KRA adapters are interfaces only until vendor-approved credentials and integration tests are completed.
