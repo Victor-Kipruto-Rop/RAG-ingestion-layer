@@ -1,5 +1,4 @@
 """Bounded XLSX parsing for the first worksheet of authorized registry datasets."""
-from contextlib import contextmanager
 from io import BytesIO
 from zipfile import BadZipFile, ZipFile
 from openpyxl import load_workbook
