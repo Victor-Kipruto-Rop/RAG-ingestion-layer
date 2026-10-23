@@ -9,6 +9,7 @@ from .models import IngestionJob,Organization,OrganizationRecordVersion,Ingestio
 from .storage import download_bytes
 from .ingestion.parser_csv import iter_csv_records_from_storage
 from .ingestion.normalizer import normalize_record
+from .entity_resolution import similarity_score
 from .cache import invalidate_lookup_keys
 structlog.configure(processors=[structlog.processors.TimeStamper(fmt='iso'),structlog.processors.add_log_level,structlog.processors.format_exc_info,structlog.processors.JSONRenderer()],logger_factory=structlog.stdlib.LoggerFactory())
 logging.basicConfig(level=logging.INFO,format='%(message)s')
@@ -73,6 +74,16 @@ def process_job(job_id):
      existing=None
      if reg:existing=db.scalar(select(Organization).where(Organization.normalized_registration_number==reg).limit(1))
      if existing is None and not reg and pin:existing=db.scalar(select(Organization).where(Organization.normalized_tax_pin==pin).limit(1))
+     potential_duplicates=[]
+     if existing is None and rec.get('legal_name'):
+      name_tokens=rec['normalized_legal_name'].split()
+      prefix=(name_tokens[0][:3] if name_tokens else '')
+      if prefix:
+       candidates=db.scalars(select(Organization).where(Organization.normalized_legal_name.ilike(f'{prefix}%')).order_by(Organization.normalized_legal_name).limit(200)).all()
+       for candidate in candidates:
+        score=similarity_score(rec['legal_name'],candidate.legal_name)
+        if score>=92.0:
+         potential_duplicates.append({'organization_id':candidate.id,'similarity_score':score})
      if existing:
       before=snap(existing)
       if existing.normalized_registration_number:changed_lookup_keys.add(f'registry:lookup:reg:{existing.normalized_registration_number}')
@@ -82,9 +93,13 @@ def process_job(job_id):
       db.flush()
       db.add(OrganizationRecordVersion(organization_id=existing.id,change_type='UPDATED',snapshot={'before':before,'after':snap(existing)},source_name=existing.source_name,source_file=job.file_name,source_row=row_num));updated+=1
      else:
-      org=Organization(**rec,source_file=job.file_name,source_row=row_num,source_name=job.source_name or 'uploaded_dataset',source_record_id=reg or pin,last_seen_at=now(),data_quality_status='IMPORTED_UNVERIFIED')
+      quality='POSSIBLE_DUPLICATE_REVIEW' if potential_duplicates else 'IMPORTED_UNVERIFIED'
+      org=Organization(**rec,source_file=job.file_name,source_row=row_num,source_name=job.source_name or 'uploaded_dataset',source_record_id=reg or pin,last_seen_at=now(),data_quality_status=quality)
       db.add(org);db.flush()
-      db.add(OrganizationRecordVersion(organization_id=org.id,change_type='CREATED',snapshot={'after':snap(org)},source_name=org.source_name,source_file=job.file_name,source_row=row_num));inserted+=1
+      snapshot={'after':snap(org),'possible_duplicate_candidates':potential_duplicates}
+      db.add(OrganizationRecordVersion(organization_id=org.id,change_type='CREATED_POSSIBLE_DUPLICATE' if potential_duplicates else 'CREATED',snapshot=snapshot,source_name=org.source_name,source_file=job.file_name,source_row=row_num))
+      if potential_duplicates:db.add(AuditLog(action='registry_possible_duplicate_candidate',actor='ingestion-worker',file_name=job.file_name,details={'job_id':job.id,'row_number':row_num,'new_organization_id':org.id,'candidates':potential_duplicates,'decision':'manual_review_required'}))
+      inserted+=1
     except ValueError as exc:
      skipped+=1
      message=str(exc)[:1000]
