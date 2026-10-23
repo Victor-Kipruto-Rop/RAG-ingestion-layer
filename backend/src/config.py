@@ -13,6 +13,7 @@ class Settings(BaseSettings):
  worker_max_attempts:int=3
  worker_retry_seconds:int=30
  worker_stale_after_seconds:int=900
+ worker_max_jobs_per_run:int=10
  r2_account_id:str=''
  r2_access_key_id:str=''
  r2_secret_access_key:str=''
