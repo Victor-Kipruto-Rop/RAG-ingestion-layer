@@ -26,6 +26,7 @@ Apply in order to PostgreSQL/Supabase:
 6. `database/migrations/006_failed_imports_dlq.sql`
 7. `database/migrations/007_ingestion_row_progress.sql`
 8. `database/migrations/008_job_correlation_id.sql`
+9. `database/migrations/009_managed_api_keys.sql`
 
 Set `APP_ENV=production` only after migrations are applied. Production startup intentionally does not create tables automatically.
 
