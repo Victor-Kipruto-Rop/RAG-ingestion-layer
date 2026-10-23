@@ -3,7 +3,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from src.database import Base
-from src.entity_resolution import find_existing_organization
+from src.entity_resolution import find_existing_organization, merge_record_preserving_identifiers
 from src.models import Organization
 
 
@@ -56,3 +56,22 @@ def test_existing_registration_with_changed_tax_pin_is_rejected(registry_db):
 def test_existing_tax_pin_with_different_registration_is_rejected(registry_db):
     with pytest.raises(ValueError, match="different registration number"):
         find_existing_organization(registry_db, "REG-NEW", "PIN-A")
+
+
+def test_partial_source_record_does_not_erase_known_identifiers(registry_db):
+    organization = registry_db.get(Organization, "org-a")
+    merge_record_preserving_identifiers(
+        organization,
+        {
+            "legal_name": "Alpha Updated Limited",
+            "registration_number": None,
+            "normalized_registration_number": None,
+            "tax_pin": None,
+            "normalized_tax_pin": None,
+        },
+    )
+    assert organization.legal_name == "Alpha Updated Limited"
+    assert organization.registration_number == "REG-A"
+    assert organization.normalized_registration_number == "REG-A"
+    assert organization.tax_pin == "PIN-A"
+    assert organization.normalized_tax_pin == "PIN-A"
