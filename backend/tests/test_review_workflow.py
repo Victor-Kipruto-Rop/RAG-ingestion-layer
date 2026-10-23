@@ -29,11 +29,11 @@ def make_org():
         db.add(row)
         db.commit()
         db.refresh(row)
-        return row.id, name, f"TEST-{suffix}"
+        return row.id, f"TEST-{suffix}"
 
 
 def test_review_decisions_are_audited_and_reopen_returns_record_to_queue():
-    organization_id, organization_name, registration_number = make_org()
+    organization_id, registration_number = make_org()
     try:
         queued = client.get("/api/v1/reviews/queue", params={"limit": 200, "q": registration_number}, headers=API_HEADERS)
         assert queued.status_code == 200, queued.text
