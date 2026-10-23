@@ -21,26 +21,42 @@ class ProviderStatus(StrEnum):
 
 @dataclass(frozen=True)
 class ProviderResult:
-    """Normalized provider outcome; not universal legal certification."""
+    """Normalized provider outcome; not universal legal certification.
+
+    The legacy fields remain available during migration so existing adapters can
+    return normalized_data/evidence_reference while moving to the shared schema.
+    """
     provider: str
-    status: ProviderStatus
-    checked_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    status: ProviderStatus | str
+    matched: bool | None = None
+    normalized_data: dict[str, Any] = field(default_factory=dict)
+    evidence_reference: str | None = None
+    checked_at: datetime | str | None = None
+    message: str | None = None
     reference_id: str | None = None
     matched_fields: dict[str, Any] = field(default_factory=dict)
     evidence: list[dict[str, Any]] = field(default_factory=list)
-    message: str | None = None
     retryable: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         checked_at = self.checked_at
-        if checked_at.tzinfo is None:
-            checked_at = checked_at.replace(tzinfo=timezone.utc)
+        if checked_at is None:
+            checked = datetime.now(timezone.utc)
+        elif isinstance(checked_at, str):
+            checked = checked_at
+        else:
+            if checked_at.tzinfo is None:
+                checked_at = checked_at.replace(tzinfo=timezone.utc)
+            checked = checked_at.isoformat()
+        status = self.status.value if isinstance(self.status, ProviderStatus) else str(self.status)
         return {
             "provider": self.provider,
-            "status": self.status.value,
-            "checked_at": checked_at.isoformat(),
-            "reference_id": self.reference_id,
+            "status": status,
+            "matched": self.matched,
+            "checked_at": checked,
+            "reference_id": self.reference_id or self.evidence_reference,
             "matched_fields": self.matched_fields,
+            "normalized_data": self.normalized_data,
             "evidence": self.evidence,
             "message": self.message,
             "retryable": self.retryable,
@@ -49,15 +65,12 @@ class ProviderResult:
 
 class VerificationProvider(Protocol):
     name: str
-
     def check_registration(self, registration_number: str) -> ProviderResult: ...
     def check_tax_pin(self, tax_pin: str) -> ProviderResult: ...
 
 
-# Compatibility protocol for older adapter drafts.
 class RegistryProvider(Protocol):
     name: str
-
     async def lookup_registration(self, registration_number: str) -> ProviderResult: ...
 
 
@@ -67,7 +80,6 @@ class ProviderNotConfigured(RuntimeError):
 
 class UnconfiguredProvider:
     """Explicit unavailable adapter; it never fabricates a successful result."""
-
     def __init__(self, name: str, reason: str = "Provider integration is not configured"):
         self.name = name
         self.reason = reason
@@ -92,7 +104,6 @@ class UnconfiguredProvider:
 
 class ProviderRegistry:
     """Explicit registry that defaults to unavailable, never to mock success."""
-
     def __init__(self) -> None:
         self._providers: dict[str, VerificationProvider] = {}
 
@@ -106,10 +117,7 @@ class ProviderRegistry:
 
     def get(self, name: str) -> VerificationProvider:
         normalized = name.strip().lower()
-        return self._providers.get(
-            normalized,
-            UnconfiguredProvider(normalized or "unknown"),
-        )
+        return self._providers.get(normalized, UnconfiguredProvider(normalized or "unknown"))
 
     def names(self) -> list[str]:
         return sorted(self._providers)
