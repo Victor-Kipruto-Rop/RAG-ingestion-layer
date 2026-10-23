@@ -22,7 +22,7 @@ class ManagedAPIKey(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     environment: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
-    key_prefix: Mapped[str] = mapped_column(String(32), nullable=False, unique=True, index=True)
+    key_prefix: Mapped[str] = mapped_column(String(32), nullable=False, unique=True)
     key_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     scopes: Mapped[list] = mapped_column(json_type, nullable=False, default=list)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="active", index=True)
@@ -124,17 +124,19 @@ def authenticate_managed_key(token: str, request: Request) -> tuple[bool, str | 
             record_security_event(db, None, "managed_key_invalid", requested_environment, request)
             db.commit()
             raise HTTPException(401, "Invalid or unknown managed API key")
-        if key.status != "active" or key.revoked_at is not None:
+        if key.status == "revoked" or key.revoked_at is not None:
             record_security_event(db, key, "revoked_key_attempt", requested_environment, request)
             db.commit()
             raise HTTPException(401, "API key has been revoked")
         now = now_utc()
         expiry = key.expires_at
-        if expiry and (expiry.replace(tzinfo=timezone.utc) if expiry.tzinfo is None else expiry) <= now:
+        if key.status == "expired" or (expiry and (expiry.replace(tzinfo=timezone.utc) if expiry.tzinfo is None else expiry) <= now):
             key.status = "expired"
             record_security_event(db, key, "expired_key_attempt", requested_environment, request)
             db.commit()
             raise HTTPException(401, "API key has expired")
+        if key.status != "active":
+            raise HTTPException(401, "API key is not active")
         if key.environment != requested_environment:
             record_security_event(
                 db, key, "environment_mismatch", requested_environment, request,
