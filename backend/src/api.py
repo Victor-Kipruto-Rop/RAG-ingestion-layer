@@ -8,7 +8,7 @@ from sqlalchemy import select,func,or_
 from sqlalchemy.orm import Session
 from .config import settings
 from .database import get_db
-from .models import Organization,OrganizationRecordVersion,IngestionJob,IngestionRowError,AuditLog,RegistrySource,WarehouseRawImport
+from .models import Organization,IngestionJob,IngestionRowError,AuditLog,RegistrySource,WarehouseRawImport
 from .security import require_api_key
 from .storage import upload_fileobj,StorageNotConfigured,presign_upload_url,head_object,read_object_prefix
 from .cache import get_json,set_json
