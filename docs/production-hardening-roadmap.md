@@ -69,7 +69,8 @@ This document distinguishes code present in the repository from work that still 
 - [x] Responsive dashboard, API-key management, quality views, source freshness, job/record views and status messaging are present in the feature branch.
 - [x] API-key screen does not persist the operator token to local storage and reveals a new secret only once.
 - [x] Added frontend API-client unit tests for successful responses, JSON headers, multipart uploads, structured environment-mismatch errors and non-JSON server failures; CI now runs `npm test`.
-- [ ] Add component-level tests for loading, empty states, expired operator token, clipboard failure and narrow mobile layout.
+- [x] Added API-key page component tests for operator authentication feedback, in-memory-only token handling, and one-time secret reveal.
+- [ ] Add remaining component tests for empty states, expired operator token, clipboard failure and narrow mobile layout.
 - [ ] Add a React error boundary and accessible confirmation/notification handling.
 - [ ] Verify server pagination/filtering for high-volume record and audit-log tables.
 - [ ] Confirm frontend build-time VITE_API_BASE_URL is set for each deployment and no server secret enters the browser bundle.
