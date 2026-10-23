@@ -10,7 +10,7 @@ from .database import get_db
 from .models import ManagedAPIKey, APIKeySecurityEvent, AuditLog
 
 router=APIRouter(prefix='/api/v1/admin',tags=['API key administration'])
-ALLOWED_SCOPES={'registry:read','ingestion:write','sources:write','exports:read'}
+ALLOWED_SCOPES={'registry:read','ingestion:write','sources:write','exports:read','quality:review'}
 
 class APIKeyCreate(BaseModel):
  name:str=Field(min_length=2,max_length=120)
