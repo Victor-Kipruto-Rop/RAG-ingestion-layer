@@ -46,11 +46,13 @@ def list_api_keys(_:str=Depends(require_admin_token),db:Session=Depends(get_db))
 
 @router.post('/api-keys',status_code=201)
 def create_api_key(payload:APIKeyCreate,request:Request,_:str=Depends(require_admin_token),db:Session=Depends(get_db)):
+ name=payload.name.strip()
+ if len(name)<2: raise HTTPException(422,'name must contain at least 2 non-whitespace characters')
  scopes=sorted(set(payload.scopes))
  if not scopes or any(scope not in ALLOWED_SCOPES for scope in scopes):
   raise HTTPException(422,{'message':'One or more API key scopes are not supported.','allowed_scopes':sorted(ALLOWED_SCOPES)})
  prefix,secret,digest=new_key(payload.environment)
- row=ManagedAPIKey(id=str(uuid.uuid4()),name=payload.name.strip(),environment=payload.environment,key_prefix=prefix,secret_hash=digest,scopes=scopes,status='active',created_by='operator',expires_at=expiry(payload.expires_in_days))
+ row=ManagedAPIKey(id=str(uuid.uuid4()),name=name,environment=payload.environment,key_prefix=prefix,secret_hash=digest,scopes=scopes,status='active',created_by='operator',expires_at=expiry(payload.expires_in_days))
  db.add(row)
  db.add(AuditLog(action='managed_api_key_created',actor='operator',details={'key_id':row.id,'key_prefix':prefix,'environment':payload.environment,'scopes':scopes,'request_id':getattr(request.state,'request_id',None)}))
  db.commit();db.refresh(row)
