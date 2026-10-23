@@ -102,12 +102,13 @@ async def require_api_key(
     x_internal_timestamp: str | None = Header(default=None, alias="X-Internal-Timestamp"),
     x_internal_nonce: str | None = Header(default=None, alias="X-Internal-Nonce"),
 ):
-    if x_api_key and x_api_key.startswith(("pg_sandbox_", "pg_live_")) and not settings.require_hmac:
-        _, key_id, _ = authenticate_managed_key(x_api_key, request)
-        identity = "managed-key:" + str(key_id)
-    elif x_internal_signature is not None:
+    managed_key_id = None
+    if x_api_key and x_api_key.startswith(("pg_sandbox_", "pg_live_")):
+        _, managed_key_id, _ = authenticate_managed_key(x_api_key, request)
+
+    if settings.require_hmac or x_internal_signature is not None:
         secret = settings.hmac_shared_secret
-        if not secret or not x_internal_timestamp or not x_internal_nonce:
+        if not secret or not x_internal_signature or not x_internal_timestamp or not x_internal_nonce:
             raise HTTPException(401, "Invalid internal signature headers")
         try:
             timestamp = int(x_internal_timestamp)
@@ -119,22 +120,23 @@ async def require_api_key(
             raise HTTPException(401, "Invalid internal signature nonce")
         body = await request.body()
         body_hash = hashlib.sha256(body).hexdigest()
-        canonical = "\n".join([str(timestamp), x_internal_nonce, request.method.upper(), request.url.path, request.url.query, body_hash])
+        canonical = "\\n".join([str(timestamp), x_internal_nonce, request.method.upper(), request.url.path, request.url.query, body_hash])
         expected = hmac.new(secret.encode(), canonical.encode(), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(expected, x_internal_signature.lower()):
             raise HTTPException(401, "Invalid internal signature")
         if not await _check_nonce(x_internal_nonce, max(60, settings.hmac_nonce_ttl_seconds)):
             raise HTTPException(401, "Internal request replay detected")
-        identity = "hmac-client:" + (request.client.host if request.client else "unknown")
+        identity = "managed-key:" + managed_key_id if managed_key_id else "hmac-client:" + (request.client.host if request.client else "unknown")
+    elif managed_key_id:
+        identity = "managed-key:" + managed_key_id
     else:
-        if settings.require_hmac:
-            raise HTTPException(401, "Signed internal request required")
         keys = settings.api_key_list
         if not keys:
             raise HTTPException(503, "Service authentication is not configured")
         if not x_api_key or not any(hmac.compare_digest(x_api_key, key) for key in keys):
             raise HTTPException(401, "Invalid or missing API key")
         identity = "api-key:" + hashlib.sha256(x_api_key.encode()).hexdigest()
+
     if request.url.path in {"/api/v1/registry/lookup", "/api/v1/registry/search"}:
         await _take_token(identity, request)
     return identity
