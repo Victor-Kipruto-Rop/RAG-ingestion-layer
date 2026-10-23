@@ -121,3 +121,16 @@ Data governance routes (API key required):
 - `GET /api/v1/audit/logs?limit=100`
 
 The operator token is a single-operator control, not end-user authentication. Do not expose key-management routes as customer self-service until a real identity provider, organization membership checks, and tenant-scoped authorization are implemented. Legacy `REGISTRY_API_KEYS` remain supported during migration and are not individually environment-scoped; migrate callers to managed keys before retiring the shared-key mechanism. BRS/KRA adapters are interfaces only until vendor-approved credentials and integration tests are completed.
+
+
+## Entity match review workflow
+
+The dashboard's **Match Reviews** page records human decisions on fuzzy organization-name candidates. It does not merge organizations, alter canonical fields, or certify legal identity.
+
+1. Review and apply `database/migrations/010_entity_match_reviews.sql` only after a database backup and explicit approval.
+2. Create a managed API key with `registry:read` and `quality:review` scopes.
+3. Use `GET /api/v1/quality/reviews` to read review history and `POST /api/v1/quality/reviews` to record a decision.
+4. Each decision stores reviewer key ID, request correlation, bounded evidence, and an audit event. Valid decisions are `accepted_candidate`, `rejected_candidate`, and `needs_more_evidence`.
+5. Do not put raw identity documents or personal data into review evidence.
+
+BRS and KRA provider adapter contracts currently return `NOT_CONFIGURED`; they make no external requests and do not pretend to verify organizations. Live integration requires approved credentials, permitted purpose, provider terms, and integration tests. See [entity match review workflow](docs/entity-match-review-workflow.md).

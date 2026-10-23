@@ -170,3 +170,23 @@ class APIKeySecurityEvent(Base):
  client_ip:Mapped[str|None]=mapped_column(String(80))
  details:Mapped[dict]=mapped_column(json_type,default=dict,nullable=False)
  created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
+
+
+class EntityMatchReview(Base):
+    """Immutable review decision for a fuzzy entity-match candidate; never merges records."""
+    __tablename__ = "entity_match_reviews"
+    __table_args__ = (
+        Index("ix_entity_match_reviews_candidate_created", "candidate_organization_id", "created_at"),
+        Index("ix_entity_match_reviews_decision_created", "decision", "created_at"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    candidate_organization_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("internal_organizations.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    query_name: Mapped[str] = mapped_column(String(500), nullable=False)
+    decision: Mapped[str] = mapped_column(String(30), nullable=False)
+    comment: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence: Mapped[dict] = mapped_column(json_type, default=dict, nullable=False)
+    reviewer_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    request_id: Mapped[str | None] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, nullable=False)

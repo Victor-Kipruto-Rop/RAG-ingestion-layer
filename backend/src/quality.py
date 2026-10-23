@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, func, or_
 from sqlalchemy.orm import Session
 from .database import get_db
-from .models import Organization, IngestionJob, RegistrySource, AuditLog
+from .models import Organization, IngestionJob, RegistrySource, AuditLog, EntityMatchReview
 from .security import require_api_key
 router=APIRouter(prefix='/api/v1',tags=['data quality'],dependencies=[Depends(require_api_key)])
 
@@ -63,3 +63,104 @@ def audit_logs(limit:int=Query(default=100,ge=1,le=500),action:str|None=None,db:
  if action: stmt=stmt.where(AuditLog.action==action[:100])
  rows=db.scalars(stmt.order_by(AuditLog.created_at.desc()).limit(limit)).all()
  return {'items':[{'id':r.id,'action':r.action,'actor':r.actor,'file_name':r.file_name,'details':r.details or {},'created_at':r.created_at.isoformat() if r.created_at else None} for r in rows],'count':len(rows)}
+
+
+class EntityMatchReviewCreate(BaseModel):
+    candidate_organization_id: str = Field(min_length=1, max_length=36)
+    query_name: str = Field(min_length=2, max_length=500)
+    decision: Literal["accepted_candidate", "rejected_candidate", "needs_more_evidence"]
+    comment: str = Field(min_length=5, max_length=2000)
+    evidence: dict = Field(default_factory=dict)
+
+
+@router.get('/quality/reviews')
+def list_entity_match_reviews(
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    candidate_organization_id: str | None = None,
+    decision: Literal["accepted_candidate", "rejected_candidate", "needs_more_evidence"] | None = None,
+    db: Session = Depends(get_db),
+):
+    stmt = select(EntityMatchReview)
+    if candidate_organization_id:
+        stmt = stmt.where(EntityMatchReview.candidate_organization_id == candidate_organization_id)
+    if decision:
+        stmt = stmt.where(EntityMatchReview.decision == decision)
+    total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    rows = db.scalars(
+        stmt.order_by(EntityMatchReview.created_at.desc(), EntityMatchReview.id.desc())
+        .offset(offset).limit(limit)
+    ).all()
+    return {
+        "items": [{
+            "id": row.id,
+            "candidate_organization_id": row.candidate_organization_id,
+            "query_name": row.query_name,
+            "decision": row.decision,
+            "comment": row.comment,
+            "evidence": row.evidence or {},
+            "reviewer_id": row.reviewer_id,
+            "request_id": row.request_id,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+            "effect": "review_only_no_record_merge",
+        } for row in rows],
+        "count": len(rows), "total": total, "limit": limit, "offset": offset,
+        "next_offset": offset + len(rows) if offset + len(rows) < total else None,
+    }
+
+
+@router.post('/quality/reviews', status_code=201)
+def create_entity_match_review(
+    payload: EntityMatchReviewCreate,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Persist an auditable human decision without merging or changing canonical records."""
+    organization = db.get(Organization, payload.candidate_organization_id)
+    if not organization:
+        raise HTTPException(status_code=404, detail="Candidate organization not found")
+    reviewer_id = getattr(request.state, "api_key_id", None)
+    if not reviewer_id:
+        # The scope guard only grants this route to managed keys with quality:review.
+        raise HTTPException(status_code=403, detail="A managed API key with quality:review scope is required")
+    evidence = payload.evidence
+    if len(str(evidence)) > 12000:
+        raise HTTPException(status_code=413, detail="Review evidence exceeds the 12 KB limit")
+    row = EntityMatchReview(
+        id=str(uuid.uuid4()),
+        candidate_organization_id=organization.id,
+        query_name=payload.query_name.strip(),
+        decision=payload.decision,
+        comment=payload.comment.strip(),
+        evidence=evidence,
+        reviewer_id=reviewer_id,
+        request_id=getattr(request.state, "request_id", None),
+    )
+    db.add(row)
+    db.add(AuditLog(
+        action="entity_match_review_created",
+        actor=reviewer_id,
+        details={
+            "review_id": row.id,
+            "candidate_organization_id": organization.id,
+            "decision": payload.decision,
+            "request_id": getattr(request.state, "request_id", None),
+            "effect": "review_only_no_record_merge",
+        },
+    ))
+    db.commit()
+    db.refresh(row)
+    return {
+        "item": {
+            "id": row.id,
+            "candidate_organization_id": row.candidate_organization_id,
+            "query_name": row.query_name,
+            "decision": row.decision,
+            "comment": row.comment,
+            "evidence": row.evidence or {},
+            "reviewer_id": row.reviewer_id,
+            "request_id": row.request_id,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+            "effect": "review_only_no_record_merge",
+        }
+    }
