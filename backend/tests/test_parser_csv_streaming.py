@@ -67,3 +67,7 @@ def test_nul_bytes_anywhere_in_csv_are_rejected_as_binary():
     payload = b"legal_name\n" + b"A" * 8190 + b"\x00\n"
     with pytest.raises(ValueError, match="binary data"):
         list(iter_csv_records(payload, 10))
+
+def test_blank_column_header_is_rejected():
+    with pytest.raises(ValueError, match="blank column headers"):
+        list(iter_csv_records(b"legal_name,,status\nAlpha Ltd,,ACTIVE\n", 10))
