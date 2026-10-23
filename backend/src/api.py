@@ -9,6 +9,7 @@ from .database import get_db
 from .models import Organization,OrganizationRecordVersion,IngestionJob,IngestionRowError,AuditLog,RegistrySource,WarehouseRawImport
 from .security import require_api_key
 from .storage import upload_fileobj,StorageNotConfigured
+from .cache import get_json,set_json
 router=APIRouter();log=logging.getLogger(__name__)
 def org_out(o):
  return {'id':o.id,'legal_name':o.legal_name,'registration_number':o.registration_number,'tax_pin':o.tax_pin,'status':o.status,'registry_payload':o.registry_payload or {},'source':{'name':o.source_name,'file':o.source_file,'row':o.source_row,'record_id':o.source_record_id,'published_at':o.source_published_at.isoformat() if o.source_published_at else None},'data_quality_status':o.data_quality_status,'last_seen_at':o.last_seen_at.isoformat() if o.last_seen_at else None,'created_at':o.created_at.isoformat() if o.created_at else None,'updated_at':o.updated_at.isoformat() if o.updated_at else None}
@@ -19,10 +20,20 @@ def lookup(reg_no:str|None=None,tax_pin:str|None=None,db:Session=Depends(get_db)
  if bool(reg_no)==bool(tax_pin):raise HTTPException(422,'Provide exactly one of reg_no or tax_pin')
  from .ingestion.normalizer import normalize_identifier
  ident=normalize_identifier(reg_no or tax_pin)
+ kind='reg' if reg_no else 'pin'
+ cache_key=f'registry:lookup:{kind}:{ident}'
+ cached=get_json(cache_key)
+ if cached is not None:
+  if cached.get('_cache_not_found'):return {'status':'not_found','found':False,'organization':None,'source':'internal_registry'}
+  return cached
  col=Organization.normalized_registration_number if reg_no else Organization.normalized_tax_pin
  org=db.scalar(select(Organization).where(col==ident).limit(1))
- if not org:return {'status':'not_found','found':False,'organization':None,'source':'internal_registry'}
- return {'status':'record_found','found':True,'match_type':'exact_identifier','organization':org_out(org),'source':'internal_registry','last_imported_at':org.updated_at.isoformat() if org.updated_at else None,'verification_note':'Imported registry data is evidence for review, not authoritative verification by itself.'}
+ if not org:
+  set_json(cache_key,{'_cache_not_found':True},settings.registry_cache_negative_ttl_seconds)
+  return {'status':'not_found','found':False,'organization':None,'source':'internal_registry'}
+ result={'status':'record_found','found':True,'match_type':'exact_identifier','organization':org_out(org),'source':'internal_registry','last_imported_at':org.updated_at.isoformat() if org.updated_at else None,'verification_note':'Imported registry data is evidence for review, not authoritative verification by itself.'}
+ set_json(cache_key,result,settings.registry_cache_ttl_seconds)
+ return result
 @router.get('/api/v1/registry/search',dependencies=[Depends(require_api_key)])
 def search(q:str=Query(min_length=2,max_length=200),limit:int=Query(default=20,ge=1,le=100),db:Session=Depends(get_db)):
  from .ingestion.normalizer import normalize_legal_name
