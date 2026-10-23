@@ -33,7 +33,7 @@ def require_user_claims(authorization: str | None = Header(default=None, alias="
         header = json.loads(_b64url_decode(parts[0]))
         claims = json.loads(_b64url_decode(parts[1]))
         signature = _b64url_decode(parts[2])
-    except (ValueError, TypeError, json.JSONDecodeError):
+    except Exception:
         raise HTTPException(401, "Invalid access token")
     if not isinstance(header, dict) or not isinstance(claims, dict):
         raise HTTPException(401, "Invalid access token")
@@ -80,7 +80,9 @@ def _roles(claims: dict) -> set[str]:
     roles = claims.get("roles", [])
     if isinstance(roles, str):
         roles = [roles]
-    return set(roles)
+    if not isinstance(roles, list):
+        return set()
+    return {role for role in roles if isinstance(role, str)}
 
 def _require_org_admin(claims: dict):
     if not ({"owner", "admin"} & _roles(claims)):
