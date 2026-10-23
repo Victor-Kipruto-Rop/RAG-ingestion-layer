@@ -27,6 +27,7 @@ Apply in order to PostgreSQL/Supabase:
 7. `database/migrations/007_ingestion_row_progress.sql`
 8. `database/migrations/008_job_correlation_id.sql`
 9. `database/migrations/009_api_key_lifecycle.sql`
+10. `database/migrations/010_verification_orchestration.sql`
 
 Set `APP_ENV=production` only after migrations are applied. Production startup intentionally does not create tables automatically.
 
@@ -56,6 +57,7 @@ The API returns found, a matching organization when present, source metadata, da
 ## Ingestion flow
 
 - `GET /api/v1/quality/summary` (identifier coverage and duplicate-review indicators; not authoritative verification)
+- `GET /api/v1/verification/providers` and `POST/GET /api/v1/verification/cases`
 - `POST /api/v1/ingestion/preview` returns a non-persistent sample of CSV/XLSX files up to 5 MiB; it does not create an ingestion job.
 - `POST /api/v1/ingestion/uploads` validates file size/type and signatures, stores the original in R2 (or local development storage), creates a durable queued job, and returns HTTP 202. CSV is streamed; XLSX uses read-only parsing with compressed/uncompressed size and archive-entry limits.
 - Run one or more `registry-worker` processes to process queued CSVs. PostgreSQL row locks with `SKIP LOCKED` allow multiple workers to claim separate jobs.
@@ -110,3 +112,8 @@ See [implementation phases](docs/implementation-phases.md) for the delivery road
 - Managed key secrets are returned only once. The database stores only a SHA-256 digest and a public prefix. Managed keys are checked against the server deployment environment and scopes.
 - Legacy `REGISTRY_API_KEYS` remain available during caller migration. Do not revoke them until each trusted service caller has been migrated and verified.
 - The current application has no verified customer login/organization-owner identity in this service. These management routes are operator-only; do not expose them as a customer self-service UI until authenticated tenant roles are integrated.
+
+
+## Verification provider readiness
+
+The verification case API persists a traceable case and provider-check records, but BRS, KRA, and Peleza are explicitly reported as `not_configured` until approved provider access, endpoint specifications, credentials, and provider-specific adapters are supplied. Creating a case does not call an external provider and does not mark the organization verified. See [implementation phases](docs/implementation-phases.md).
