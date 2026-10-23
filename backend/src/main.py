@@ -143,8 +143,8 @@ def ready():
  if settings.redis_url:
   required_ok=required_ok and components["redis"]=="healthy"
  if not required_ok:
-  raise HTTPException(503,detail={"status":"not_ready",**snapshot})
- return {"status":"ready",**snapshot}
+  raise HTTPException(503,detail={"status":"not_ready","database":components["database"],"r2_configured":bool(settings.r2_bucket_name),**snapshot})
+ return {"status":"ready","database":components["database"],"r2_configured":bool(settings.r2_bucket_name),**snapshot}
 
 @app.get('/health',tags=['health'])
 def health():
@@ -153,4 +153,4 @@ def health():
  status="healthy" if components["database"]=="healthy" else "degraded"
  if settings.app_env.lower()=="production" and components["object_storage"]!="healthy":status="degraded"
  if settings.redis_url and components["redis"]!="healthy":status="degraded"
- return {"status":status,**snapshot}
+ return {"status":status,"database":components["database"],"r2_configured":bool(settings.r2_bucket_name),**snapshot}
