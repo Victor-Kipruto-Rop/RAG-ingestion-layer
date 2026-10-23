@@ -70,3 +70,8 @@ The API returns found, a matching organization when present, source metadata, da
 - Run CI and production integration tests before relying on this service for live decisions.
 
 See `docs/ARCHITECTURE.md` for the operating contract and scale roadmap.
+
+
+## Windows local worker test
+
+For a safe Windows/Docker Desktop smoke test that uses a shared local SQLite database and local file storage (not production Supabase or R2), follow [`docs/windows-local-worker.md`](docs/windows-local-worker.md). It includes a fictional CSV fixture at [`samples/test-organizations.csv`](samples/test-organizations.csv) and uses [`docker-compose.windows.local.yml`](docker-compose.windows.local.yml) to run the API and worker together. Do not put production credentials in this local test configuration.
