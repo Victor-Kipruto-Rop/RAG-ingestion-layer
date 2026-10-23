@@ -333,7 +333,7 @@ function App() {
 
   const metrics = summary || {};
   const navToUpload = () => setPage('Upload center');
-  const knownPage = ['Overview', 'Registry Records', 'Ingestion Jobs', 'Upload center'].includes(page);
+  const knownPage = ['Overview', 'Registry Records', 'Ingestion Jobs', 'Review Queue', 'Upload center'].includes(page);
 
   return <div className="app-shell">
     {mobile && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setMobile(false)} />}
