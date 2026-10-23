@@ -22,6 +22,16 @@ def _sanitize_dlq_row(row):
   normalized=str(key).strip().lower().replace('-','_')
   safe[str(key)[:100]]='[REDACTED]' if any(part in normalized for part in _SENSITIVE_KEY_PARTS) else (str(value)[:500] if value is not None else None)
  return safe
+
+def _sanitize_diagnostic(value,row):
+ text=str(value)
+ for key,item in row.items():
+  normalized=str(key).strip().lower().replace('-','_')
+  if item is not None and any(part in normalized for part in _SENSITIVE_KEY_PARTS):
+   secret=str(item)
+   if secret: text=text.replace(secret,'[REDACTED]')
+ return text[:16000]
+
 def now():return datetime.now(timezone.utc)
 def snap(o):
  return {'legal_name':o.legal_name,'normalized_legal_name':o.normalized_legal_name,'registration_number':o.registration_number,'normalized_registration_number':o.normalized_registration_number,'tax_pin':o.tax_pin,'normalized_tax_pin':o.normalized_tax_pin,'status':o.status,'registry_payload':o.registry_payload or {},'data_quality_status':o.data_quality_status}
@@ -37,7 +47,7 @@ def process_job(job_id):
  with SessionLocal() as db:
   job=db.get(IngestionJob,job_id)
   if not job:return
-  log.info('ingestion_job_started',job_id=job_id,file_name=job.file_name)
+  log.info('ingestion_job_started',job_id=job_id)
   try:
    if not job.object_key:raise RuntimeError('Ingestion source object is missing')
    suffix='.'+job.file_name.rsplit('.',1)[-1].lower() if '.' in job.file_name else ''
@@ -103,9 +113,9 @@ def process_job(job_id):
       inserted+=1
     except ValueError as exc:
      skipped+=1
-     message=str(exc)[:1000]
+     message=_sanitize_diagnostic(exc,row)[:1000]
      db.add(IngestionRowError(job_id=job.id,row_number=row_num,error_code='INVALID_ROW',message=message))
-     db.add(FailedImportDLQ(job_id=job.id,row_number=row_num,error_code='INVALID_ROW',error_type=type(exc).__name__,message=message,sanitized_row=_sanitize_dlq_row(row),traceback_text=traceback.format_exc()[-12000:]))
+     db.add(FailedImportDLQ(job_id=job.id,row_number=row_num,error_code='INVALID_ROW',error_type=type(exc).__name__,message=message,sanitized_row=_sanitize_dlq_row(row),traceback_text=_sanitize_diagnostic(traceback.format_exc(),row)))
     except Exception:
      raise
    job.records_processed=processed;job.records_inserted=inserted;job.records_updated=updated;job.records_skipped=skipped
