@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import or_, select, func
 from sqlalchemy.orm import Session
@@ -89,7 +89,7 @@ def list_decisions(organization_id: str, limit: int = Query(default=50, ge=1, le
 
 
 @router.post("/{organization_id}/decisions", status_code=201)
-def create_decision(organization_id: str, payload: ReviewDecisionInput, request, reviewer: str = Depends(require_api_key), db: Session = Depends(get_db)):
+def create_decision(organization_id: str, payload: ReviewDecisionInput, request: Request, reviewer: str = Depends(require_api_key), db: Session = Depends(get_db)):
     organization = db.get(Organization, organization_id)
     if not organization:
         raise HTTPException(404, "Organization record not found")
