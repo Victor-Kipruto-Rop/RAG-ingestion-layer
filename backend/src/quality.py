@@ -4,7 +4,8 @@ from sqlalchemy import select, func, or_
 from sqlalchemy.orm import Session
 from .database import get_db
 from .models import Organization, IngestionJob, RegistrySource
-router=APIRouter(prefix='/api/v1',tags=['data quality'])
+from .security import require_api_key
+router=APIRouter(prefix='/api/v1',tags=['data quality'],dependencies=[Depends(require_api_key)])
 
 @router.get('/quality/summary')
 def quality_summary(stale_after_days:int=Query(default=180,ge=1,le=3650),db:Session=Depends(get_db)):
