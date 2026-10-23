@@ -4,7 +4,7 @@ import {
   Bell, Building2, CheckCircle2, ChevronDown, CircleDot, Clock3, Database,
   FileCheck2, FileSpreadsheet, FileText, HardDrive, LayoutDashboard, Menu,
   MoreHorizontal, RefreshCw, Search, Server, Settings, ShieldCheck, SlidersHorizontal,
-  Upload, X, ScrollText, Workflow
+  Upload, X, ScrollText, Workflow, KeyRound, Copy, RotateCw, Trash2, LockKeyhole
 } from 'lucide-react';
 import { api } from './api.js';
 
@@ -17,6 +17,7 @@ const NAV = [
   { name: 'Warehouse', icon: HardDrive, group: 'GOVERNANCE' },
   { name: 'Validation Rules', icon: ShieldCheck, group: 'GOVERNANCE' },
   { name: 'Audit Logs', icon: ScrollText, group: 'ADMINISTRATION' },
+  { name: 'API Keys', icon: KeyRound, group: 'ADMINISTRATION' },
   { name: 'Settings', icon: Settings, group: 'ADMINISTRATION' },
 ];
 
@@ -173,7 +174,107 @@ function ServiceStatus({ label, detail, icon: Icon, value, connected }) {
   return <div className="service-card"><div className="service-icon"><Icon size={19} /></div><div className="service-copy"><strong>{label}</strong><span>{detail}</span></div><StatusPill value={value || (connected ? 'Connected' : 'Unknown')} /></div>;
 }
 
-export default function App() {
+export default 
+function APIKeysPage() {
+  const [token, setToken] = useState('');
+  const [items, setItems] = useState([]);
+  const [events, setEvents] = useState([]);
+  const [name, setName] = useState('Datasource integration');
+  const [environment, setEnvironment] = useState('sandbox');
+  const [scopes, setScopes] = useState(['registry:read']);
+  const [expires, setExpires] = useState('90');
+  const [secret, setSecret] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const headers = () => ({ Authorization: `Bearer ${token}` });
+  const load = async () => {
+    if (!token.trim()) { setError('Enter the operator token configured on the server.'); return; }
+    setLoading(true); setError('');
+    try {
+      const [keysResponse, eventsResponse] = await Promise.all([
+        api('/api/v1/admin/api-keys', { headers: headers() }),
+        api('/api/v1/admin/security-events?limit=100', { headers: headers() })
+      ]);
+      const keys = await keysResponse.json(); const audit = await eventsResponse.json();
+      setItems(keys.items || []); setEvents(audit.items || []); setMessage('Operator access verified.');
+    } catch (e) { setError(typeof e.message === 'string' ? e.message : 'Could not load key management. Check the token and server configuration.'); }
+    finally { setLoading(false); }
+  };
+  const create = async (event) => {
+    event.preventDefault(); setLoading(true); setError(''); setSecret(''); setMessage('');
+    try {
+      const response = await api('/api/v1/admin/api-keys', { method: 'POST', headers: headers(), body: JSON.stringify({ name, environment, scopes, expires_in_days: expires ? Number(expires) : null }) });
+      const result = await response.json(); setSecret(result.secret || ''); setMessage(result.warning || 'Key created. Copy it now.'); await load();
+    } catch (e) { setError(typeof e.message === 'string' ? e.message : 'Could not create API key.'); }
+    finally { setLoading(false); }
+  };
+  const revoke = async (item) => {
+    if (!window.confirm(`Revoke ${item.key_prefix}? Applications using this key will stop working.`)) return;
+    setLoading(true); setError('');
+    try { await api(`/api/v1/admin/api-keys/${item.id}`, { method: 'DELETE', headers: headers() }); setSecret(''); setMessage('API key revoked.'); await load(); }
+    catch (e) { setError(typeof e.message === 'string' ? e.message : 'Could not revoke key.'); }
+    finally { setLoading(false); }
+  };
+  const rotate = async (item) => {
+    if (!window.confirm(`Rotate ${item.key_prefix}? The existing key will be revoked immediately.`)) return;
+    setLoading(true); setError(''); setSecret('');
+    try {
+      const response = await api(`/api/v1/admin/api-keys/${item.id}/rotate`, { method: 'POST', headers: headers(), body: JSON.stringify({ expires_in_days: expires ? Number(expires) : null }) });
+      const result = await response.json(); setSecret(result.secret || ''); setMessage(result.warning || 'Key rotated. Copy the new secret now.'); await load();
+    } catch (e) { setError(typeof e.message === 'string' ? e.message : 'Could not rotate key.'); }
+    finally { setLoading(false); }
+  };
+  const copySecret = async () => {
+    try { await navigator.clipboard.writeText(secret); setMessage('Secret copied. Store it in your secret manager; it will not be shown again.'); }
+    catch { setMessage('Clipboard access was blocked. Select and copy the secret manually, then store it securely.'); }
+  };
+  const toggleScope = (scope) => setScopes(current => current.includes(scope) ? current.filter(s => s !== scope) : [...current, scope]);
+  return <div className="keys-workspace">
+    <div className="page-heading"><div><div className="eyebrow-label">SECURITY & ACCESS</div><h1>API keys</h1><p>Create isolated credentials for sandbox and production integrations.</p></div><div className="heading-actions"><span className="keys-security-chip"><LockKeyhole size={14}/> Secret shown once</span></div></div>
+    <section className="panel keys-admin-panel">
+      <div className="panel-heading"><div><h2>Operator access</h2><p>Enter the server-side DATASOURCE_ADMIN_TOKEN. It is held in this page's memory only and is not saved to local storage.</p></div></div>
+      <form className="keys-token-form" onSubmit={e => { e.preventDefault(); load(); }}>
+        <input type="password" autoComplete="off" value={token} onChange={e => setToken(e.target.value)} placeholder="Operator bearer token" aria-label="Operator bearer token"/>
+        <button className="button-primary" disabled={loading || !token.trim()}>{loading ? 'Checking…' : 'Unlock key management'}</button>
+      </form>
+      {error && <div className="keys-inline-error"><AlertTriangle size={15}/>{error}</div>}
+      {message && <div className="keys-inline-success"><CheckCircle2 size={15}/>{message}</div>}
+    </section>
+    {secret && <section className="panel secret-reveal">
+      <div className="secret-reveal-icon"><KeyRound size={19}/></div><div className="secret-reveal-copy"><strong>Copy your new API key now</strong><p>This is the only time the full secret is displayed. Do not commit it or place it in frontend source code.</p>
+        <input readOnly value={secret} onFocus={e => e.target.select()} aria-label="New API key secret"/>
+      </div><button className="button-primary" onClick={copySecret}><Copy size={15}/> Copy secret</button>
+    </section>}
+    <section className="panel">
+      <div className="panel-heading"><div><h2>Create API key</h2><p>Choose an environment and the minimum permissions the integration needs.</p></div></div>
+      <form className="keys-create-form" onSubmit={create}>
+        <label>Key name<input value={name} onChange={e => setName(e.target.value)} minLength={2} maxLength={120} required placeholder="e.g. Reconciliation service"/></label>
+        <label>Environment<select value={environment} onChange={e => setEnvironment(e.target.value)}><option value="sandbox">Sandbox · testing only</option><option value="production">Production · live requests</option></select></label>
+        <label>Expiry<select value={expires} onChange={e => setExpires(e.target.value)}><option value="30">30 days</option><option value="90">90 days</option><option value="180">180 days</option><option value="365">365 days</option><option value="">No expiry</option></select></label>
+        <div className="keys-scope-field"><span>Permissions</span><div className="keys-scopes">
+          {['registry:read','ingestion:write','sources:write','exports:read'].map(scope => <label key={scope}><input type="checkbox" checked={scopes.includes(scope)} onChange={() => toggleScope(scope)}/><span>{scope}</span></label>)}
+        </div></div>
+        <div className="keys-environment-warning"><ShieldCheck size={17}/><span><strong>Environment lock</strong> — sandbox credentials are rejected by production deployments, return API_KEY_ENVIRONMENT_MISMATCH, and generate a security event. The server deployment's DATASOURCE_ENVIRONMENT determines the target; a client header cannot override it.</span></div>
+        <button className="button-primary" disabled={loading || !token.trim() || scopes.length === 0}><KeyRound size={16}/> Generate {environment === 'sandbox' ? 'sandbox' : 'production'} key</button>
+      </form>
+    </section>
+    <section className="panel">
+      <div className="panel-heading"><div><h2>Managed keys</h2><p>Only prefixes are shown after creation. Full secrets are never retrievable.</p></div><button className="button-secondary" onClick={load} disabled={loading || !token.trim()}><RefreshCw size={14} className={loading ? 'spin' : ''}/> Refresh</button></div>
+      {!items.length ? <div className="keys-empty"><KeyRound size={22}/><strong>No managed keys loaded</strong><span>Unlock key management and refresh to view existing credentials.</span></div> :
+        <div className="table-scroll"><table className="data-table keys-table"><thead><tr><th>KEY</th><th>ENVIRONMENT</th><th>PERMISSIONS</th><th>LAST USED</th><th>EXPIRES</th><th>STATUS</th><th>ACTIONS</th></tr></thead><tbody>
+          {items.map(item => <tr key={item.id}><td><strong>{item.name}</strong><small className="key-prefix">{item.key_prefix}</small></td><td><span className={`env-pill ${item.environment}`}>{item.environment}</span></td><td><span className="keys-scope-summary">{(item.scopes || []).join(', ')}</span></td><td>{item.last_used_at ? dateLabel(item.last_used_at) : 'Never'}</td><td>{item.expires_at ? dateLabel(item.expires_at) : 'No expiry'}</td><td><StatusPill value={item.status}/></td><td><div className="keys-row-actions"><button className="row-action" title="Rotate key" aria-label="Rotate key" disabled={loading || item.status !== 'active'} onClick={() => rotate(item)}><RotateCw size={15}/></button><button className="row-action" title="Revoke key" aria-label="Revoke key" disabled={loading || item.status !== 'active'} onClick={() => revoke(item)}><Trash2 size={15}/></button></div></td></tr>)}
+        </tbody></table></div>}
+    </section>
+    <section className="panel">
+      <div className="panel-heading"><div><h2>Security events</h2><p>Recent managed-key misuse and permission-denial events.</p></div></div>
+      {!events.length ? <div className="keys-empty"><ShieldCheck size={22}/><strong>No security events loaded</strong><span>Events appear when managed keys are used incorrectly or denied.</span></div> :
+        <div className="table-scroll"><table className="data-table keys-table"><thead><tr><th>EVENT</th><th>KEY PREFIX</th><th>KEY ENVIRONMENT</th><th>REQUEST ENVIRONMENT</th><th>ENDPOINT</th><th>TIME</th></tr></thead><tbody>{events.map(event => <tr key={event.id}><td><StatusPill value={event.event_type}/></td><td>{event.key_prefix || 'Unknown key'}</td><td>{event.key_environment || 'Unknown'}</td><td>{event.expected_environment || 'Unknown'}</td><td>{event.http_method} {event.endpoint}</td><td>{dateLabel(event.created_at)}</td></tr>)}</tbody></table></div>}
+    </section>
+  </div>;
+}
+
+function App() {
   const [page, setPage] = useState('Overview');
   const [key, setKey] = useState('');
   const [connected, setConnected] = useState(false);
@@ -240,7 +341,7 @@ export default function App() {
 
   const metrics = summary || {};
   const navToUpload = () => setPage('Upload center');
-  const knownPage = ['Overview', 'Registry Records', 'Ingestion Jobs', 'Upload center'].includes(page);
+  const knownPage = ['Overview', 'Registry Records', 'Ingestion Jobs', 'Upload center', 'API Keys'].includes(page);
 
   return <div className="app-shell">
     {mobile && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setMobile(false)} />}
@@ -248,7 +349,7 @@ export default function App() {
     <main className="main-content">
       <Topbar page={page} connected={connected} onRefresh={refresh} loading={loading} search={search} setSearch={setSearch} setMobile={setMobile} />
       <div className="page-content">
-        {!connected && <section className="connect-banner"><div className="connect-banner-icon"><ShieldCheck size={20} /></div><div className="connect-copy"><strong>Connect your datasource</strong><p>Enter the internal API key to load live registry metrics and ingestion jobs. Avoid production service keys in browser-based previews.</p></div><form onSubmit={e => { e.preventDefault(); refresh(); }}><input type="password" value={key} onChange={e => setKey(e.target.value)} placeholder="Internal API key" autoComplete="off" /><button className="button-primary">Connect <ArrowRight size={15} /></button></form></section>}
+        {!connected && page !== 'API Keys' && <section className="connect-banner"><div className="connect-banner-icon"><ShieldCheck size={20} /></div><div className="connect-copy"><strong>Connect your datasource</strong><p>Enter the internal API key to load live registry metrics and ingestion jobs. Avoid production service keys in browser-based previews.</p></div><form onSubmit={e => { e.preventDefault(); refresh(); }}><input type="password" value={key} onChange={e => setKey(e.target.value)} placeholder="Internal API key" autoComplete="off" /><button className="button-primary">Connect <ArrowRight size={15} /></button></form></section>}
         {error && <div className="alert-banner error"><AlertTriangle size={17} /><span>{error}</span><button onClick={() => setError('')} aria-label="Dismiss error"><X size={16} /></button></div>}
         {message && <div className="alert-banner success"><CheckCircle2 size={17} /><span>{message}</span><button onClick={() => setMessage('')} aria-label="Dismiss message"><X size={16} /></button></div>}
 
@@ -270,6 +371,7 @@ export default function App() {
 
         {page === 'Ingestion Jobs' && <section className="panel full-panel"><div className="panel-heading"><div><h2>Ingestion jobs</h2><p>Inspect persisted import outcomes and processing counts.</p></div><button className="button-secondary" onClick={refresh} disabled={loading}><RefreshCw size={15} className={loading ? 'spin' : ''} /> Refresh</button></div><JobsTable jobs={jobs} search={search} /></section>}
         {page === 'Registry Records' && <section className="panel full-panel"><div className="panel-heading"><div><h2>Registry records</h2><p>Search imported organizations and inspect source information.</p></div><span className="record-count">{number(orgTotal)} records</span></div><OrganizationsTable rows={orgs} total={orgTotal} page={orgPage} pageSize={100} onPageChange={setOrgPage} /></section>}
+        {page === 'API Keys' && <APIKeysPage />}
         {page === 'Upload center' && <section className="panel upload-panel"><div className="panel-heading"><div><h2>Upload dataset</h2><p>Submit registry files for asynchronous ingestion.</p></div><div className="heading-icon"><Upload size={18} /></div></div><form onSubmit={upload} className="upload-form"><label className="dropzone"><input type="file" accept=".csv,.pdf" onChange={e => setFile(e.target.files?.[0] || null)} /><span className="dropzone-icon"><Upload size={25} /></span><strong>{file ? file.name : 'Choose a dataset to upload'}</strong><span>{file ? `${(file.size / 1048576).toFixed(2)} MB · ready to submit` : 'Drag a file here or browse from your device'}</span><small>CSV and PDF · backend size limits apply</small></label><div className="upload-actions"><p>Only upload datasets you are authorized to process. PDF files may be stored even where structured extraction is not yet enabled.</p><button className="button-primary" disabled={!file || loading}>{loading ? 'Submitting…' : <><Upload size={16} /> Queue import</>}</button></div></form></section>}
         {!knownPage && <section className="coming-soon panel"><div className="coming-icon"><Database size={25} /></div><span className="eyebrow-label">DATASOURCE MODULE</span><h2>{page}</h2><p>This navigation entry is reserved for the {page.toLowerCase()} workspace. Its production data view has not been connected yet, so this screen does not display fabricated records.</p><button className="button-secondary" onClick={() => setPage('Overview')}>Return to overview</button></section>}
         <footer className="page-footer"><span>© PesaGuard Datasource</span><span><span className={connected ? 'footer-status-dot' : 'footer-status-dot muted'} />{connected ? 'Connected to datasource API' : 'Local preview · not connected'}</span></footer>
