@@ -21,6 +21,10 @@ class Settings(BaseSettings):
  r2_secret_access_key:str=''
  r2_bucket_name:str=''
  r2_endpoint_url:str=''
+ db_pool_size:int=5
+ db_max_overflow:int=5
+ db_pool_timeout_seconds:int=30
+ db_pool_recycle_seconds:int=1800
  model_config=SettingsConfigDict(env_file='.env',extra='ignore',case_sensitive=False)
  @property
  def cors_origin_list(self): return [x.strip() for x in self.cors_origins.split(',') if x.strip()]
