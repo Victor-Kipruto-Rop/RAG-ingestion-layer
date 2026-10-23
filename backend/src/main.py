@@ -17,6 +17,7 @@ from . import models
 from .api import router
 from .api_keys import router as api_keys_router
 from .verification import router as verification_router
+from .review import router as review_router
 from .models import WarehouseAccessLog,IngestionJob
 from .storage import health_check as check_object_storage, StorageNotConfigured
 from .security import _redis_client
@@ -47,6 +48,7 @@ app.add_middleware(CORSMiddleware,allow_origins=settings.cors_origin_list,allow_
 app.include_router(router)
 app.include_router(api_keys_router)
 app.include_router(verification_router)
+app.include_router(review_router)
 @app.middleware('http')
 async def warehouse_access_telemetry(request,call_next):
  path=request.url.path
