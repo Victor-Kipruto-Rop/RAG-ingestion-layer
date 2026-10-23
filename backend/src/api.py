@@ -86,7 +86,7 @@ def presign_direct_upload(payload:DirectUploadRequest,request:Request,db:Session
   prior=db.scalar(select(IngestionJob).where(IngestionJob.idempotency_key==idempotency_key))
   if prior:
    raw=db.scalar(select(WarehouseRawImport).where(WarehouseRawImport.ingestion_job_id==prior.id))
-   if prior.status!='UPLOADING' or not raw or raw.byte_size!=payload.size_bytes:raise HTTPException(409,'Idempotency key is already associated with a different or completed upload')
+   if prior.status!='UPLOADING' or not raw or raw.byte_size!=payload.size_bytes or prior.file_name!=name or prior.content_type!=content_type:raise HTTPException(409,'Idempotency key is already associated with a different or completed upload')
    try:url=presign_upload_url(prior.object_key,content_type,settings.direct_upload_url_ttl_seconds)
    except StorageNotConfigured as exc:raise HTTPException(503,'Direct object storage is not configured') from exc
    return {'job_id':prior.id,'status':prior.status,'upload_url':url,'content_type':content_type,'expires_in_seconds':settings.direct_upload_url_ttl_seconds,'idempotent_replay':True}
@@ -113,12 +113,14 @@ def complete_direct_upload(job_id:str,db:Session=Depends(get_db)):
   job.status='FAILED';job.error_summary='Direct upload URL expired before completion.';job.completed_at=datetime.now(timezone.utc);raw.import_status='FAILED';db.commit();raise HTTPException(410,'Direct upload expired; create a new upload job')
  try:
   metadata=head_object(job.object_key)
-  prefix=read_object_prefix(job.object_key,4096)
  except StorageNotConfigured as exc:raise HTTPException(503,'Direct object storage is not configured') from exc
  except Exception as exc:raise HTTPException(502,'Unable to verify uploaded object') from exc
  actual_size=int(metadata.get('ContentLength',0) or 0)
  if actual_size<=0 or actual_size>settings.max_direct_upload_bytes or actual_size!=raw.byte_size:
   job.status='FAILED';job.error_summary='Uploaded object size did not match the declared size.';job.completed_at=datetime.now(timezone.utc);raw.import_status='FAILED';db.commit();raise HTTPException(422,'Uploaded object size did not match the declared size')
+ try:
+  prefix=read_object_prefix(job.object_key,4096)
+ except Exception as exc:raise HTTPException(502,'Unable to inspect uploaded object signature') from exc
  suffix='.'+job.file_name.rsplit('.',1)[-1].lower() if '.' in job.file_name else ''
  if suffix=='.pdf' and not prefix.startswith(b'%PDF-'):
   job.status='FAILED';job.error_summary='PDF signature validation failed.';job.completed_at=datetime.now(timezone.utc);raw.import_status='FAILED';db.commit();raise HTTPException(415,'PDF file signature is invalid')
