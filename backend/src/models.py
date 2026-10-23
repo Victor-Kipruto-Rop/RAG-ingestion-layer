@@ -89,3 +89,33 @@ class AuditLog(Base):
  file_name:Mapped[str|None]=mapped_column(String(500))
  details:Mapped[dict]=mapped_column(json_type,default=dict,nullable=False)
  created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
+
+class WarehouseRawImport(Base):
+ __tablename__='warehouse_raw_imports'
+ id:Mapped[str]=mapped_column(String(36),primary_key=True,default=lambda:str(uuid.uuid4()))
+ ingestion_job_id:Mapped[str]=mapped_column(String(36),ForeignKey('ingestion_jobs.id',ondelete='CASCADE'),unique=True,nullable=False)
+ object_key:Mapped[str]=mapped_column(String(1000),nullable=False)
+ original_filename:Mapped[str]=mapped_column(String(500),nullable=False)
+ content_type:Mapped[str|None]=mapped_column(String(200))
+ byte_size:Mapped[int]=mapped_column(Integer,default=0,nullable=False)
+ sha256_hex:Mapped[str|None]=mapped_column(String(64),index=True)
+ source_id:Mapped[str|None]=mapped_column(String(36),ForeignKey('registry_sources.id'))
+ source_name:Mapped[str|None]=mapped_column(String(200))
+ source_published_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
+ uploaded_by:Mapped[str]=mapped_column(String(200),default='internal-service',nullable=False)
+ import_status:Mapped[str]=mapped_column(String(40),default='QUEUED',nullable=False,index=True)
+ metadata_json:Mapped[dict]=mapped_column('metadata',json_type,default=dict,nullable=False)
+ created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
+class WarehouseAccessLog(Base):
+ __tablename__='warehouse_access_logs'
+ id:Mapped[str]=mapped_column(String(36),primary_key=True,default=lambda:str(uuid.uuid4()))
+ request_id:Mapped[str|None]=mapped_column(String(100))
+ caller_service:Mapped[str]=mapped_column(String(200),default='unknown',nullable=False)
+ endpoint:Mapped[str]=mapped_column(String(300),nullable=False)
+ http_method:Mapped[str]=mapped_column(String(12),nullable=False)
+ response_status:Mapped[int]=mapped_column(Integer,nullable=False)
+ duration_ms:Mapped[float]=mapped_column(nullable=False,default=0)
+ outcome:Mapped[str]=mapped_column(String(40),default='UNKNOWN',nullable=False)
+ query_type:Mapped[str|None]=mapped_column(String(40))
+ result_count:Mapped[int|None]=mapped_column(Integer)
+ created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
