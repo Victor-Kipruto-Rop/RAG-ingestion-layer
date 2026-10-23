@@ -39,6 +39,10 @@ def make_test_client(monkeypatch, environment="production"):
     async def upload(identity=Depends(security.require_api_key)):
         return {"identity": identity}
 
+    @app.post("/api/v1/quality/reviews")
+    async def create_review(identity=Depends(security.require_api_key)):
+        return {"identity": identity}
+
     return TestClient(app), engine, factory
 
 
@@ -95,6 +99,14 @@ def test_managed_key_scope_and_revocation_are_enforced(monkeypatch):
     denied = client.post("/api/v1/ingestion/uploads", headers={"X-API-Key": read_only})
     assert denied.status_code == 403
     assert denied.json()["detail"]["code"] == "API_KEY_SCOPE_DENIED"
+
+    review_denied = client.post("/api/v1/quality/reviews", headers={"X-API-Key": read_only}, json={})
+    assert review_denied.status_code == 403
+    assert review_denied.json()["detail"]["code"] == "API_KEY_SCOPE_DENIED"
+
+    review_key = insert_key(factory, "sandbox", scopes=["quality:review"])
+    review_allowed = client.post("/api/v1/quality/reviews", headers={"X-API-Key": review_key}, json={})
+    assert review_allowed.status_code == 200
 
     revoked = insert_key(factory, "sandbox", status="revoked", scopes=["registry:read"])
     invalid = client.get("/protected", headers={"X-API-Key": revoked})
