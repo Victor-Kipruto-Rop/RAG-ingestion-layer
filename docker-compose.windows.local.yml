@@ -1,0 +1,66 @@
+# Safe local Windows development stack.
+# Uses a shared SQLite database and local file storage. It does NOT connect to
+# Supabase or Cloudflare R2, even if production credentials exist in .env.
+services:
+  registry-api:
+    build:
+      context: ./backend
+    env_file:
+      - .env
+    environment:
+      APP_ENV: development
+      DATABASE_URL: sqlite:////app/data/registry.db
+      LOCAL_STORAGE_PATH: /app/.registry-uploads
+      R2_ACCOUNT_ID: ""
+      R2_ACCESS_KEY_ID: ""
+      R2_SECRET_ACCESS_KEY: ""
+      R2_BUCKET_NAME: ""
+      R2_ENDPOINT_URL: ""
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - registry_data:/app/data
+      - registry_uploads:/app/.registry-uploads
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  registry-worker:
+    build:
+      context: ./backend
+    env_file:
+      - .env
+    environment:
+      APP_ENV: development
+      DATABASE_URL: sqlite:////app/data/registry.db
+      LOCAL_STORAGE_PATH: /app/.registry-uploads
+      R2_ACCOUNT_ID: ""
+      R2_ACCESS_KEY_ID: ""
+      R2_SECRET_ACCESS_KEY: ""
+      R2_BUCKET_NAME: ""
+      R2_ENDPOINT_URL: ""
+      WORKER_POLL_SECONDS: "2"
+      WORKER_MAX_JOBS_PER_RUN: "10"
+      WORKER_MAX_ATTEMPTS: "3"
+      WORKER_RETRY_SECONDS: "30"
+      WORKER_STALE_AFTER_SECONDS: "900"
+    command: ["python", "-m", "src.worker"]
+    volumes:
+      - registry_data:/app/data
+      - registry_uploads:/app/.registry-uploads
+    depends_on:
+      registry-api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  registry_data:
+  registry_uploads:
