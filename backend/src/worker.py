@@ -112,7 +112,11 @@ def process_job(job_id):
       before=snap(existing)
       if existing.normalized_registration_number:changed_lookup_keys.add(f'registry:lookup:reg:{existing.normalized_registration_number}')
       if existing.normalized_tax_pin:changed_lookup_keys.add(f'registry:lookup:pin:{existing.normalized_tax_pin}')
-      for key,value in rec.items():setattr(existing,key,value)
+      for key,value in rec.items():
+       if key=='registry_payload':
+        existing.registry_payload={**(existing.registry_payload or {}),**(value or {})}
+       elif value is not None and not (key=='status' and value=='UNKNOWN'):
+        setattr(existing,key,value)
       existing.source_file=job.file_name;existing.source_row=row_num;existing.source_name=job.source_name or 'uploaded_dataset';existing.source_record_id=reg or pin;existing.last_seen_at=now();existing.data_quality_status='IMPORTED_UNVERIFIED'
       db.flush()
       db.add(OrganizationRecordVersion(organization_id=existing.id,change_type='UPDATED',snapshot={'before':before,'after':snap(existing)},source_name=existing.source_name,source_file=job.file_name,source_row=row_num));updated+=1
