@@ -61,7 +61,8 @@ The managed-key migration and regression tests in this branch are implementation
 - [ ] Deploy only after checks and migration review; document rollback.
 
 ## Phase 10 — End-to-end sign-off
-- [x] Add an end-to-end ingestion test proving conflicting registration/PIN identifiers are dead-lettered without creating or overwriting an organization.\n- [ ] Complete end-to-end large-file, malformed-row, retry, duplicate-submission, stale-job and provider-outage tests across a full disposable stack.
+- [x] Add an end-to-end ingestion test proving conflicting registration/PIN identifiers are dead-lettered without creating or overwriting an organization.
+- [ ] Complete end-to-end large-file, malformed-row, retry, duplicate-submission, stale-job and provider-outage tests across a full disposable stack.
 - [ ] Test backup/restore and migration recovery strategy.
 - [ ] Verify production health and permissions without exposing secrets; this requires an approved read-only production check.
 - [ ] Run the final Windows Docker Compose workflow with fictional sample data.
