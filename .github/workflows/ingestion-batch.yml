@@ -4,6 +4,15 @@ on:
   schedule:
     - cron: "*/15 * * * *"
   workflow_dispatch:
+    inputs:
+      run_mode:
+        description: "Preflight checks only, or explicitly process a batch"
+        type: choice
+        options:
+          - preflight
+          - ingest
+        default: preflight
+        required: true
 
 permissions:
   contents: read
@@ -59,5 +68,10 @@ jobs:
       - name: Install backend dependencies
         run: python -m pip install --disable-pip-version-check -r requirements.txt
 
+      - name: Non-destructive production preflight
+        if: github.event_name == 'workflow_dispatch' && inputs.run_mode == 'preflight'
+        run: python -m src.preflight
+
       - name: Process eligible ingestion jobs
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.run_mode == 'ingest')
         run: python -m src.worker --batch
