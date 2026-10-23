@@ -13,7 +13,7 @@ This is a datasource, not the PesaGuard customer onboarding system and not an au
 5. Open the dashboard at `http://localhost:5173`, API docs at `http://localhost:8000/docs`, liveness at `http://localhost:8000/health/live`, and readiness at `http://localhost:8000/health/ready`. Enter only the local API key in the dashboard.
 6. Follow [`docs/windows-local-worker.md`](docs/windows-local-worker.md) to upload the fictional CSV fixture and verify end-to-end worker processing.
 7. View service status and logs with `docker compose ps` and `docker compose logs -f registry-api registry-worker registry-frontend`. Stop with `docker compose down`; use `docker compose down -v` only when you intentionally want to delete local test data.
-8. For Windows, the guided helpers are `scripts/start-windows-local.ps1` and `scripts/stop-windows-local.ps1`. Tests: `PYTHONPATH=backend pytest -q` from a Python environment with backend requirements installed.
+8. For Windows, run `scripts/start-windows-local.ps1`, then run `scripts/test-local-stack.ps1` for an end-to-end API → worker smoke test; stop with `scripts/stop-windows-local.ps1`. Backend tests: `PYTHONPATH=backend pytest -q` from a Python environment with backend requirements installed.
 
 Do not commit `.env`, API keys, database URLs, or R2 credentials.
 
