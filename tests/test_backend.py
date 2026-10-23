@@ -77,3 +77,8 @@ def test_source_catalogue_create_and_list():
 def test_upload_rejects_unknown_type():
  response=client.post('/api/v1/ingestion/uploads',headers=HEADERS,files={'file':('payload.exe',b'no','application/octet-stream')})
  assert response.status_code==415
+
+
+def test_large_direct_upload_requires_private_r2_configuration():
+ response=client.post('/api/v1/ingestion/uploads/presign',headers=HEADERS,json={'file_name':'large-dataset.csv','size_bytes':100*1024*1024})
+ assert response.status_code==503
