@@ -1,6 +1,5 @@
 """Verification case orchestration with explicit no-provider/no-verification states."""
 import uuid
-from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select, func
@@ -25,7 +24,7 @@ class VerificationCaseRequest(BaseModel):
 
     @model_validator(mode="after")
     def require_subject(self):
-        if not any((self.legal_name or "").strip() for _ in [0]) and not (self.registration_number or "").strip() and not (self.tax_pin or "").strip():
+        if not (self.legal_name or "").strip() and not (self.registration_number or "").strip() and not (self.tax_pin or "").strip():
             raise ValueError("Provide a legal name, registration number, or tax PIN")
         return self
 
