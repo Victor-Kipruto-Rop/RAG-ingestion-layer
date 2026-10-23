@@ -60,7 +60,7 @@ def create_source(payload:dict,db:Session=Depends(get_db)):
  db.add(source);db.commit();db.refresh(source);return source_out(source)
 @router.post('/api/v1/ingestion/uploads',dependencies=[Depends(require_api_key)],status_code=202)
 async def upload(file:UploadFile=File(...),db:Session=Depends(get_db),correlation_id:str|None=Header(default=None,alias='X-Correlation-ID'),idempotency_key:str|None=Header(default=None,alias='Idempotency-Key'),source_key:str|None=Header(default=None,alias='X-Registry-Source')):
- name=(file.filename or 'upload.csv').replace('\\\\','/').split('/')[-1]
+ name=(file.filename or 'upload.csv').replace(chr(92), '/').split('/')[-1]
  suffix='.'+name.rsplit('.',1)[-1].lower() if '.' in name else ''
  if suffix not in {'.csv','.pdf'}:raise HTTPException(415,'Only CSV and PDF files are accepted')
  if idempotency_key:
