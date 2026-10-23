@@ -13,7 +13,7 @@ async def lifespan(app):
  if settings.app_env.lower()!='production':Base.metadata.create_all(bind=engine)
  yield
 app=FastAPI(title=settings.app_name,version='1.0.0',description='Internal registry ingestion and lookup API',lifespan=lifespan)
-app.add_middleware(CORSMiddleware,allow_origins=settings.cors_origin_list,allow_credentials=False,allow_methods=['GET','POST','PATCH','OPTIONS'],allow_headers=['Content-Type','X-API-Key','X-Correlation-ID'])
+app.add_middleware(CORSMiddleware,allow_origins=settings.cors_origin_list,allow_credentials=False,allow_methods=['GET','POST','PATCH','OPTIONS'],allow_headers=['Content-Type','X-API-Key','X-Correlation-ID','Idempotency-Key','X-Registry-Source'])
 app.include_router(router)
 @app.get('/health/live',tags=['health'])
 def live():return {'status':'alive','service':settings.app_name}
