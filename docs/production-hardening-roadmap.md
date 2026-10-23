@@ -31,7 +31,7 @@ This document distinguishes code present in the repository from work that still 
 
 ## Phase 4 — Data quality and entity resolution
 - [x] Quality summary, source freshness, validation-rule descriptions and fuzzy match candidates are exposed.
-- [x] Match candidates are explicitly review-only; name similarity never triggers automatic merges.
+- [x] Match candidates are explicitly review-only; name similarity never triggers automatic merges.\n- [x] Added an append-only manual review decision API and dashboard queue with explicit reopen, decision history, audit events, and a dedicated `reviews:write` scope. Canonical registry fields are not changed by reviewer decisions.
 - [x] Added a regression test for quality summary output and review-only fuzzy match candidates.
 - [ ] Add tests for conflicting identifiers, repeated imports, false positives and freshness boundaries.
 - [x] Add a durable, append-only reviewer decision workflow with reopen support; decisions are audited and never auto-merge or modify canonical registry fields.\n- [ ] Validate review workflow against PostgreSQL migration-backed staging and define reviewer identity/role policy before customer-facing use.
@@ -66,11 +66,11 @@ This document distinguishes code present in the repository from work that still 
 - [ ] Measure latency/throughput under load before making SLO/SLA claims.
 
 ## Phase 8 — Dashboard readiness
-- [x] Responsive dashboard, API-key management, quality views, source freshness, job/record views and status messaging are present in the feature branch.
+- [x] Responsive dashboard, API-key management, quality views, source freshness, job/record views, manual review queue, and status messaging are present in the feature branch.
 - [x] API-key screen does not persist the operator token to local storage and reveals a new secret only once.
 - [x] Added frontend API-client unit tests for successful responses, JSON headers, multipart uploads, structured environment-mismatch errors and non-JSON server failures; CI now runs `npm test`.
 - [x] Added API-key page component tests for operator authentication feedback, in-memory-only token handling, and one-time secret reveal.
-- [x] Added component tests for empty API-key states, invalid/expired operator-token feedback, clipboard failure guidance, and audit-log pagination. Narrow-screen layout has responsive CSS; device/browser verification remains pending.
+- [x] Added component tests for empty API-key states, invalid/expired operator-token feedback, clipboard failure guidance, audit-log pagination, and manual review submission/reason validation. Narrow-screen layout has responsive CSS; device/browser verification remains pending.
 - [x] React error boundary is mounted around the dashboard and has a regression test that verifies fallback messaging does not expose exception text.
 - [x] Registry records already use server-side pagination; audit logs now support server-side offset pagination, total counts, stable ordering, and dashboard Previous/Next controls.
 - [ ] Confirm frontend build-time VITE_API_BASE_URL is set for each deployment and no server secret enters the browser bundle.
