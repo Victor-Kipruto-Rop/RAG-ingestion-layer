@@ -93,6 +93,29 @@ describe('API key management page', () => {
     await screen.findByText(/clipboard access was blocked/i);
   });
 
+  it('loads audit events in server-paginated pages', async () => {
+    const { AuditLogsPage } = await import('./App.jsx');
+    const request = vi.fn(async (path) => {
+      const offset = Number(new URL(`http://test${path}`).searchParams.get('offset'));
+      return jsonResponse({
+        items: offset === 0
+          ? [{ id: 'audit-1', action: 'import_started', actor: 'operator', created_at: '2026-10-23T10:00:00Z', details: {} }]
+          : [{ id: 'audit-2', action: 'import_finished', actor: 'operator', created_at: '2026-10-23T11:00:00Z', details: {} }],
+        total: 51,
+        limit: 50,
+        offset,
+        next_offset: offset === 0 ? 50 : null,
+      });
+    });
+    render(<AuditLogsPage request={request} />);
+    await screen.findByText('import_started');
+    expect(screen.getByText(/showing 1–1 of 51 events/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /next/i }));
+    await screen.findByText('import_finished');
+    expect(request).toHaveBeenLastCalledWith('/api/v1/audit/logs?limit=50&offset=50');
+    expect(screen.getByText(/showing 51–51 of 51 events/i)).toBeTruthy();
+  });
+
   it('shows a useful error when operator authentication fails', async () => {
     api.mockRejectedValueOnce(new Error('Valid operator bearer token required'));
     render(<APIKeysPage />);
