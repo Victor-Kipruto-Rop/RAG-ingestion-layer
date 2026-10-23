@@ -12,9 +12,10 @@ This plan defines deliverables and release gates. It is intentionally honest abo
 - Release gate: tests for environment mismatch, revoked/expired keys, scope enforcement, one-time secrets, and no raw secret in logs.
 
 ## Phase 2 — Ingestion reliability
-- Add XLSX support only after validating parser/resource limits; keep CSV streaming and PDF processing bounded.
+- [x] Add XLSX support with read-only row iteration, archive signature checks, and uncompressed-size/entry limits; CSV remains streaming and PDFs remain bounded/manual-review.
+- [x] Expose measured identifier-coverage and duplicate-review summary metrics, with definitions that explicitly distinguish coverage from legal verification.
 - Persist upload checksum, content signature, source attribution, progress, retry count, and worker lease.
-- Add preview/field mapping, row-level validation, duplicate submission handling, dead-letter export, and safe retry/resume.
+- [ ] Add preview/field mapping, row-level validation, duplicate submission handling, dead-letter export, and safe retry/resume.
 - Add malware scanning as a provider adapter with an explicit unavailable state; never claim a scan passed if no scanner ran.
 - Release gate: large-file, malformed-file, duplicate-upload, retry, worker-crash, and row-isolation tests.
 
