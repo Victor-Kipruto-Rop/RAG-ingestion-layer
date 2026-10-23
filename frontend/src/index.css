@@ -274,3 +274,19 @@ button:focus-visible, input:focus-visible { outline: 3px solid #20b87555; outlin
 .preview-panel .table-scroll{max-height:360px;overflow:auto}
 .preview-panel .data-table{min-width:620px}
 .preview-note{margin-top:12px;font-size:12px;color:var(--muted,#64756b)}
+
+
+/* Durable quality-review queue */
+.review-case-list { display: grid; gap: 12px; padding: 4px 0; }
+.review-case-row { display: grid; gap: 10px; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: #fcfefc; }
+.review-case-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.review-case-id { margin-left: auto; color: var(--muted); font-size: 10px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.review-case-row > strong { color: var(--forest); font-size: 13px; }
+.review-case-row > p { margin: 0; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.review-case-row > input, .review-create-form input, .review-create-form select { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 7px; padding: 10px 11px; color: var(--forest); background: #fff; font-size: 12px; }
+.review-case-actions { display: flex; gap: 7px; flex-wrap: wrap; }
+.review-case-actions .button-secondary { min-height: 32px; font-size: 11px; }
+.review-create-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; padding: 4px 0; }
+.review-create-form label { display: grid; gap: 7px; color: var(--soft-text); font-size: 11px; font-weight: 650; }
+.review-create-form button { justify-self: start; }
+@media (max-width: 720px) { .review-create-form { grid-template-columns: minmax(0, 1fr); } }
