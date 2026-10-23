@@ -6,13 +6,12 @@ This is a datasource, not the PesaGuard customer onboarding system and not an au
 
 ## Local development
 
-1. Copy `.env.example` to `.env`; set a long random `REGISTRY_API_KEYS` secret.
-2. For local smoke tests, SQLite and local file storage are supported. For production, use PostgreSQL/Supabase and private Cloudflare R2.
-3. Start the stack with `docker compose up --build`. The API, dashboard, and independent ingestion worker start as separate services.
-4. Alternatively, install backend dependencies with `pip install -r backend/requirements.txt`, then start the API from the repository root: `uvicorn src.main:app --app-dir backend --reload --port 8000`.
-5. In another terminal start the worker: `PYTHONPATH=backend python -m src.worker`.
-6. In another terminal: `cd frontend && npm install && npm run dev`.
-7. Tests: `PYTHONPATH=backend pytest -q`.
+1. For Windows local testing, copy `example.env` to `.env` and replace `REGISTRY_API_KEYS` with a long random local-only key.
+2. Run `docker compose -f docker-compose.windows.local.yml up -d --build` to start the API, dashboard, and independent worker with one shared SQLite database and local file storage. This configuration is isolated from production Supabase and R2.
+3. Open the dashboard at `http://localhost:5173` and API docs at `http://localhost:8000/docs`. Use only the local-only API key in the dashboard.
+4. The guided Windows startup and stop scripts are `scripts/start-windows-local.ps1` and `scripts/stop-windows-local.ps1`.
+5. Follow [`docs/windows-local-worker.md`](docs/windows-local-worker.md) to upload the fictional CSV fixture and verify that the worker processes it.
+6. Tests: `PYTHONPATH=backend pytest -q` (run from the repository root in a Python environment with backend requirements installed).
 
 Do not commit `.env`, API keys, database URLs, or R2 credentials.
 
@@ -75,3 +74,6 @@ See `docs/ARCHITECTURE.md` for the operating contract and scale roadmap.
 ## Windows local worker test
 
 For a safe Windows/Docker Desktop smoke test that uses a shared local SQLite database and local file storage (not production Supabase or R2), follow [`docs/windows-local-worker.md`](docs/windows-local-worker.md). It includes a fictional CSV fixture at [`samples/test-organizations.csv`](samples/test-organizations.csv) and uses [`docker-compose.windows.local.yml`](docker-compose.windows.local.yml) to run the API and worker together. Do not put production credentials in this local test configuration.
+
+
+A safe Windows local environment template is provided as [`example.env`](example.env). Never commit `.env`, API keys, database URLs, or R2 credentials.
