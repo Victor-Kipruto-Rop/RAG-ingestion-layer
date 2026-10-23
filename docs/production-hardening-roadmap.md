@@ -70,16 +70,17 @@ This document distinguishes code present in the repository from work that still 
 - [x] API-key screen does not persist the operator token to local storage and reveals a new secret only once.
 - [x] Added frontend API-client unit tests for successful responses, JSON headers, multipart uploads, structured environment-mismatch errors and non-JSON server failures; CI now runs `npm test`.
 - [x] Added API-key page component tests for operator authentication feedback, in-memory-only token handling, and one-time secret reveal.
-- [ ] Add remaining component tests for empty states, expired operator token, clipboard failure and narrow mobile layout.
-- [ ] Add a React error boundary and accessible confirmation/notification handling.
-- [ ] Verify server pagination/filtering for high-volume record and audit-log tables.
+- [x] Added component tests for empty API-key states, invalid/expired operator-token feedback, clipboard failure guidance, and audit-log pagination. Narrow-screen layout has responsive CSS; device/browser verification remains pending.
+- [x] React error boundary is mounted around the dashboard and has a regression test that verifies fallback messaging does not expose exception text.
+- [x] Registry records already use server-side pagination; audit logs now support server-side offset pagination, total counts, stable ordering, and dashboard Previous/Next controls.
 - [ ] Confirm frontend build-time VITE_API_BASE_URL is set for each deployment and no server secret enters the browser bundle.
 
 ## Phase 9 — Containers and CI/CD
-- [ ] Require backend tests, focused linting, frontend tests/build and container builds on pull requests.
-- [ ] Add dependency, container and secret scanning; fix findings rather than bypassing checks.
-- [ ] Verify non-root runtime, health checks, pinned build inputs and image-size limits for API, worker and frontend.
-- [ ] Document a staged rollout and rollback plan for schema and service changes.
+- [x] Pull-request CI is configured for backend tests, focused Ruff linting, frontend tests/build, and API/worker/frontend container builds. The latest run still needs to be observed before marking the checks green.
+- [x] Added CodeQL analysis, Gitleaks secret scanning, dependency-review checks, Trivy container scans, and weekly Dependabot updates. Scan outcomes must be reviewed; unresolved findings remain release blockers.
+- [x] API, worker, and frontend Dockerfiles run as non-root users.
+- [ ] Add/verify container health checks, pin base images by digest, and establish image-size budgets.
+- [x] Documented staged release, migration safety, incident response, and rollback/forward-repair guidance in the operations runbook.
 
 ## Phase 10 — Integrations and end-to-end release sign-off
 - [ ] Build provider adapters only after credentials, contracts, allowed purpose, rate limits and data-processing terms are confirmed.
