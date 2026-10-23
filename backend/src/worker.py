@@ -127,6 +127,18 @@ def process_job(job_id):
      db.add(FailedImportDLQ(job_id=job.id,row_number=row_num,error_code='INVALID_ROW',error_type=type(exc).__name__,message=message,sanitized_row=_sanitize_dlq_row(row),traceback_text=_sanitize_diagnostic(traceback.format_exc(),row)))
     except Exception:
      raise
+    if batch_count >= max(1, settings.ingestion_batch_size):
+     job.last_processed_row=last_row_number
+     job.records_processed=processed;job.records_inserted=inserted;job.records_updated=updated;job.records_skipped=skipped
+     if raw_import:raw_import.import_status='PROCESSING'
+     db.commit()
+     invalidate_lookup_keys(changed_lookup_keys)
+     changed_lookup_keys.clear()
+     db.expunge_all()
+     job=db.get(IngestionJob,job_id)
+     raw_import=db.scalar(select(WarehouseRawImport).where(WarehouseRawImport.ingestion_job_id==job.id)) if job else None
+     batch_count=0
+   job.last_processed_row=last_row_number
    job.records_processed=processed;job.records_inserted=inserted;job.records_updated=updated;job.records_skipped=skipped
    job.status='COMPLETED_WITH_ERRORS' if skipped else 'COMPLETED'
    if raw_import:raw_import.import_status=job.status
