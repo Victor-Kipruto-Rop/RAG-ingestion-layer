@@ -77,6 +77,7 @@ class DirectUploadRequest(BaseModel):
 
 @router.post('/api/v1/ingestion/uploads/presign',dependencies=[Depends(require_api_key)],status_code=201)
 def presign_direct_upload(payload:DirectUploadRequest,request:Request,db:Session=Depends(get_db),correlation_id:str|None=Header(default=None,alias='X-Correlation-ID'),idempotency_key:str|None=Header(default=None,alias='Idempotency-Key')):
+ if idempotency_key and len(idempotency_key)>200:raise HTTPException(422,'Idempotency-Key must be at most 200 characters')
  name=payload.file_name.replace(chr(92),'/').split('/')[-1]
  suffix='.'+name.rsplit('.',1)[-1].lower() if '.' in name else ''
  if suffix not in {'.csv','.pdf'}:raise HTTPException(415,'Only CSV and PDF files are accepted')
@@ -139,9 +140,7 @@ async def upload(request:Request,file:UploadFile=File(...),db:Session=Depends(ge
  name=(file.filename or 'upload.csv').replace(chr(92), '/').split('/')[-1]
  suffix='.'+name.rsplit('.',1)[-1].lower() if '.' in name else ''
  if suffix not in {'.csv','.pdf'}:raise HTTPException(415,'Only CSV and PDF files are accepted')
- if idempotency_key:
-  prior=db.scalar(select(IngestionJob).where(IngestionJob.idempotency_key==idempotency_key))
-  if prior:return {'job_id':prior.id,'status':prior.status,'idempotent_replay':True}
+ if idempotency_key and len(idempotency_key)>200:raise HTTPException(422,'Idempotency-Key must be at most 200 characters')
  source=None
  if source_key:
   source=db.scalar(select(RegistrySource).where(RegistrySource.source_key==source_key.strip().lower(),RegistrySource.enabled.is_(True)))
@@ -157,6 +156,13 @@ async def upload(request:Request,file:UploadFile=File(...),db:Session=Depends(ge
  if size==0:raise HTTPException(400,'Uploaded file is empty')
  if suffix=='.pdf' and not prefix.startswith(b'%PDF-'):raise HTTPException(415,'File extension is PDF but the file signature is invalid')
  if suffix=='.csv' and b'\x00' in prefix:raise HTTPException(415,'CSV contains binary data')
+ if idempotency_key:
+  prior=db.scalar(select(IngestionJob).where(IngestionJob.idempotency_key==idempotency_key))
+  if prior:
+   prior_raw=db.scalar(select(WarehouseRawImport).where(WarehouseRawImport.ingestion_job_id==prior.id))
+   if not prior_raw or prior_raw.sha256_hex!=digest.hexdigest() or prior.file_name!=name or prior.source_id!=(source.id if source else None):
+    raise HTTPException(409,'Idempotency key is already associated with a different upload')
+   return {'job_id':prior.id,'status':prior.status,'idempotent_replay':True}
  file.file.seek(0)
  job=IngestionJob(file_name=name,correlation_id=correlation_id,content_type=file.content_type or 'application/octet-stream',status='QUEUED',source_id=source.id if source else None,source_name=source.source_key if source else 'uploaded_dataset',idempotency_key=idempotency_key)
  db.add(job);db.flush()
