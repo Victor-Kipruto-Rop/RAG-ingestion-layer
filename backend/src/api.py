@@ -126,7 +126,7 @@ def complete_direct_upload(job_id:str,db:Session=Depends(get_db)):
  suffix='.'+job.file_name.rsplit('.',1)[-1].lower() if '.' in job.file_name else ''
  if suffix=='.pdf' and not prefix.startswith(b'%PDF-'):
   job.status='FAILED';job.error_summary='PDF signature validation failed.';job.completed_at=datetime.now(timezone.utc);raw.import_status='FAILED';db.commit();raise HTTPException(415,'PDF file signature is invalid')
- if suffix=='.csv' and b'\\x00' in prefix:
+ if suffix=='.csv' and b'\x00' in prefix:
   job.status='FAILED';job.error_summary='CSV binary signature validation failed.';job.completed_at=datetime.now(timezone.utc);raw.import_status='FAILED';db.commit();raise HTTPException(415,'CSV contains binary data')
  raw.byte_size=actual_size;raw.import_status='QUEUED'
  raw.metadata_json={**(raw.metadata_json or {}),'r2_etag':str(metadata.get('ETag','')).strip('"'),'upload_completed_at':datetime.now(timezone.utc).isoformat()}
