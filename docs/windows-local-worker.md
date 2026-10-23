@@ -28,7 +28,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\scripts\start-windows-local.ps1
 ```
 
-When Notepad opens, replace `REGISTRY_API_KEYS` with a long, random **local-only** value, save, close Notepad and rerun the command. Leave all R2 fields blank. Do not put production Supabase URLs, database passwords, or R2 keys in this local `.env`.
+When Notepad opens, replace `REGISTRY_API_KEYS` and `DATASOURCE_ADMIN_TOKEN` with separate long, random **local-only** values, save, close Notepad and rerun the command. Leave all R2 fields blank. Do not put production Supabase URLs, database passwords, or R2 keys in this local `.env`.
 
 You can also start manually:
 
@@ -41,6 +41,8 @@ docker compose ps
 ```
 
 The execution-policy change applies only to the current PowerShell process. It does not change Windows' permanent policy.
+
+The local Compose configuration passes `DATASOURCE_ADMIN_TOKEN` to the API only for operator key management. After startup, run `scripts/create-sandbox-key.ps1` to create and smoke-test a managed sandbox key. For the PesaGuard backend environment variables and client example, follow [`pesaguard-sandbox-integration.md`](pesaguard-sandbox-integration.md).
 
 ## Local-only URLs
 
