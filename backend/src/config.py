@@ -67,5 +67,9 @@ def validate_runtime_config():
   missing.append('REDIS_URL (required for distributed HMAC replay protection)')
  if settings.pesaguard_datasource_environment not in {'sandbox','production'}:
   missing.append('PESAGUARD_DATASOURCE_ENVIRONMENT (must be sandbox or production)')
+ if settings.pesaguard_datasource_environment != 'production':
+  missing.append('PESAGUARD_DATASOURCE_ENVIRONMENT=production (required when APP_ENV=production)')
+ if settings.api_key_management_token and len(settings.api_key_management_token) < 32:
+  missing.append('API_KEY_MANAGEMENT_TOKEN (must be at least 32 characters when configured)')
  if missing:
   raise RuntimeError('Invalid production configuration: '+', '.join(missing))
