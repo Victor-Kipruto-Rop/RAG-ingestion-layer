@@ -33,10 +33,14 @@ def process_job(job_id):
     data=download_bytes(job.object_key)
     diagnostics=extract_pdf_text(data, enable_ocr=settings.pdf_ocr_enabled, max_ocr_pages=settings.pdf_ocr_max_pages)
     job.status='NEEDS_PDF_PROCESSING'
-    if diagnostics.needs_ocr:
+    if diagnostics.needs_ocr and diagnostics.extracted_characters:
+     job.error_summary=f'Extracted {diagnostics.extracted_characters} character(s) from {diagnostics.page_count} page(s), but OCR coverage is incomplete; manual review is required.'
+    elif diagnostics.needs_ocr and diagnostics.ocr_attempted and not diagnostics.ocr_available:
+     job.error_summary=f'PDF has {diagnostics.page_count} page(s); OCR was unavailable or failed, so manual review is required.'
+    elif diagnostics.needs_ocr:
      job.error_summary=f'PDF has {diagnostics.page_count} page(s) but no searchable text; OCR and manual review are required.'
     else:
-     job.error_summary=f'Extracted {diagnostics.extracted_characters} searchable character(s) from {diagnostics.page_count} page(s); manual review is required. Extracted text is not treated as verified data.'
+     job.error_summary=f'Extracted {diagnostics.extracted_characters} character(s) from {diagnostics.page_count} page(s); manual review is required. Extracted text is not treated as verified data.'
     if raw_import:
      raw_import.import_status='NEEDS_PDF_PROCESSING'
      metadata=dict(raw_import.metadata_json or {})
