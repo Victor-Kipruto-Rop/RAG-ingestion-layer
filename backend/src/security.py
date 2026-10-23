@@ -113,6 +113,10 @@ def _managed_key_from_db(raw_key):
     except Exception as exc:
         raise HTTPException(503,'Managed API-key store is unavailable; apply the reviewed key-management migration.') from exc
 
+def _scope_is_allowed(scopes, required_scope):
+    return required_scope is not None and required_scope in scopes
+
+
 def _required_scope(request):
     path=request.url.path;method=request.method.upper()
     if path.startswith('/api/v1/ingestion/uploads'): return 'ingestion:write' if method in {'POST','PUT','PATCH'} else 'registry:read'
@@ -170,7 +174,7 @@ async def require_api_key(request:Request,x_api_key:str|None=Header(default=None
             # Fail closed: every endpoint protected by this dependency must have an
             # explicit scope mapping. A newly added route must not inherit access
             # simply because it was omitted from the scope map.
-            if scope is None or scope not in managed['scopes']:
+            if not _scope_is_allowed(managed['scopes'], scope):
                 _record_security_event(request,'scope_denied',managed,key_env,{'required_scope':scope,'reason':'unmapped_route' if scope is None else 'missing_scope'})
                 raise HTTPException(403,detail={'code':'API_KEY_SCOPE_DENIED','message':'This API key does not have permission for this operation.','required_scope':scope})
             identity='managed-api-key:'+managed['id'];request.state.api_key_scopes=managed['scopes'];request.state.api_key_id=managed['id']
