@@ -4,15 +4,20 @@ import hmac
 import threading
 import time
 from functools import lru_cache
+
 from fastapi import Header, HTTPException, Request
 from redis import Redis
+
 from .config import settings
+from .managed_keys import authenticate_managed_key
+
 
 @lru_cache(maxsize=1)
 def _redis_client():
     if not settings.redis_url:
         return None
     return Redis.from_url(settings.redis_url, decode_responses=True, socket_connect_timeout=1, socket_timeout=1)
+
 
 _nonce_lock = threading.Lock()
 _seen_nonces = {}
@@ -37,6 +42,7 @@ redis.call('EXPIRE', KEYS[1], ttl)
 return 1
 """
 
+
 def _check_nonce_local(nonce, expires_at):
     now = time.time()
     with _nonce_lock:
@@ -48,81 +54,88 @@ def _check_nonce_local(nonce, expires_at):
         _seen_nonces[nonce] = expires_at
         return True
 
+
 async def _check_nonce(nonce, ttl):
     client = _redis_client()
-    nonce_key = 'registry:hmac:nonce:' + hashlib.sha256(nonce.encode()).hexdigest()
+    nonce_key = "registry:hmac:nonce:" + hashlib.sha256(nonce.encode()).hexdigest()
     if client is not None:
         try:
-            return bool(await asyncio.to_thread(client.set, nonce_key, '1', nx=True, ex=ttl))
+            return bool(await asyncio.to_thread(client.set, nonce_key, "1", nx=True, ex=ttl))
         except Exception:
             if settings.require_hmac:
-                raise HTTPException(503, 'Replay protection is temporarily unavailable')
+                raise HTTPException(503, "Replay protection is temporarily unavailable")
     return _check_nonce_local(nonce_key, time.time() + ttl)
+
 
 async def _take_token(identity, request):
     capacity = max(1, settings.registry_rate_limit_capacity)
     refill = max(0.01, settings.registry_rate_limit_refill_per_second)
     client = _redis_client()
     client_key = hashlib.sha256(identity.encode()).hexdigest()
-    key = 'registry:rate:' + client_key
+    key = "registry:rate:" + client_key
     ttl = max(60, int((capacity / refill) * 2))
     if client is not None:
         try:
             allowed = await asyncio.to_thread(client.eval, _TOKEN_BUCKET_LUA, 1, key, capacity, refill, time.time(), ttl)
             if not allowed:
-                raise HTTPException(429, 'Registry lookup rate limit exceeded', headers={'Retry-After': '1'})
+                raise HTTPException(429, "Registry lookup rate limit exceeded", headers={"Retry-After": "1"})
             return
         except HTTPException:
             raise
         except Exception:
-            if settings.app_env.lower() == 'production' and settings.redis_url:
-                raise HTTPException(503, 'Distributed rate limiter is unavailable')
+            if settings.app_env.lower() == "production" and settings.redis_url:
+                raise HTTPException(503, "Distributed rate limiter is unavailable")
     now = time.monotonic()
     with _bucket_lock:
         tokens, last = _local_buckets.get(key, (float(capacity), now))
         tokens = min(float(capacity), tokens + max(0.0, now - last) * refill)
         if tokens < 1:
             _local_buckets[key] = (tokens, now)
-            raise HTTPException(429, 'Registry lookup rate limit exceeded', headers={'Retry-After': '1'})
+            raise HTTPException(429, "Registry lookup rate limit exceeded", headers={"Retry-After": "1"})
         _local_buckets[key] = (tokens - 1, now)
+
 
 async def require_api_key(
     request: Request,
-    x_api_key: str | None = Header(default=None, alias='X-API-Key'),
-    x_internal_signature: str | None = Header(default=None, alias='X-Internal-Signature'),
-    x_internal_timestamp: str | None = Header(default=None, alias='X-Internal-Timestamp'),
-    x_internal_nonce: str | None = Header(default=None, alias='X-Internal-Nonce'),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+    x_internal_signature: str | None = Header(default=None, alias="X-Internal-Signature"),
+    x_internal_timestamp: str | None = Header(default=None, alias="X-Internal-Timestamp"),
+    x_internal_nonce: str | None = Header(default=None, alias="X-Internal-Nonce"),
 ):
-    if x_internal_signature is not None:
+    if x_api_key and x_api_key.startswith(("pg_sandbox_", "pg_live_")):
+        managed, key_id, scopes = authenticate_managed_key(x_api_key, request)
+        identity = "managed-key:" + str(key_id)
+    elif x_internal_signature is not None:
         secret = settings.hmac_shared_secret
         if not secret or not x_internal_timestamp or not x_internal_nonce:
-            raise HTTPException(401, 'Invalid internal signature headers')
+            raise HTTPException(401, "Invalid internal signature headers")
         try:
             timestamp = int(x_internal_timestamp)
         except (TypeError, ValueError):
-            raise HTTPException(401, 'Invalid internal signature timestamp')
+            raise HTTPException(401, "Invalid internal signature timestamp")
         if abs(time.time() - timestamp) > max(30, settings.hmac_clock_skew_seconds):
-            raise HTTPException(401, 'Internal signature timestamp expired')
+            raise HTTPException(401, "Internal signature timestamp expired")
         if not x_internal_nonce or len(x_internal_nonce) > 200:
-            raise HTTPException(401, 'Invalid internal signature nonce')
+            raise HTTPException(401, "Invalid internal signature nonce")
         body = await request.body()
         body_hash = hashlib.sha256(body).hexdigest()
-        canonical = '\n'.join([str(timestamp), x_internal_nonce, request.method.upper(), request.url.path, request.url.query, body_hash])
+        canonical = "\n".join([str(timestamp), x_internal_nonce, request.method.upper(), request.url.path, request.url.query, body_hash])
         expected = hmac.new(secret.encode(), canonical.encode(), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(expected, x_internal_signature.lower()):
-            raise HTTPException(401, 'Invalid internal signature')
+            raise HTTPException(401, "Invalid internal signature")
+        from .managed_keys import _check_nonce
         if not await _check_nonce(x_internal_nonce, max(60, settings.hmac_nonce_ttl_seconds)):
-            raise HTTPException(401, 'Internal request replay detected')
-        identity = 'hmac-client:' + (request.client.host if request.client else 'unknown')
+            raise HTTPException(401, "Internal request replay detected")
+        identity = "hmac-client:" + (request.client.host if request.client else "unknown")
     else:
         if settings.require_hmac:
-            raise HTTPException(401, 'Signed internal request required')
+            raise HTTPException(401, "Signed internal request required")
         keys = settings.api_key_list
         if not keys:
-            raise HTTPException(503, 'Service authentication is not configured')
+            raise HTTPException(503, "Service authentication is not configured")
         if not x_api_key or not any(hmac.compare_digest(x_api_key, key) for key in keys):
-            raise HTTPException(401, 'Invalid or missing API key')
-        identity = 'api-key:' + hashlib.sha256(x_api_key.encode()).hexdigest()
-    if request.url.path in {'/api/v1/registry/lookup', '/api/v1/registry/search'}:
+            raise HTTPException(401, "Invalid or missing API key")
+        identity = "api-key:" + hashlib.sha256(x_api_key.encode()).hexdigest()
+    if request.url.path in {"/api/v1/registry/lookup", "/api/v1/registry/search"}:
         await _take_token(identity, request)
     return identity
