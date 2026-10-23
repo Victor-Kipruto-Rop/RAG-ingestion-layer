@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime,timezone
-from sqlalchemy import DateTime,Integer,String,Text,UniqueConstraint,Index
+from sqlalchemy import DateTime,Integer,String,Text,UniqueConstraint,Index,ForeignKey
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.types import JSON
 from sqlalchemy.orm import Mapped,mapped_column
@@ -20,8 +20,23 @@ class Organization(Base):
  registry_payload:Mapped[dict]=mapped_column(json_type,default=dict,nullable=False)
  source_file:Mapped[str|None]=mapped_column(String(500))
  source_row:Mapped[int|None]=mapped_column(Integer)
+ source_name:Mapped[str|None]=mapped_column(String(200))
+ source_record_id:Mapped[str|None]=mapped_column(String(200))
+ source_published_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
+ last_seen_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=lambda:datetime.now(timezone.utc),nullable=False)
+ data_quality_status:Mapped[str]=mapped_column(String(30),default='UNREVIEWED',nullable=False)
  created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=lambda:datetime.now(timezone.utc),nullable=False)
  updated_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=lambda:datetime.now(timezone.utc),onupdate=lambda:datetime.now(timezone.utc),nullable=False)
+class OrganizationRecordVersion(Base):
+ __tablename__='organization_record_versions'
+ id:Mapped[str]=mapped_column(String(36),primary_key=True,default=lambda:str(uuid.uuid4()))
+ organization_id:Mapped[str]=mapped_column(String(36),ForeignKey('internal_organizations.id',ondelete='CASCADE'),index=True,nullable=False)
+ change_type:Mapped[str]=mapped_column(String(30),nullable=False)
+ snapshot:Mapped[dict]=mapped_column(json_type,default=dict,nullable=False)
+ source_name:Mapped[str|None]=mapped_column(String(200))
+ source_file:Mapped[str|None]=mapped_column(String(500))
+ source_row:Mapped[int|None]=mapped_column(Integer)
+ created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=lambda:datetime.now(timezone.utc),nullable=False)
 class IngestionJob(Base):
  __tablename__='ingestion_jobs'
  id:Mapped[str]=mapped_column(String(36),primary_key=True,default=lambda:str(uuid.uuid4()))
