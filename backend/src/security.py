@@ -138,6 +138,9 @@ def _managed_key(raw_key: str, request: Request):
             raise HTTPException(403, detail={"code":"API_KEY_SCOPE_INSUFFICIENT","message":f"This key requires the {needed} scope."})
         db.execute(text("UPDATE api_keys SET last_used_at=now() WHERE id=:id"), {"id": row["id"]})
         db.commit()
+        request.state.api_key_id = row["id"]
+        request.state.api_key_prefix = prefix
+        request.state.api_key_environment = row["environment"]
         return "managed-api-key:" + row["id"]
 
 async def require_api_key(
