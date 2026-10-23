@@ -181,14 +181,17 @@ function DataQualityPage({ request }) {
   const [rules, setRules] = useState([]);
   const [query, setQuery] = useState('');
   const [candidates, setCandidates] = useState([]);
+  const [reviewCases, setReviewCases] = useState([]);
+  const [decisionNotes, setDecisionNotes] = useState({});
+  const [notice, setNotice] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const load = async () => {
     setLoading(true); setError('');
     try {
-      const [summaryResponse, rulesResponse] = await Promise.all([request('/api/v1/quality/summary'), request('/api/v1/quality/rules')]);
-      const summaryBody = await summaryResponse.json(); const rulesBody = await rulesResponse.json();
-      setSummary(summaryBody); setRules(rulesBody.items || []);
+      const [summaryResponse, rulesResponse, casesResponse] = await Promise.all([request('/api/v1/quality/summary'), request('/api/v1/quality/rules'), request('/api/v1/quality/reviews?status=open&page_size=50')]);
+      const summaryBody = await summaryResponse.json(); const rulesBody = await rulesResponse.json(); const casesBody = await casesResponse.json();
+      setSummary(summaryBody); setRules(rulesBody.items || []); setReviewCases(casesBody.items || []);
     } catch (e) { setError(typeof e.message === 'string' ? e.message : 'Unable to load data quality metrics.'); }
     finally { setLoading(false); }
   };
@@ -200,10 +203,35 @@ function DataQualityPage({ request }) {
     catch (e) { setError(typeof e.message === 'string' ? e.message : 'Unable to find review candidates.'); }
     finally { setLoading(false); }
   };
+  const createReviewCase = async (row) => {
+    setLoading(true); setError(''); setNotice('');
+    try {
+      const response = await request('/api/v1/quality/reviews', { method: 'POST', body: JSON.stringify({ organization_id: row.organization_id, case_type: 'possible_duplicate', severity: 'review', summary: `Review potential duplicate candidate: ${row.legal_name}`, evidence: { search_query: query.trim(), similarity_score: row.score, source_name: row.source_name || null, origin: 'manual_name_search' } }) });
+      const body = await response.json();
+      setReviewCases(current => [body.item, ...current.filter(item => item.id !== body.item.id)]);
+      setNotice('Review case created. This action does not merge or verify an organization.');
+    } catch (e) { setError(typeof e.message === 'string' ? e.message : 'Unable to create review case.'); }
+    finally { setLoading(false); }
+  };
+  const recordDecision = async (reviewCase, decision) => {
+    const notes = (decisionNotes[reviewCase.id] || '').trim();
+    if (notes.length < 3) { setError('Add reviewer notes of at least 3 characters before recording a decision.'); return; }
+    setLoading(true); setError(''); setNotice('');
+    try {
+      const response = await request(`/api/v1/quality/reviews/${reviewCase.id}/decisions`, { method: 'POST', body: JSON.stringify({ decision, notes }) });
+      const body = await response.json();
+      if (['resolved', 'dismissed'].includes(body.item.status)) setReviewCases(current => current.filter(item => item.id !== reviewCase.id));
+      else setReviewCases(current => current.map(item => item.id === reviewCase.id ? body.item : item));
+      setDecisionNotes(current => ({ ...current, [reviewCase.id]: '' }));
+      setNotice(body.message || 'Review decision recorded.');
+    } catch (e) { setError(typeof e.message === 'string' ? e.message : 'Unable to record review decision.'); }
+    finally { setLoading(false); }
+  };
   const metrics = summary || {};
   return <div className="governance-workspace">
     <div className="page-heading"><div><div className="eyebrow-label">DATA GOVERNANCE</div><h1>Data quality</h1><p>Inspect completeness, freshness and review signals calculated from persisted records.</p></div><button className="button-secondary" onClick={load} disabled={loading}><RefreshCw size={14} className={loading ? 'spin' : ''}/> Refresh metrics</button></div>
     {error && <div className="alert-banner error"><AlertTriangle size={16}/><span>{error}</span></div>}
+    {notice && <div className="alert-banner success"><CheckCircle2 size={16}/><span>{notice}</span></div>}
     <div className="metric-grid quality-metric-grid">
       <MetricCard icon={Building2} label="Total records" value={summary ? number(metrics.total_records) : '—'} note="Persisted organizations"/>
       <MetricCard icon={AlertCircle} label="Missing registration" value={summary ? number(metrics.missing_registration_number) : '—'} note="Needs context-aware review" accent="amber"/>
@@ -215,7 +243,10 @@ function DataQualityPage({ request }) {
     </section>
     <section className="panel"><div className="panel-heading"><div><h2>Potential entity matches</h2><p>Search for similar legal names to support manual review. Similarity does not verify identity.</p></div></div>
       <form className="match-search-form" onSubmit={searchMatches}><input value={query} onChange={e => setQuery(e.target.value)} minLength={2} maxLength={200} placeholder="Enter a legal name to compare" /><button className="button-primary" disabled={loading || query.trim().length < 2}><Search size={15}/> Find candidates</button></form>
-      {candidates.length ? <div className="table-scroll"><table className="data-table"><thead><tr><th>ORGANIZATION</th><th>REGISTRATION</th><th>SOURCE</th><th>SIMILARITY</th><th>REVIEW</th></tr></thead><tbody>{candidates.map(row => <tr key={row.organization_id}><td><strong>{row.legal_name}</strong></td><td>{row.registration_number || '—'}</td><td>{row.source_name || 'Unknown'}</td><td>{row.score}%</td><td><StatusPill value={row.review_status}/></td></tr>)}</tbody></table></div> : <div className="keys-empty"><Search size={20}/><strong>No candidates to show</strong><span>Search for a name. Results are suggestions only and are never merged automatically.</span></div>}
+      {candidates.length ? <div className="table-scroll"><table className="data-table"><thead><tr><th>ORGANIZATION</th><th>REGISTRATION</th><th>SOURCE</th><th>SIMILARITY</th><th>REVIEW</th></tr></thead><tbody>{candidates.map(row => <tr key={row.organization_id}><td><strong>{row.legal_name}</strong></td><td>{row.registration_number || '—'}</td><td>{row.source_name || 'Unknown'}</td><td>{row.score}%</td><td><StatusPill value={row.review_status}/><button className="button-secondary" disabled={loading} onClick={() => createReviewCase(row)}>Open case</button></td></tr>)}</tbody></table></div> : <div className="keys-empty"><Search size={20}/><strong>No candidates to show</strong><span>Search for a name. Results are suggestions only and are never merged automatically.</span></div>}
+    </section>
+    <section className="panel"><div className="panel-heading"><div><h2>Open review cases</h2><p>Record reviewer outcomes with notes. Decisions never merge or rewrite organization records.</p></div><button className="button-secondary" onClick={load} disabled={loading}><RefreshCw size={14} className={loading ? 'spin' : ''}/> Refresh cases</button></div>
+      {!reviewCases.length ? <div className="keys-empty"><FileCheck2 size={22}/><strong>No open review cases</strong><span>Search potential matches above and open a case when a record needs human review.</span></div> : <div className="review-case-list">{reviewCases.map(item => <article className="review-case-row" key={item.id}><div className="review-case-top"><span className="rule-severity review">{item.case_type.replaceAll('_', ' ')}</span><StatusPill value={item.status}/><span className="review-case-id">{item.id.slice(0, 8)}</span></div><strong>{item.summary}</strong><p>Organization: {item.organization_id}{item.related_organization_id ? ` · Related: ${item.related_organization_id}` : ''}</p><input value={decisionNotes[item.id] || ''} onChange={e => setDecisionNotes(current => ({ ...current, [item.id]: e.target.value }))} placeholder="Reviewer notes (required)" aria-label={`Reviewer notes for ${item.id}`} maxLength={4000}/><div className="review-case-actions">{item.related_organization_id && <><button className="button-secondary" disabled={loading} onClick={() => recordDecision(item, 'same_entity')}>Same entity</button><button className="button-secondary" disabled={loading} onClick={() => recordDecision(item, 'different_entities')}>Different entities</button></>}<button className="button-secondary" disabled={loading} onClick={() => recordDecision(item, 'needs_more_evidence')}>Need evidence</button><button className="button-secondary" disabled={loading} onClick={() => recordDecision(item, 'data_quality_issue')}>Data issue</button><button className="button-secondary" disabled={loading} onClick={() => recordDecision(item, 'dismissed')}>Dismiss</button></div></article>)}</div>}
     </section>
     {summary && <p className="governance-footnote">Calculated {dateLabel(summary.generated_at)}. These indicators are data-quality signals, not legal verification, fraud findings or compliance decisions.</p>}
   </div>;
@@ -364,7 +395,7 @@ function APIKeysPage() {
         <label>Environment<select value={environment} onChange={e => setEnvironment(e.target.value)}><option value="sandbox">Sandbox · testing only</option><option value="production">Production · live requests</option></select></label>
         <label>Expiry<select value={expires} onChange={e => setExpires(e.target.value)}><option value="30">30 days</option><option value="90">90 days</option><option value="180">180 days</option><option value="365">365 days</option><option value="">No expiry</option></select></label>
         <div className="keys-scope-field"><span>Permissions</span><div className="keys-scopes">
-          {['registry:read','ingestion:write','sources:write','exports:read'].map(scope => <label key={scope}><input type="checkbox" checked={scopes.includes(scope)} onChange={() => toggleScope(scope)}/><span>{scope}</span></label>)}
+          {['registry:read','ingestion:write','sources:write','exports:read','quality:review'].map(scope => <label key={scope}><input type="checkbox" checked={scopes.includes(scope)} onChange={() => toggleScope(scope)}/><span>{scope}</span></label>)}
         </div></div>
         <div className="keys-environment-warning"><ShieldCheck size={17}/><span><strong>Environment lock</strong> — sandbox credentials are rejected by production deployments, return API_KEY_ENVIRONMENT_MISMATCH, and generate a security event. The server deployment's DATASOURCE_ENVIRONMENT determines the target; a client header cannot override it.</span></div>
         <button className="button-primary" disabled={loading || !token.trim() || scopes.length === 0}><KeyRound size={16}/> Generate {environment === 'sandbox' ? 'sandbox' : 'production'} key</button>
