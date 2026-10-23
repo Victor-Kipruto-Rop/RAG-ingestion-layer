@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from src.verification import PROVIDER_CATALOG, VerificationCaseRequest, list_verification_providers
+from src.verification import VerificationCaseRequest, list_verification_providers
 
 
 def test_provider_catalog_never_claims_live_verification_without_adapters():
