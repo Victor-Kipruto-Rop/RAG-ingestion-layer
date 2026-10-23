@@ -28,6 +28,7 @@ This plan defines deliverables and release gates. It is intentionally honest abo
 - Release gate: deterministic scoring, conflict cases, false-positive tests, and explainable evidence.
 
 ## Phase 4 — Kenya verification providers
+- [x] Add verification case/provider-check persistence and endpoints that clearly report BRS, KRA, and Peleza as not configured; no fake provider response is generated.
 - Add adapter contracts for BRS, KRA, and approved commercial providers.
 - Store provider, request correlation, response classification, evidence reference, timestamps, retries, and manual-review state.
 - Use sandbox/mock adapters only in tests. Live adapters require approved access, credentials, terms, and provider documentation.
