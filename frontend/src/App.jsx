@@ -262,7 +262,7 @@ function DataSourcesPage({ request }) {
   </div>;
 }
 
-function AuditLogsPage({ request }) {
+export function AuditLogsPage({ request }) {
   const [items, setItems] = useState([]);
   const [offset, setOffset] = useState(0);
   const [total, setTotal] = useState(0);
