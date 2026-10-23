@@ -3,7 +3,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main, feat/modern-datasource-dashboard]
+    branches: [main, feat/modern-datasource-dashboard, feat/complete-remaining-hardening-phases]
   workflow_dispatch:
 permissions:
   contents: read
