@@ -46,4 +46,4 @@ jobs:
       - run: npm install --no-audit --no-fund
       - run: npm run build
       - name: Build production frontend container
-        run: docker build -t pesaguard-registry-frontend:ci ./frontend
+        run: docker build -t pesaguard-registry-frontend:ci .
