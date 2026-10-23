@@ -2,7 +2,8 @@ name: Scheduled ingestion batch
 
 on:
   schedule:
-    - cron: "*/15 * * * *"
+    # Keep the no-server batch worker within a conservative free-tier budget.
+    - cron: "17 */2 * * *"
   workflow_dispatch:
     inputs:
       run_mode:
@@ -68,6 +69,7 @@ jobs:
           cache-dependency-path: backend/requirements.txt
 
       - name: Install Tesseract OCR engine
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.run_mode == 'ingest')
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends tesseract-ocr
