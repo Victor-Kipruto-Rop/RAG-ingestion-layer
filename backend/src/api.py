@@ -213,3 +213,87 @@ def query_organization(registration_number:str|None=None,tax_pin:str|None=None,l
 @router.get('/api/v1/warehouse/health/telemetry',dependencies=[Depends(require_api_key)])
 def warehouse_telemetry(db:Session=Depends(get_db)):
  return {'status':'ok','indexed_organizations':db.scalar(select(func.count()).select_from(Organization)) or 0,'raw_files':db.scalar(select(func.count()).select_from(WarehouseRawImport)) or 0,'query_logs':db.scalar(select(func.count()).select_from(WarehouseAccessLog)) or 0,'queued_imports':db.scalar(select(func.count()).select_from(WarehouseRawImport).where(WarehouseRawImport.import_status=='QUEUED')) or 0,'failed_imports':db.scalar(select(func.count()).select_from(WarehouseRawImport).where(WarehouseRawImport.import_status=='FAILED')) or 0,'storage_usage_bytes':db.scalar(select(func.coalesce(func.sum(WarehouseRawImport.byte_size),0))) or 0,'storage_usage_note':'Byte total is based on recorded uploads, not a live R2 bucket inventory.','generated_at':datetime.now(timezone.utc).isoformat()}
+
+
+# Data-quality endpoints report observable facts about imported records. They do
+# not certify legal status and never auto-merge candidate entities.
+@router.get('/api/v1/data-quality/summary', dependencies=[Depends(require_api_key)])
+def data_quality_summary(stale_after_days:int=Query(default=90,ge=1,le=3650), db:Session=Depends(get_db)):
+    total=db.scalar(select(func.count()).select_from(Organization)) or 0
+    missing_reg=db.scalar(select(func.count()).select_from(Organization).where(or_(Organization.normalized_registration_number.is_(None),Organization.normalized_registration_number==''))) or 0
+    missing_pin=db.scalar(select(func.count()).select_from(Organization).where(or_(Organization.normalized_tax_pin.is_(None),Organization.normalized_tax_pin==''))) or 0
+    missing_both=db.scalar(select(func.count()).select_from(Organization).where(
+        or_(Organization.normalized_registration_number.is_(None),Organization.normalized_registration_number==''),
+        or_(Organization.normalized_tax_pin.is_(None),Organization.normalized_tax_pin=='')
+    )) or 0
+    unreviewed=db.scalar(select(func.count()).select_from(Organization).where(Organization.data_quality_status=='UNREVIEWED')) or 0
+    stale_cutoff=datetime.now(timezone.utc)-timedelta(days=stale_after_days)
+    stale=db.scalar(select(func.count()).select_from(Organization).where(Organization.last_seen_at<stale_cutoff)) or 0
+    grouped=db.execute(select(Organization.data_quality_status,func.count()).group_by(Organization.data_quality_status)).all()
+    status_counts={str(status or 'UNKNOWN'):int(count) for status,count in grouped}
+    return {
+        'total_records':int(total),
+        'records_missing_registration_number':int(missing_reg),
+        'records_missing_tax_pin':int(missing_pin),
+        'records_missing_both_identifiers':int(missing_both),
+        'records_unreviewed':int(unreviewed),
+        'records_stale':int(stale),
+        'stale_after_days':stale_after_days,
+        'data_quality_status_counts':status_counts,
+        'generated_at':datetime.now(timezone.utc).isoformat(),
+        'interpretation':'Completeness and freshness indicators only; these values do not establish authoritative identity or legal verification.'
+    }
+
+
+@router.get('/api/v1/data-quality/review-queue', dependencies=[Depends(require_api_key)])
+def data_quality_review_queue(
+    page:int=Query(default=1,ge=1),
+    page_size:int=Query(default=25,ge=1,le=100),
+    reason:str|None=Query(default=None,pattern='^(missing_registration|missing_tax_pin|missing_both|unreviewed|stale)$'),
+    stale_after_days:int=Query(default=90,ge=1,le=3650),
+    q:str|None=Query(default=None,min_length=2,max_length=200),
+    db:Session=Depends(get_db)
+):
+    stmt=select(Organization)
+    if reason=='missing_registration':
+        stmt=stmt.where(or_(Organization.normalized_registration_number.is_(None),Organization.normalized_registration_number==''))
+    elif reason=='missing_tax_pin':
+        stmt=stmt.where(or_(Organization.normalized_tax_pin.is_(None),Organization.normalized_tax_pin==''))
+    elif reason=='missing_both':
+        stmt=stmt.where(
+            or_(Organization.normalized_registration_number.is_(None),Organization.normalized_registration_number==''),
+            or_(Organization.normalized_tax_pin.is_(None),Organization.normalized_tax_pin=='')
+        )
+    elif reason=='unreviewed':
+        stmt=stmt.where(Organization.data_quality_status=='UNREVIEWED')
+    elif reason=='stale':
+        stmt=stmt.where(Organization.last_seen_at<datetime.now(timezone.utc)-timedelta(days=stale_after_days))
+    if q:
+        from .ingestion.normalizer import normalize_legal_name,normalize_identifier
+        name=normalize_legal_name(q) or ''
+        ident=normalize_identifier(q) or ''
+        stmt=stmt.where(or_(Organization.normalized_legal_name.ilike(f'%{name}%'),Organization.normalized_registration_number.ilike(f'%{ident}%'),Organization.normalized_tax_pin.ilike(f'%{ident}%')))
+    total=db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    rows=db.scalars(stmt.order_by(Organization.updated_at.desc()).offset((page-1)*page_size).limit(page_size)).all()
+    items=[]
+    for org in rows:
+        reasons=[]
+        if not org.normalized_registration_number: reasons.append('missing_registration')
+        if not org.normalized_tax_pin: reasons.append('missing_tax_pin')
+        if org.data_quality_status=='UNREVIEWED': reasons.append('unreviewed')
+        if org.last_seen_at and org.last_seen_at<datetime.now(timezone.utc)-timedelta(days=stale_after_days): reasons.append('stale')
+        items.append({
+            'id':org.id,
+            'legal_name':org.legal_name,
+            'registration_number':org.registration_number,
+            'tax_pin_present':bool(org.tax_pin),
+            'status':org.status,
+            'data_quality_status':org.data_quality_status,
+            'review_reasons':reasons,
+            'source_name':org.source_name,
+            'source_file':org.source_file,
+            'source_row':org.source_row,
+            'last_seen_at':org.last_seen_at.isoformat() if org.last_seen_at else None,
+            'updated_at':org.updated_at.isoformat() if org.updated_at else None
+        })
+    return {'items':items,'total':int(total),'page':page,'page_size':page_size,'reason_filter':reason,'stale_after_days':stale_after_days,'warning':'Review candidates only. Missing fields and stale records are not proof of fraud or invalid registration.'}
