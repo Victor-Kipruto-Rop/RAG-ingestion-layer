@@ -1,4 +1,4 @@
--- Durable DLQ for invalid imported rows. Stack traces and row snapshots are restricted internal diagnostics.
+-- Durable DLQ for invalid imported rows. Detailed diagnostics must remain access-controlled.
 CREATE TABLE IF NOT EXISTS public.failed_imports_dlq (
   id varchar(36) PRIMARY KEY,
   job_id varchar(36) NOT NULL REFERENCES public.ingestion_jobs(id) ON DELETE RESTRICT,
