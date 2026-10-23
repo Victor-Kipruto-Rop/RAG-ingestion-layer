@@ -16,7 +16,9 @@ from .database import engine,SessionLocal
 from . import models
 from .api import router
 from .api_keys import router as api_keys_router
-from .models import WarehouseAccessLog
+from .models import WarehouseAccessLog,IngestionJob
+from .storage import health_check as check_object_storage, StorageNotConfigured
+from .security import _redis_client
 structlog.configure(processors=[structlog.processors.TimeStamper(fmt='iso'),structlog.processors.add_log_level,structlog.processors.format_exc_info,structlog.processors.JSONRenderer()],logger_factory=structlog.stdlib.LoggerFactory())
 logging.basicConfig(level=logging.INFO,format='%(message)s')
 log=structlog.get_logger('registry.api')
@@ -96,17 +98,59 @@ def metrics(x_metrics_token:str|None=Header(default=None,alias='X-Metrics-Token'
 
 @app.get('/health/live',tags=['health'])
 def live():return {'status':'alive','service':settings.app_name}
+def _health_snapshot():
+ components={"database":"healthy","object_storage":"not_configured","redis":"not_configured"}
+ try:
+  with engine.connect() as conn:conn.execute(text('SELECT 1'))
+ except Exception:
+  components["database"]="unavailable"
+  log.exception('database_health_check_failed')
+ if settings.r2_bucket_name:
+  try:check_object_storage();components["object_storage"]="healthy"
+  except StorageNotConfigured:components["object_storage"]="not_configured"
+  except Exception:
+   components["object_storage"]="unavailable"
+   log.exception('object_storage_health_check_failed')
+ if settings.redis_url:
+  try:
+   client=_redis_client()
+   if client is None or not client.ping():raise RuntimeError('Redis ping failed')
+   components["redis"]="healthy"
+  except Exception:
+   components["redis"]="unavailable"
+   log.exception('redis_health_check_failed')
+ queue={"queued_jobs":None,"oldest_queued_age_seconds":None}
+ try:
+  with SessionLocal() as db:
+   queue["queued_jobs"]=db.scalar(select(func.count()).select_from(IngestionJob).where(IngestionJob.status=='QUEUED')) or 0
+   oldest=db.scalar(select(func.min(IngestionJob.created_at)).where(IngestionJob.status=='QUEUED'))
+   if oldest:
+    if oldest.tzinfo is None:oldest=oldest.replace(tzinfo=timezone.utc)
+    queue["oldest_queued_age_seconds"]=max(0,int((datetime.now(timezone.utc)-oldest).total_seconds()))
+ except Exception:
+  queue["queued_jobs"]="unavailable"
+  log.exception('ingestion_queue_health_check_failed')
+ components["worker_heartbeat"]="not_instrumented"
+ return {"components":components,"queue":queue,"environment":settings.pesaguard_datasource_environment}
+
 @app.get('/health/ready',tags=['health'])
 def ready():
- try:
-  with engine.connect() as conn:conn.execute(text('SELECT 1'))
-  return {'status':'ready','database':'healthy'}
- except Exception:
-  log.exception('database_readiness_check_failed');raise HTTPException(503,detail={'status':'not_ready','database':'unavailable'})
+ snapshot=_health_snapshot()
+ components=snapshot["components"]
+ required_ok=components["database"]=="healthy"
+ if settings.app_env.lower()=="production":
+  required_ok=required_ok and components["object_storage"]=="healthy"
+ if settings.redis_url:
+  required_ok=required_ok and components["redis"]=="healthy"
+ if not required_ok:
+  raise HTTPException(503,detail={"status":"not_ready",**snapshot})
+ return {"status":"ready",**snapshot}
+
 @app.get('/health',tags=['health'])
 def health():
- try:
-  with engine.connect() as conn:conn.execute(text('SELECT 1'))
-  status='healthy'
- except Exception:status='degraded'
- return {'status':status,'database':'healthy' if status=='healthy' else 'unavailable','r2_configured':bool(settings.r2_bucket_name)}
+ snapshot=_health_snapshot()
+ components=snapshot["components"]
+ status="healthy" if components["database"]=="healthy" else "degraded"
+ if settings.app_env.lower()=="production" and components["object_storage"]!="healthy":status="degraded"
+ if settings.redis_url and components["redis"]!="healthy":status="degraded"
+ return {"status":status,**snapshot}
