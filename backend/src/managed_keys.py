@@ -129,7 +129,8 @@ def authenticate_managed_key(token: str, request: Request) -> tuple[bool, str | 
             db.commit()
             raise HTTPException(401, "API key has been revoked")
         now = now_utc()
-        if key.expires_at and key.expires_at <= now:
+        expiry = key.expires_at
+        if expiry and (expiry.replace(tzinfo=timezone.utc) if expiry.tzinfo is None else expiry) <= now:
             key.status = "expired"
             record_security_event(db, key, "expired_key_attempt", requested_environment, request)
             db.commit()
