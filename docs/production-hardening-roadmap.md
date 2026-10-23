@@ -56,7 +56,8 @@ The managed-key migration and regression tests in this branch are implementation
 ## Phase 9 — Containers and CI/CD
 - [x] Use multi-stage, non-root API, worker and frontend images.
 - [x] Require pytest, focused Ruff checks, frontend tests/build, and container builds on PRs.
-- [x] Add CodeQL analysis for Python and JavaScript/TypeScript plus weekly Dependabot update proposals.\n- [ ] Enable and verify repository secret scanning/push protection in GitHub settings; a workflow file cannot turn on account-level settings.
+- [x] Add CodeQL analysis for Python and JavaScript/TypeScript plus weekly Dependabot update proposals.
+- [ ] Enable and verify repository secret scanning/push protection in GitHub settings; a workflow file cannot turn on account-level settings.
 - [ ] Deploy only after checks and migration review; document rollback.
 
 ## Phase 10 — End-to-end sign-off
