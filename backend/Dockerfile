@@ -12,6 +12,8 @@ WORKDIR /app
 RUN useradd --create-home --uid 10001 appuser && apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /opt/venv /opt/venv
 COPY --chown=appuser:appuser src ./src
+COPY --chown=appuser:appuser alembic.ini ./alembic.ini
+COPY --chown=appuser:appuser migrations ./migrations
 USER appuser
 EXPOSE 8000
 CMD ["sh","-c","uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
