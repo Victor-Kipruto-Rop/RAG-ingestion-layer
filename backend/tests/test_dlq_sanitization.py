@@ -1,4 +1,4 @@
-from src.worker import _sanitize_dlq_row
+from src.worker import _sanitize_dlq_row, _sanitize_diagnostic
 
 
 def test_dlq_row_redacts_sensitive_fields_but_keeps_corporate_identity():
@@ -14,3 +14,10 @@ def test_dlq_row_redacts_sensitive_fields_but_keeps_corporate_identity():
     assert safe['tax_pin'] == '[REDACTED]'
     assert safe['contact_email'] == '[REDACTED]'
     assert safe['phone'] == '[REDACTED]'
+
+
+def test_dlq_diagnostics_redact_sensitive_values():
+    row = {'tax_pin': 'A123456789Z', 'legal_name': 'Example Limited'}
+    message = _sanitize_diagnostic('Bad value A123456789Z in Example Limited', row)
+    assert 'A123456789Z' not in message
+    assert '[REDACTED]' in message
