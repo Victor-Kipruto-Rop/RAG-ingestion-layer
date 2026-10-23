@@ -28,6 +28,7 @@ Apply in order to PostgreSQL/Supabase:
 8. `database/migrations/008_job_correlation_id.sql`
 9. `database/migrations/009_api_key_lifecycle.sql`
 10. `database/migrations/010_verification_orchestration.sql`
+11. `database/migrations/011_api_key_usage_events.sql`
 
 Set `APP_ENV=production` only after migrations are applied. Production startup intentionally does not create tables automatically.
 
@@ -111,7 +112,7 @@ See [implementation phases](docs/implementation-phases.md) for the delivery road
 - Configure `PESAGUARD_DATASOURCE_ENVIRONMENT=sandbox` on a sandbox deployment or `production` on production. The server setting is authoritative; request headers cannot switch environments.
 - Apply migration `009_api_key_lifecycle.sql` to a non-production PostgreSQL database first.
 - Configure `API_KEY_MANAGEMENT_TOKEN` as a high-entropy server-side deployment secret. Do not expose it to browser code.
-- The operator routes are `POST/GET /api/v1/admin/api-keys`, `GET /api/v1/admin/api-keys/events`, `POST /api/v1/admin/api-keys/{id}/revoke`, and `POST /api/v1/admin/api-keys/{id}/rotate`; they require `X-Key-Management-Token`.
+- The operator routes are `POST/GET /api/v1/admin/api-keys`, `GET /api/v1/admin/api-keys/events`, `GET /api/v1/admin/api-keys/{id}/usage`, `POST /api/v1/admin/api-keys/{id}/revoke`, and `POST /api/v1/admin/api-keys/{id}/rotate`; they require `X-Key-Management-Token`.
 - Managed key secrets are returned only once. The database stores only a SHA-256 digest and a public prefix. Managed keys are checked against the server deployment environment and scopes.
 - Legacy `REGISTRY_API_KEYS` remain available during caller migration. Do not revoke them until each trusted service caller has been migrated and verified.
 - The current application has no verified customer login/organization-owner identity in this service. These management routes are operator-only; do not expose them as a customer self-service UI until authenticated tenant roles are integrated.
@@ -120,3 +121,6 @@ See [implementation phases](docs/implementation-phases.md) for the delivery road
 ## Verification provider readiness
 
 The verification case API persists a traceable case and provider-check records, but BRS, KRA, and Peleza are explicitly reported as `not_configured` until approved provider access, endpoint specifications, credentials, and provider-specific adapters are supplied. Creating a case does not call an external provider and does not mark the organization verified. See [implementation phases](docs/implementation-phases.md).
+
+
+Managed-key usage analytics are available from the operator-only `GET /api/v1/admin/api-keys/{id}/usage?days=30` endpoint after migration 011 is applied. Usage telemetry stores key IDs/prefixes, endpoint, method, status, duration, and request correlation only; it never stores the raw API secret or request headers.
