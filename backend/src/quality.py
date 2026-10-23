@@ -97,15 +97,13 @@ def list_review_decisions(
     db: Session = Depends(get_db),
 ):
     stmt = select(AuditLog).where(AuditLog.action == 'organization_review_decision')
-    total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
-    rows = db.scalars(stmt.order_by(AuditLog.created_at.desc(), AuditLog.id.desc()).offset(offset).limit(min(1000, offset + limit))).all()
     if organization_id:
-        rows = [row for row in rows if (row.details or {}).get('organization_id') == organization_id or (row.details or {}).get('candidate_organization_id') == organization_id]
-        total = db.scalar(select(func.count()).select_from(AuditLog).where(AuditLog.action == 'organization_review_decision')) or 0
-        # AuditLog JSON querying differs between SQLite and PostgreSQL; filter the bounded page in Python.
-        rows = rows[offset:offset + limit]
-    else:
-        rows = rows[:limit]
+        stmt = stmt.where(or_(
+            AuditLog.details['organization_id'].as_string() == organization_id,
+            AuditLog.details['candidate_organization_id'].as_string() == organization_id,
+        ))
+    total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    rows = db.scalars(stmt.order_by(AuditLog.created_at.desc(), AuditLog.id.desc()).offset(offset).limit(limit)).all()
     return {'items': [_audit_out(row) for row in rows], 'count': len(rows), 'total': total, 'limit': limit, 'offset': offset, 'next_offset': offset + len(rows) if offset + len(rows) < total else None}
 
 
