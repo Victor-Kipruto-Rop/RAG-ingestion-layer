@@ -103,7 +103,7 @@ async def require_api_key(
     x_internal_nonce: str | None = Header(default=None, alias="X-Internal-Nonce"),
 ):
     if x_api_key and x_api_key.startswith(("pg_sandbox_", "pg_live_")):
-        managed, key_id, scopes = authenticate_managed_key(x_api_key, request)
+        _, key_id, _ = authenticate_managed_key(x_api_key, request)
         identity = "managed-key:" + str(key_id)
     elif x_internal_signature is not None:
         secret = settings.hmac_shared_secret
@@ -123,7 +123,6 @@ async def require_api_key(
         expected = hmac.new(secret.encode(), canonical.encode(), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(expected, x_internal_signature.lower()):
             raise HTTPException(401, "Invalid internal signature")
-        from .managed_keys import _check_nonce
         if not await _check_nonce(x_internal_nonce, max(60, settings.hmac_nonce_ttl_seconds)):
             raise HTTPException(401, "Internal request replay detected")
         identity = "hmac-client:" + (request.client.host if request.client else "unknown")
