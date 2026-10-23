@@ -1,7 +1,6 @@
 import asyncio
 import hashlib
 import hmac
-import json
 import threading
 import time
 import uuid
@@ -9,9 +8,10 @@ from datetime import datetime, timezone
 from functools import lru_cache
 from fastapi import Header, HTTPException, Request
 from redis import Redis
-from sqlalchemy import text
+from sqlalchemy import select
 from .config import settings
 from .database import SessionLocal
+from .models import ApiKey, ApiKeySecurityEvent
 
 @lru_cache(maxsize=1)
 def _redis_client():
@@ -92,8 +92,7 @@ async def _take_token(identity, request):
         _local_buckets[key] = (tokens - 1, now)
 
 def _managed_key(raw_key: str, request: Request):
-    # Only look up keys with a recognizable managed-key prefix. Legacy shared keys remain
-    # available during migration; new managed-key prefixes never fall back to legacy auth.
+    # Recognizable managed-key prefixes never fall back to legacy shared-key auth.
     if raw_key.startswith('pg_sandbox_'):
         prefix = 'pg_sandbox_' + raw_key[len('pg_sandbox_'):len('pg_sandbox_') + 8]
     elif raw_key.startswith('pg_live_'):
@@ -102,46 +101,45 @@ def _managed_key(raw_key: str, request: Request):
         return None
     digest = hashlib.sha256(raw_key.encode()).hexdigest()
     with SessionLocal() as db:
-        try:
-            row = db.execute(text("SELECT * FROM api_keys WHERE key_prefix=:prefix"), {"prefix": prefix}).mappings().first()
-        except Exception:
-            db.rollback()
-            raise HTTPException(503, "Managed API key registry is unavailable; apply the reviewed API-key migration.")
-        if not row or not hmac.compare_digest(row["secret_hash"], digest):
-            raise HTTPException(401, "Invalid or missing API key")
-        if row["status"] != "active" or (row["expires_at"] and row["expires_at"] <= datetime.now(timezone.utc)):
-            raise HTTPException(401, "API key is revoked or expired")
+        row = db.scalar(select(ApiKey).where(ApiKey.key_prefix == prefix))
+        if not row or not hmac.compare_digest(row.secret_hash, digest):
+            raise HTTPException(401, 'Invalid or missing API key')
+        expires_at = row.expires_at
+        if expires_at and expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if row.status != 'active' or (expires_at and expires_at <= datetime.now(timezone.utc)):
+            raise HTTPException(401, 'API key is revoked or expired')
         expected_environment = settings.pesaguard_datasource_environment
-        if row["environment"] != expected_environment:
-            request_id = getattr(request.state, "request_id", None) or request.headers.get("X-Correlation-ID")
-            db.execute(text("""INSERT INTO api_key_security_events
-              (id,api_key_id,key_prefix,event_type,expected_environment,key_environment,endpoint,request_id,source_ip,details)
-              VALUES (:id,:key_id,:prefix,'environment_mismatch',:expected,:actual,:endpoint,:request_id,:ip,CAST(:details AS jsonb))"""),
-              {"id": str(uuid.uuid4()), "key_id": row["id"], "prefix": prefix,
-               "expected": expected_environment, "actual": row["environment"], "endpoint": request.url.path[:300],
-               "request_id": request_id, "ip": request.client.host if request.client else None,
-               "details": json.dumps({"method": request.method})})
+        if row.environment != expected_environment:
+            request_id = getattr(request.state, 'request_id', None) or request.headers.get('X-Correlation-ID')
+            db.add(ApiKeySecurityEvent(
+                api_key_id=row.id, key_prefix=prefix, event_type='environment_mismatch',
+                expected_environment=expected_environment, key_environment=row.environment,
+                endpoint=request.url.path[:300], request_id=request_id,
+                source_ip=request.client.host if request.client else None,
+                details={'method': request.method},
+            ))
             db.commit()
-            raise HTTPException(403, detail={"code":"API_KEY_ENVIRONMENT_MISMATCH",
-              "message":f"This API key is for {row['environment']} only. Use a {expected_environment} key for this environment."})
-        scopes = row["scopes"] if isinstance(row["scopes"], list) else json.loads(row["scopes"])
+            raise HTTPException(403, detail={'code':'API_KEY_ENVIRONMENT_MISMATCH',
+              'message':f'This API key is for {row.environment} only. Use a {expected_environment} key for this environment.'})
+        scopes = row.scopes if isinstance(row.scopes, list) else []
         path = request.url.path
-        if path == "/api/v1/ingestion/preview":
-            needed = "registry:read"
-        elif request.method in {"POST", "PUT", "PATCH", "DELETE"}:
-            needed = "sources:write" if path.startswith("/api/v1/sources") else "registry:write"
-        elif path.startswith("/api/v1/exports/"):
-            needed = "exports:read"
+        if path == '/api/v1/ingestion/preview':
+            needed = 'registry:read'
+        elif request.method in {'POST', 'PUT', 'PATCH', 'DELETE'}:
+            needed = 'sources:write' if path.startswith('/api/v1/sources') else 'registry:write'
+        elif path.startswith('/api/v1/exports/'):
+            needed = 'exports:read'
         else:
-            needed = "registry:read"
+            needed = 'registry:read'
         if needed not in scopes:
-            raise HTTPException(403, detail={"code":"API_KEY_SCOPE_INSUFFICIENT","message":f"This key requires the {needed} scope."})
-        db.execute(text("UPDATE api_keys SET last_used_at=now() WHERE id=:id"), {"id": row["id"]})
+            raise HTTPException(403, detail={'code':'API_KEY_SCOPE_INSUFFICIENT','message':f'This key requires the {needed} scope.'})
+        row.last_used_at = datetime.now(timezone.utc)
         db.commit()
-        request.state.api_key_id = row["id"]
+        request.state.api_key_id = row.id
         request.state.api_key_prefix = prefix
-        request.state.api_key_environment = row["environment"]
-        return "managed-api-key:" + row["id"]
+        request.state.api_key_environment = row.environment
+        return 'managed-api-key:' + row.id
 
 async def require_api_key(
     request: Request,
