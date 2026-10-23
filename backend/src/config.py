@@ -5,7 +5,7 @@ class Settings(BaseSettings):
  app_env:str='development'
  database_url:str='sqlite:///./registry.db'
  registry_api_keys:str=''
- api_environment:str='production'
+ api_environment:str='sandbox'
  api_key_auth_jwt_secret:str=''
  api_key_auth_jwt_issuer:str=''
  api_key_auth_jwt_audience:str=''
@@ -56,6 +56,11 @@ def validate_runtime_config():
  if settings.app_env.lower()!='production':
   return
  missing=[]
+ environment=settings.api_environment.strip().lower()
+ if environment not in {'sandbox','production'}:
+  missing.append('API_ENVIRONMENT must be sandbox or production')
+ elif environment!='production':
+  missing.append('API_ENVIRONMENT=production (required when APP_ENV=production)')
  if not settings.api_key_list or 'change-this-local-only-key-before-use' in settings.api_key_list:
   missing.append('REGISTRY_API_KEYS')
  if settings.database_url.startswith('sqlite'):
