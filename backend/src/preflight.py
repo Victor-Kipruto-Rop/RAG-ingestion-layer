@@ -1,24 +1,64 @@
-"""Non-destructive worker preflight: validate DB and object-store access only."""
+"""Non-destructive worker preflight: validate DB schema and object-store access."""
 import logging
 import sys
+from datetime import datetime, timezone
 
-from sqlalchemy import text
+from sqlalchemy import inspect, select, func
 from sqlalchemy.exc import SQLAlchemyError
 
-from .database import engine
+from .database import engine, SessionLocal
+from .models import IngestionJob
 from .storage import health_check
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 log = logging.getLogger("registry.preflight")
 
+REQUIRED_TABLES = {
+    "internal_organizations",
+    "ingestion_jobs",
+    "ingestion_row_errors",
+    "ingestion_audit_logs",
+    "organization_record_versions",
+    "registry_sources",
+    "warehouse_raw_imports",
+    "warehouse_access_logs",
+}
+
 
 def main() -> int:
     try:
         with engine.connect() as connection:
-            connection.execute(text("SELECT 1"))
-        log.info("Database connectivity: OK")
+            connection.exec_driver_sql("SELECT 1")
+        existing = set(inspect(engine).get_table_names())
+        missing = sorted(REQUIRED_TABLES - existing)
+        if missing:
+            log.error("Database schema check failed; required tables are missing: %s", ", ".join(missing))
+            return 1
+        log.info("Database connectivity and required schema: OK")
+        with SessionLocal() as db:
+            queued = db.scalar(
+                select(func.count()).select_from(IngestionJob).where(IngestionJob.status == "QUEUED")
+            ) or 0
+            processing = db.scalar(
+                select(func.count()).select_from(IngestionJob).where(IngestionJob.status == "PROCESSING")
+            ) or 0
+            failed = db.scalar(
+                select(func.count()).select_from(IngestionJob).where(IngestionJob.status == "FAILED")
+            ) or 0
+            oldest = db.scalar(
+                select(func.min(IngestionJob.created_at)).where(IngestionJob.status == "QUEUED")
+            )
+        age_seconds = None
+        if oldest is not None:
+            if oldest.tzinfo is None:
+                oldest = oldest.replace(tzinfo=timezone.utc)
+            age_seconds = max(0, int((datetime.now(timezone.utc) - oldest).total_seconds()))
+        log.info(
+            "Queue summary: queued=%d processing=%d failed=%d oldest_queued_age_seconds=%s",
+            queued, processing, failed, age_seconds if age_seconds is not None else "none",
+        )
     except SQLAlchemyError:
-        log.error("Database connectivity: FAILED (details intentionally redacted)")
+        log.error("Database connectivity/schema check failed (details intentionally redacted)")
         return 1
 
     try:
