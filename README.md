@@ -23,6 +23,8 @@ Apply in order to PostgreSQL/Supabase:
 3. `database/migrations/003_durable_ingestion_sources.sql`
 4. `database/migrations/004_ingestion_retry_leases.sql`
 5. `database/migrations/005_warehouse_bronze_gold.sql`
+6. `database/migrations/006_failed_imports_dlq.sql`
+7. `database/migrations/007_ingestion_row_progress.sql`
 
 Set `APP_ENV=production` only after migrations are applied. Production startup intentionally does not create tables automatically.
 
@@ -31,7 +33,7 @@ Set `APP_ENV=production` only after migrations are applied. Production startup i
 
 The current implementation work is tracked in [the phased production hardening roadmap](docs/production-hardening-roadmap.md). Review [database migration safety](docs/database-migrations.md) before running Alembic against any existing database, and see [internal API security](docs/internal-api-security.md) for HMAC signing, replay protection, rate limits, cache behavior and metrics.
 
-- CSV ingestion uses a disk-backed spool and row iteration; PDF diagnostics remain bounded and manual-review-only.
+- CSV ingestion uses a disk-backed spool, bounded database batches, and persisted row progress for safe retry/resume; PDF diagnostics remain bounded and manual-review-only.
 - Invalid row diagnostics are written to the restricted dead-letter table with sensitive row values masked.
 - HMAC signing is optional during caller migration. Do not enable REQUIRE_HMAC until PesaGuard callers send the documented signature headers and REDIS_URL is configured.
 - Distributed rate limiting and Redis cache-aside are active only when REDIS_URL is configured; the no-Redis fallback is per-process and is not a distributed security boundary.
