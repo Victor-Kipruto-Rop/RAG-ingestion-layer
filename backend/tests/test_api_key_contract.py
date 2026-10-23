@@ -33,3 +33,69 @@ def test_sandbox_key_prefix_is_detectable_without_shared_registry():
     assert response["code"] == "API_KEY_ENVIRONMENT_MISMATCH"
     assert response["key_environment"] == "sandbox"
     assert response["requested_environment"] == "production"
+
+
+def test_sandbox_key_is_rejected_and_flagged_on_production(monkeypatch):
+    from types import SimpleNamespace
+    import pytest
+    from fastapi import HTTPException
+    from src import security
+
+    class FakeSession:
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return False
+        def scalar(self, statement):
+            return None
+
+    events = []
+    monkeypatch.setattr(security.settings, "api_environment", "production")
+    monkeypatch.setattr(security, "SessionLocal", lambda: FakeSession())
+    monkeypatch.setattr(security, "_audit_unknown_environment_mismatch",
+                        lambda *args: events.append(args))
+    request = SimpleNamespace(
+        method="GET",
+        url=SimpleNamespace(path="/api/v1/registry/lookup"),
+        state=SimpleNamespace(request_id="test-request"),
+        client=SimpleNamespace(host="127.0.0.1"),
+    )
+    with pytest.raises(HTTPException) as raised:
+        security._validate_customer_api_key("pg_sandbox_fake-secret", request)
+    assert raised.value.status_code == 403
+    assert raised.value.detail["code"] == "API_KEY_ENVIRONMENT_MISMATCH"
+    assert raised.value.detail["key_environment"] == "sandbox"
+    assert events, "environment mismatch should create a security audit event"
+
+
+def test_production_key_is_rejected_on_sandbox(monkeypatch):
+    from types import SimpleNamespace
+    import pytest
+    from fastapi import HTTPException
+    from src import security
+
+    class FakeSession:
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return False
+        def scalar(self, statement):
+            return None
+
+    events = []
+    monkeypatch.setattr(security.settings, "api_environment", "sandbox")
+    monkeypatch.setattr(security, "SessionLocal", lambda: FakeSession())
+    monkeypatch.setattr(security, "_audit_unknown_environment_mismatch",
+                        lambda *args: events.append(args))
+    request = SimpleNamespace(
+        method="GET",
+        url=SimpleNamespace(path="/api/v1/registry/lookup"),
+        state=SimpleNamespace(request_id="test-request"),
+        client=SimpleNamespace(host="127.0.0.1"),
+    )
+    with pytest.raises(HTTPException) as raised:
+        security._validate_customer_api_key("pg_live_fake-secret", request)
+    assert raised.value.status_code == 403
+    assert raised.value.detail["code"] == "API_KEY_ENVIRONMENT_MISMATCH"
+    assert raised.value.detail["requested_environment"] == "sandbox"
+    assert events
