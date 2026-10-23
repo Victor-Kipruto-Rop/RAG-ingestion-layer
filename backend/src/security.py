@@ -140,7 +140,10 @@ async def require_api_key(request:Request,x_api_key:str|None=Header(default=None
     else:
         if not x_api_key: raise HTTPException(401,'Invalid or missing API key')
         managed_prefix=x_api_key.startswith('pg_sandbox_') or x_api_key.startswith('pg_live_')
-        if managed_prefix and settings.managed_api_keys_enabled:
+        if managed_prefix:
+            if not settings.managed_api_keys_enabled:
+                _record_security_event(request,'managed_keys_disabled')
+                raise HTTPException(503,'Managed API keys are disabled by server configuration')
             managed=_managed_key_from_db(x_api_key)
             if not managed:
                 _record_security_event(request,'invalid_managed_key')
