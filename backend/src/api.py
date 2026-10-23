@@ -1,4 +1,4 @@
-import uuid,hashlib
+import csv,io,uuid,hashlib
 import structlog
 from datetime import datetime,timezone
 from fastapi import APIRouter,Depends,File,HTTPException,Query,UploadFile,Header,Request
