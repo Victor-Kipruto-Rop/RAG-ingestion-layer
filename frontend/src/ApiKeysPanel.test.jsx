@@ -29,8 +29,7 @@ afterEach(() => {
 
 describe('ApiKeysPanel token handling', () => {
   it('keeps the user access token in component memory instead of web storage', async () => {
-    const sessionSet = vi.spyOn(Storage.prototype, 'setItem');
-    const localSet = vi.spyOn(Storage.prototype, 'setItem');
+    const storageSet = vi.spyOn(Storage.prototype, 'setItem');
     render(<ApiKeysPanel />);
 
     fireEvent.change(screen.getByLabelText(/PesaGuard user access token/i), {
@@ -43,8 +42,7 @@ describe('ApiKeysPanel token handling', () => {
       headers: expect.objectContaining({ Authorization: 'Bearer short-lived-test-access-token' }),
     })));
 
-    expect(sessionSet).not.toHaveBeenCalled();
-    expect(localSet).not.toHaveBeenCalled();
+    expect(storageSet).not.toHaveBeenCalled();
     expect(screen.getByText(/kept in memory only/i)).toBeTruthy();
   });
 });
