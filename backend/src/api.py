@@ -281,7 +281,7 @@ def data_quality_review_queue(
         if not org.normalized_registration_number: reasons.append('missing_registration')
         if not org.normalized_tax_pin: reasons.append('missing_tax_pin')
         if org.data_quality_status=='UNREVIEWED': reasons.append('unreviewed')
-        if org.last_seen_at and org.last_seen_at<datetime.now(timezone.utc)-timedelta(days=stale_after_days): reasons.append('stale')
+        last_seen=org.last_seen_at\n        if last_seen and last_seen.tzinfo is None: last_seen=last_seen.replace(tzinfo=timezone.utc)\n        if last_seen and last_seen<datetime.now(timezone.utc)-timedelta(days=stale_after_days): reasons.append('stale')
         items.append({
             'id':org.id,
             'legal_name':org.legal_name,
