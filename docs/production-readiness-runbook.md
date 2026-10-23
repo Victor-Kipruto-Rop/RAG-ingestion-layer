@@ -53,4 +53,4 @@ Only after the preceding checks pass, authorize one known, non-sensitive test da
 
 ## PDF limitations
 
-The PDF adapter extracts searchable text and basic diagnostics only. Scanned/image-only PDFs require OCR, and text extraction does not authenticate a document. Every PDF remains in manual review; do not auto-approve registry facts from extracted text.
+The worker can optionally OCR image-only PDFs when the Tesseract engine is installed and `PDF_OCR_ENABLED=true`. OCR is bounded to the first 25 pages by default and the extracted text is used only for diagnostics; it is not persisted as verified organization data and does not automatically populate organization records. Missing OCR dependencies, timeouts, encrypted files, oversized files, or uncertain extraction must remain in manual review. Every PDF remains in manual review; do not auto-approve registry facts from extracted text.

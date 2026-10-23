@@ -24,6 +24,8 @@ def test_blank_pdf_requires_ocr_and_manual_review_signal():
     assert result.page_count == 1
     assert result.extracted_characters == 0
     assert result.needs_ocr is True
+    assert result.ocr_attempted is False
+    assert result.ocr_pages_processed == 0
 
 
 def test_character_limit_must_be_positive():
@@ -40,3 +42,13 @@ def test_pdf_size_limit_is_enforced_before_parsing():
 
     with pytest.raises(ValueError, match="size limit"):
         extract_pdf_text(b"%PDF-" + b"x" * MAX_PDF_BYTES)
+
+def test_ocr_is_opt_in():
+    result = extract_pdf_text(blank_pdf(), enable_ocr=False)
+    assert result.ocr_attempted is False
+    assert result.needs_ocr is True
+
+
+def test_ocr_page_limit_must_be_positive():
+    with pytest.raises(ValueError, match="max_ocr_pages must be positive"):
+        extract_pdf_text(blank_pdf(), max_ocr_pages=0)

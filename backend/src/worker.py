@@ -31,7 +31,7 @@ def process_job(job_id):
    if suffix=='.pdf':
     from .ingestion.pdf_text import extract_pdf_text
     data=download_bytes(job.object_key)
-    diagnostics=extract_pdf_text(data)
+    diagnostics=extract_pdf_text(data, enable_ocr=settings.pdf_ocr_enabled, max_ocr_pages=settings.pdf_ocr_max_pages)
     job.status='NEEDS_PDF_PROCESSING'
     if diagnostics.needs_ocr:
      job.error_summary=f'PDF has {diagnostics.page_count} page(s) but no searchable text; OCR and manual review are required.'
@@ -40,10 +40,10 @@ def process_job(job_id):
     if raw_import:
      raw_import.import_status='NEEDS_PDF_PROCESSING'
      metadata=dict(raw_import.metadata_json or {})
-     metadata.update({'pdf_page_count':diagnostics.page_count,'pdf_extracted_characters':diagnostics.extracted_characters,'pdf_needs_ocr':diagnostics.needs_ocr,'pdf_extraction_version':1,'requires_manual_review':True})
+     metadata.update({'pdf_page_count':diagnostics.page_count,'pdf_extracted_characters':diagnostics.extracted_characters,'pdf_needs_ocr':diagnostics.needs_ocr,'pdf_extraction_version':2,'pdf_ocr_attempted':diagnostics.ocr_attempted,'pdf_ocr_available':diagnostics.ocr_available,'pdf_ocr_pages_processed':diagnostics.ocr_pages_processed,'requires_manual_review':True})
      raw_import.metadata_json=metadata
     job.completed_at=now()
-    db.add(AuditLog(action='registry_pdf_extraction_diagnostics',actor='ingestion-worker',file_name=job.file_name,details={'job_id':job.id,'page_count':diagnostics.page_count,'extracted_characters':diagnostics.extracted_characters,'needs_ocr':diagnostics.needs_ocr,'manual_review_required':True}))
+    db.add(AuditLog(action='registry_pdf_extraction_diagnostics',actor='ingestion-worker',file_name=job.file_name,details={'job_id':job.id,'page_count':diagnostics.page_count,'extracted_characters':diagnostics.extracted_characters,'needs_ocr':diagnostics.needs_ocr,'ocr_attempted':diagnostics.ocr_attempted,'ocr_available':diagnostics.ocr_available,'ocr_pages_processed':diagnostics.ocr_pages_processed,'manual_review_required':True}))
     db.commit();return
    if raw_import:raw_import.import_status='PROCESSING';db.flush()
    data=download_bytes(job.object_key)
