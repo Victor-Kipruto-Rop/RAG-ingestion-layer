@@ -1,8 +1,35 @@
 """Bounded-memory CSV parsing helpers."""
+import codecs
 import csv
 import io
 
 from .storage import download_spooled_file
+
+
+def _detect_encoding(file_obj):
+    """Validate the whole stream without loading it into memory."""
+    decoder = codecs.getincrementaldecoder("utf-8-sig")()
+    valid_utf8 = True
+    try:
+        while True:
+            chunk = file_obj.read(1024 * 1024)
+            if not chunk:
+                break
+            if b"\x00" in chunk:
+                raise ValueError("CSV contains binary data")
+            if valid_utf8:
+                try:
+                    decoder.decode(chunk, final=False)
+                except UnicodeDecodeError:
+                    valid_utf8 = False
+        if valid_utf8:
+            try:
+                decoder.decode(b"", final=True)
+            except UnicodeDecodeError:
+                valid_utf8 = False
+        return "utf-8-sig" if valid_utf8 else "cp1252"
+    finally:
+        file_obj.seek(0)
 
 
 def iter_csv_file(file_obj, max_records: int):
@@ -10,17 +37,10 @@ def iter_csv_file(file_obj, max_records: int):
     if max_records < 1:
         raise ValueError("max_records must be positive")
 
+    encoding = _detect_encoding(file_obj)
     sample_bytes = file_obj.read(8192)
     file_obj.seek(0)
-    try:
-        sample = sample_bytes.decode("utf-8-sig")
-        encoding = "utf-8-sig"
-    except UnicodeDecodeError:
-        # Common exports from Windows/Excel use Windows-1252. The actual stream
-        # remains strict: undecodable bytes later in the file must fail closed.
-        sample = sample_bytes.decode("cp1252")
-        encoding = "cp1252"
-
+    sample = sample_bytes.decode(encoding)
     try:
         dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
     except csv.Error:
