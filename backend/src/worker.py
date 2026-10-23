@@ -8,6 +8,7 @@ from .models import IngestionJob,Organization,OrganizationRecordVersion,Ingestio
 from .storage import download_bytes
 from .ingestion.parser_csv import iter_csv_records_from_storage
 from .ingestion.normalizer import normalize_record
+from .cache import invalidate_lookup_keys
 log=logging.getLogger('registry.worker')
 
 _SENSITIVE_KEY_PARTS=('tax_pin','kra_pin','pin','phone','mobile','email','password','secret','token','account_number','identity_number','id_number')
@@ -59,15 +60,20 @@ def process_job(job_id):
     db.commit();return
    if raw_import:raw_import.import_status='PROCESSING';db.flush()
    processed=inserted=updated=skipped=0
+   changed_lookup_keys=set()
    for row_num,row in iter_csv_records_from_storage(job.object_key,settings.max_records_per_file):
     processed+=1
     try:
      rec=normalize_record(row);reg=rec.get('normalized_registration_number');pin=rec.get('normalized_tax_pin')
+     if reg:changed_lookup_keys.add(f'registry:lookup:reg:{reg}')
+     if pin:changed_lookup_keys.add(f'registry:lookup:pin:{pin}')
      existing=None
      if reg:existing=db.scalar(select(Organization).where(Organization.normalized_registration_number==reg).limit(1))
      if existing is None and not reg and pin:existing=db.scalar(select(Organization).where(Organization.normalized_tax_pin==pin).limit(1))
      if existing:
       before=snap(existing)
+      if existing.normalized_registration_number:changed_lookup_keys.add(f'registry:lookup:reg:{existing.normalized_registration_number}')
+      if existing.normalized_tax_pin:changed_lookup_keys.add(f'registry:lookup:pin:{existing.normalized_tax_pin}')
       for key,value in rec.items():setattr(existing,key,value)
       existing.source_file=job.file_name;existing.source_row=row_num;existing.source_name=job.source_name or 'uploaded_dataset';existing.source_record_id=reg or pin;existing.last_seen_at=now();existing.data_quality_status='IMPORTED_UNVERIFIED'
       db.flush()
@@ -89,6 +95,7 @@ def process_job(job_id):
    job.error_summary=f'{skipped} row(s) were skipped; see row-errors endpoint.' if skipped else None;job.completed_at=now()
    db.add(AuditLog(action='registry_ingestion_completed',actor='ingestion-worker',file_name=job.file_name,details={'job_id':job.id,'processed':processed,'inserted':inserted,'updated':updated,'skipped':skipped}))
    db.commit()
+   invalidate_lookup_keys(changed_lookup_keys)
   except Exception as exc:
    db.rollback()
    with SessionLocal() as retry_db:
