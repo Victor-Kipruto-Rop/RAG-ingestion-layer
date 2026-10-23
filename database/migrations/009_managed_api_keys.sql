@@ -31,3 +31,9 @@ CREATE TABLE IF NOT EXISTS api_key_security_events (
 );
 CREATE INDEX IF NOT EXISTS ix_api_key_security_events_created_at ON api_key_security_events(created_at);
 CREATE INDEX IF NOT EXISTS ix_api_key_security_events_key_id ON api_key_security_events(key_id);
+
+-- These tables contain credential digests and security metadata; expose only to the trusted backend role.
+ALTER TABLE public.managed_api_keys ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.api_key_security_events ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.managed_api_keys FROM anon, authenticated;
+REVOKE ALL ON TABLE public.api_key_security_events FROM anon, authenticated;
