@@ -1,0 +1,38 @@
+name: Container vulnerability scan
+on:
+  push:
+    branches: [main, feat/modern-datasource-dashboard]
+  pull_request:
+    branches: [main, feat/modern-datasource-dashboard]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build-and-scan:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: pesaguard-datasource-api:scan
+            context: ./backend
+            dockerfile: ./backend/Dockerfile
+          - image: pesaguard-datasource-worker:scan
+            context: ./backend
+            dockerfile: ./backend/Dockerfile.worker
+          - image: pesaguard-datasource-frontend:scan
+            context: ./frontend
+            dockerfile: ./frontend/Dockerfile
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Build image
+        run: docker build --file "${{ matrix.dockerfile }}" --tag "${{ matrix.image }}" "${{ matrix.context }}"
+      - name: Scan image for fixable high and critical vulnerabilities
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ matrix.image }}
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
