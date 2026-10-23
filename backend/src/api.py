@@ -337,6 +337,6 @@ def provider_check(provider_key:str,payload:ProviderCheckRequest,request:Request
         'evidence':result.evidence,
         'reason_code':result.reason_code,
         'message':result.message,
-        'authoritative_verification':False if result.status!='VERIFIED' else True,
+        'provider_reported_match':result.status=='VERIFIED',\n        'authoritative_verification':False,
         'note':'Only configured adapters can perform checks. Provider responses must be evaluated under an approved verification policy.'
     }
