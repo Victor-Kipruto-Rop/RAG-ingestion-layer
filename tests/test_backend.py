@@ -21,13 +21,16 @@ def test_normalizers():
  assert normalize_legal_name('  Acme   limited ' )=='ACME LIMITED';assert normalize_identifier('ab- 123')=='AB123'
 def test_header_aliases():
  r=normalize_record({'Company Name':'Example Limited','Registration No':'PVT-123'});assert r['normalized_legal_name']=='EXAMPLE LIMITED';assert r['normalized_registration_number']=='PVT123'
+def test_missing_registry_status_is_not_assumed_active():
+ rec=normalize_record({'Company Name':'Status Unknown Limited','Registration No':'STATUS-001'})
+ assert rec['status']=='UNKNOWN'
 def test_name_required():
  try:normalize_record({'Registration No':'123'})
  except ValueError as exc:assert 'legal name' in str(exc).lower()
  else:raise AssertionError('Expected missing legal name validation')
 def test_csv_ingestion_is_queued_then_processed_with_provenance(monkeypatch):
  reg='TEST'+uuid.uuid4().hex[:12].upper()
- csv_data=f'Company Name,Registration No,Tax PIN\nFirst Example Limited,{reg},P000001\nUpdated Example Limited,{reg},P000001\n,INVALID-ROW,P000002\n'
+ csv_data=f'Company Name,Registration No,Tax PIN\nFirst Example Limited,{reg},P000001\nUpdated Example Limited,{reg},\n,INVALID-ROW,P000002\n'
  correlation_id='test-correlation-'+uuid.uuid4().hex
  response=client.post('/api/v1/ingestion/uploads',headers={**HEADERS,'Idempotency-Key':'test-'+uuid.uuid4().hex,'X-Correlation-ID':correlation_id},files={'file':('organizations.csv',csv_data,'text/csv')})
  assert response.status_code==202,response.text
@@ -63,6 +66,7 @@ def test_csv_ingestion_is_queued_then_processed_with_provenance(monkeypatch):
  body=lookup.json()
  assert body['found'] is True
  assert body['organization']['legal_name']=='Updated Example Limited'
+ assert body['organization']['tax_pin']=='P000001'
  assert body['organization']['data_quality_status']=='IMPORTED_UNVERIFIED'
  assert body['organization']['source']['file']=='organizations.csv'
  errors=client.get(f"/api/v1/ingestion/jobs/{job['job_id']}/errors",headers=HEADERS)
