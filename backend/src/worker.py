@@ -166,7 +166,7 @@ def process_job(job_id):
       if raw_import:raw_import.import_status='FAILED'
       job.error_summary=f'Ingestion failed after {job.attempts} attempts: {str(exc)[:800]}';job.completed_at=now()
      retry_db.commit()
-   log.exception('job_processing_failed',job_id=job_id)
+   log.error('job_processing_failed',job_id=job_id,error_type=type(exc).__name__)
 def recover_stale_jobs():
  cutoff=now()-timedelta(seconds=max(60,settings.worker_stale_after_seconds))
  with SessionLocal() as db:
@@ -208,7 +208,7 @@ def run_forever():
    if job_id:process_job(job_id)
    else:time.sleep(max(0.25,settings.worker_poll_seconds))
   except KeyboardInterrupt:break
-  except Exception:log.exception('worker_loop_error');time.sleep(max(1,settings.worker_retry_seconds))
+  except Exception as exc:log.error('worker_loop_error',error_type=type(exc).__name__);time.sleep(max(1,settings.worker_retry_seconds))
 
 if __name__=='__main__':
  parser=argparse.ArgumentParser(description='PesaGuard ingestion worker')
