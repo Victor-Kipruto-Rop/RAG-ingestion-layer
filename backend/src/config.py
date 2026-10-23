@@ -5,6 +5,10 @@ class Settings(BaseSettings):
  app_env:str='development'
  database_url:str='sqlite:///./registry.db'
  registry_api_keys:str=''
+ api_environment:str='production'
+ api_key_auth_jwt_secret:str=''
+ api_key_auth_jwt_issuer:str=''
+ api_key_auth_jwt_audience:str=''
  cors_origins:str='http://localhost:5173'
  max_upload_bytes:int=52428800
  max_direct_upload_bytes:int=5368709120

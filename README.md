@@ -26,6 +26,7 @@ Apply in order to PostgreSQL/Supabase:
 6. `database/migrations/006_failed_imports_dlq.sql`
 7. `database/migrations/007_ingestion_row_progress.sql`
 8. `database/migrations/008_job_correlation_id.sql`
+9. `database/migrations/009_environment_scoped_api_keys.sql`
 
 Set `APP_ENV=production` only after migrations are applied. Production startup intentionally does not create tables automatically.
 
@@ -92,3 +93,8 @@ For a safe Windows/Docker Desktop smoke test that uses a shared local SQLite dat
 
 
 A safe Windows local environment template is provided as [`example.env`](example.env). Never commit `.env`, API keys, database URLs, or R2 credentials.
+
+
+## Sandbox and production API keys
+
+See [environment-scoped API key setup](docs/environment-scoped-api-keys.md). User-issued keys are tied to one environment and organization. Sandbox keys are rejected by production deployments and production keys are rejected by sandbox deployments. Key management requires a trusted PesaGuard-issued access token; configure the JWT issuer, audience and signing secret server-side. Apply migration 009 before enabling this feature. Do not expose `REGISTRY_API_KEYS` in browser code.

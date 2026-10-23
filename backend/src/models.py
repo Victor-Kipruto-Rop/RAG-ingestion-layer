@@ -136,3 +136,32 @@ class FailedImportDLQ(Base):
  traceback_text:Mapped[str]=mapped_column(Text,nullable=False)
  resolved_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
  created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
+
+
+class ApiKey(Base):
+ __tablename__='api_keys'
+ __table_args__=(Index('ix_api_keys_org_created','organization_id','created_at'),Index('ix_api_keys_status_environment','status','environment'))
+ id:Mapped[str]=mapped_column(String(36),primary_key=True)
+ organization_id:Mapped[str]=mapped_column(String(200),nullable=False)
+ created_by_user_id:Mapped[str]=mapped_column(String(200),nullable=False)
+ name:Mapped[str]=mapped_column(String(100),nullable=False)
+ environment:Mapped[str]=mapped_column(String(20),nullable=False)
+ key_prefix:Mapped[str]=mapped_column(String(32),nullable=False)
+ secret_hash:Mapped[str]=mapped_column(String(64),unique=True,nullable=False)
+ scopes:Mapped[list]=mapped_column(json_type,default=list,nullable=False)
+ status:Mapped[str]=mapped_column(String(20),default='active',nullable=False)
+ created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
+ last_used_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
+ expires_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
+ revoked_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
+
+class ApiKeyAuditEvent(Base):
+ __tablename__='api_key_audit_events'
+ __table_args__=(Index('ix_api_key_audit_org_created','organization_id','created_at'),)
+ id:Mapped[str]=mapped_column(String(36),primary_key=True,default=lambda:str(uuid.uuid4()))
+ organization_id:Mapped[str]=mapped_column(String(200),nullable=False)
+ actor_user_id:Mapped[str]=mapped_column(String(200),nullable=False)
+ api_key_id:Mapped[str|None]=mapped_column(String(36))
+ action:Mapped[str]=mapped_column(String(80),nullable=False)
+ details:Mapped[dict]=mapped_column(json_type,default=dict,nullable=False)
+ created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
