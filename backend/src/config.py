@@ -29,6 +29,8 @@ class Settings(BaseSettings):
  registry_rate_limit_capacity:int=60
  registry_rate_limit_refill_per_second:float=1.0
  metrics_token:str=''
+ registry_cache_ttl_seconds:int=300
+ registry_cache_negative_ttl_seconds:int=30
  db_pool_size:int=5
  db_max_overflow:int=5
  db_pool_timeout_seconds:int=30
