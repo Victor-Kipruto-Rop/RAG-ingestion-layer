@@ -24,9 +24,14 @@ services:
       LOCAL_STORAGE_PATH: /app/.registry-uploads
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
       DATASOURCE_ENVIRONMENT: ${DATASOURCE_ENVIRONMENT:-sandbox}
+      CONFIRM_SANDBOX_TARGET: ${CONFIRM_SANDBOX_TARGET:-NO}
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:?Set R2_ACCOUNT_ID in .env}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:?Set R2_ACCESS_KEY_ID in .env}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:?Set R2_SECRET_ACCESS_KEY in .env}
+      R2_BUCKET_NAME: ${R2_BUCKET_NAME:?Set R2_BUCKET_NAME to a private sandbox bucket}
     # Do not run migrations automatically against a shared Supabase database.
     # Apply reviewed database/migrations SQL files explicitly before starting.
-    command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    command: ["sh", "-c", "test \"$CONFIRM_SANDBOX_TARGET\" = YES && test \"$DATASOURCE_ENVIRONMENT\" = sandbox && test \"$APP_ENV\" = development || { echo 'Refusing startup: set APP_ENV=development, DATASOURCE_ENVIRONMENT=sandbox, and CONFIRM_SANDBOX_TARGET=YES after verifying the Supabase project and R2 bucket are sandbox resources.'; exit 1; }; exec uvicorn src.main:app --host 0.0.0.0 --port 8000"]
     ports:
       - "127.0.0.1:${API_PORT:-8000}:8000"
     depends_on:
@@ -54,6 +59,11 @@ services:
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env to your Supabase PostgreSQL connection string}
       REDIS_URL: ${REDIS_URL:-redis://registry-redis:6379/0}
       LOCAL_STORAGE_PATH: /app/.registry-uploads
+      CONFIRM_SANDBOX_TARGET: ${CONFIRM_SANDBOX_TARGET:-NO}
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:?Set R2_ACCOUNT_ID in .env}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:?Set R2_ACCESS_KEY_ID in .env}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:?Set R2_SECRET_ACCESS_KEY in .env}
+      R2_BUCKET_NAME: ${R2_BUCKET_NAME:?Set R2_BUCKET_NAME to a private sandbox bucket}
       WORKER_POLL_SECONDS: ${WORKER_POLL_SECONDS:-2}
       WORKER_MAX_JOBS_PER_RUN: ${WORKER_MAX_JOBS_PER_RUN:-10}
       WORKER_MAX_ATTEMPTS: ${WORKER_MAX_ATTEMPTS:-3}
@@ -61,7 +71,7 @@ services:
       WORKER_STALE_AFTER_SECONDS: ${WORKER_STALE_AFTER_SECONDS:-900}
       PDF_OCR_ENABLED: ${PDF_OCR_ENABLED:-false}
       PDF_OCR_MAX_PAGES: ${PDF_OCR_MAX_PAGES:-25}
-    command: ["python", "-m", "src.worker"]
+    command: ["sh", "-c", "test \"$CONFIRM_SANDBOX_TARGET\" = YES && test \"$DATASOURCE_ENVIRONMENT\" = sandbox && test \"$APP_ENV\" = development || { echo 'Refusing worker startup: sandbox target confirmation is missing.'; exit 1; }; exec python -m src.worker"]
     depends_on:
       registry-api:
         condition: service_healthy
