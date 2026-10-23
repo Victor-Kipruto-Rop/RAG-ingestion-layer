@@ -87,6 +87,29 @@ def list_security_events(page:int=1,page_size:int=50,event_type:str|None=None,db
         "created_at":row["created_at"].isoformat() if row["created_at"] else None} for row in rows],
         "total":total,"page":page,"page_size":page_size}
 
+@router.get("/{key_id}/usage")
+def key_usage(key_id:str,days:int=Query(default=30,ge=1,le=90),db:Session=Depends(get_db),
+              x_key_management_token:str|None=Header(default=None,alias="X-Key-Management-Token")):
+    _management_auth(x_key_management_token)
+    key=db.execute(text("SELECT id,key_prefix,environment,name FROM api_keys WHERE id=:id"),{"id":key_id}).mappings().first()
+    if not key:raise HTTPException(404,"API key not found")
+    since=datetime.now(timezone.utc)-timedelta(days=days)
+    totals=db.execute(text("""SELECT count(*) AS total_requests,
+      coalesce(sum(CASE WHEN response_status>=400 THEN 1 ELSE 0 END),0) AS error_requests,
+      coalesce(avg(duration_ms),0) AS average_duration_ms,
+      max(created_at) AS last_request_at
+      FROM api_key_usage_events WHERE api_key_id=:id AND created_at>=:since"""),{"id":key_id,"since":since}).mappings().one()
+    rows=db.execute(text("""SELECT endpoint,http_method,response_status,count(*) AS requests,
+      coalesce(avg(duration_ms),0) AS average_duration_ms
+      FROM api_key_usage_events WHERE api_key_id=:id AND created_at>=:since
+      GROUP BY endpoint,http_method,response_status ORDER BY requests DESC LIMIT 100"""),{"id":key_id,"since":since}).mappings().all()
+    return {"key":{"id":key["id"],"key_prefix":key["key_prefix"],"environment":key["environment"],"name":key["name"]},
+      "window_days":days,"total_requests":int(totals["total_requests"] or 0),
+      "error_requests":int(totals["error_requests"] or 0),"average_duration_ms":round(float(totals["average_duration_ms"] or 0),3),
+      "last_request_at":totals["last_request_at"].isoformat() if totals["last_request_at"] else None,
+      "breakdown":[{"endpoint":row["endpoint"],"method":row["http_method"],"status":row["response_status"],
+        "requests":int(row["requests"]),"average_duration_ms":round(float(row["average_duration_ms"] or 0),3)} for row in rows]}
+
 @router.post("/{key_id}/revoke")
 def revoke_key(key_id: str, db: Session = Depends(get_db),
                x_key_management_token: str | None = Header(default=None, alias="X-Key-Management-Token")):
