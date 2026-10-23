@@ -40,10 +40,10 @@ class FakeSession:
         pass
 
 
-def make_request(path="/api/v1/registry/search"):
+def make_request(path="/api/v1/registry/search", method="GET"):
     return Request({
         "type": "http",
-        "method": "GET",
+        "method": method,
         "path": path,
         "raw_path": path.encode(),
         "query_string": b"",
@@ -94,7 +94,7 @@ def test_managed_key_requires_route_scope(monkeypatch):
     monkeypatch.setattr(security.settings, "pesaguard_datasource_environment", "sandbox")
 
     try:
-        security._managed_key(raw_key, make_request("/api/v1/ingestion/uploads"))
+        security._managed_key(raw_key, make_request("/api/v1/ingestion/uploads", method="POST"))
         assert False, "Expected write-scope denial"
     except HTTPException as exc:
         assert exc.status_code == 403
