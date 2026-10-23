@@ -41,14 +41,14 @@ def review_queue(limit: int = Query(default=50, ge=1, le=200), offset: int = Que
         .limit(1)
         .scalar_subquery()
     )
-    base = select(Organization).where(
+    base = select(Organization, latest_decision.label("latest_decision")).where(
         or_(
             latest_decision.is_(None),
             latest_decision.in_(["needs_more_evidence", "reopened"]),
         )
     )
     total = db.scalar(select(func.count()).select_from(base.subquery())) or 0
-    rows = db.scalars(base.order_by(Organization.created_at.asc(), Organization.id.asc()).offset(offset).limit(limit)).all()
+    rows = db.execute(base.order_by(Organization.created_at.asc(), Organization.id.asc()).offset(offset).limit(limit)).all()
     return {
         "items": [
             {
@@ -59,10 +59,10 @@ def review_queue(limit: int = Query(default=50, ge=1, le=200), offset: int = Que
                 "source_name": row.source_name,
                 "data_quality_status": row.data_quality_status,
                 "last_seen_at": row.last_seen_at.isoformat() if row.last_seen_at else None,
-                "latest_decision": None,
+                "latest_decision": latest_decision_value,
                 "warning": "Queue membership is not evidence of fraud or non-compliance.",
             }
-            for row in rows
+            for row, latest_decision_value in rows
         ],
         "count": len(rows),
         "total": total,
