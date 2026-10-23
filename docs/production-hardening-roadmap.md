@@ -34,7 +34,7 @@ This document distinguishes code present in the repository from work that still 
 - [x] Match candidates are explicitly review-only; name similarity never triggers automatic merges.
 - [x] Added a regression test for quality summary output and review-only fuzzy match candidates.
 - [ ] Add tests for conflicting identifiers, repeated imports, false positives and freshness boundaries.
-- [ ] Add a durable reviewer decision workflow before any future merge/identity-resolution automation.
+- [x] Add a durable, append-only reviewer decision workflow with reopen support; decisions are audited and never auto-merge or modify canonical registry fields.\n- [ ] Validate review workflow against PostgreSQL migration-backed staging and define reviewer identity/role policy before customer-facing use.
 - [ ] Add lineage/change-history UI and verify source attribution end to end.
 
 ## Phase 5 — API key security and compliance
