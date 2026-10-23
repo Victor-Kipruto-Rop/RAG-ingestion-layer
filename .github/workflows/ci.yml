@@ -22,6 +22,7 @@ jobs:
           cache-dependency-path: backend/requirements.txt
       - run: python -m pip install --upgrade pip
       - run: pip install -r backend/requirements.txt
+      - run: python -m compileall -q backend/src
       - run: PYTHONPATH=backend DATABASE_URL=sqlite:///./ci_registry.db REGISTRY_API_KEYS=test-secret-key pytest -q
   frontend:
     runs-on: ubuntu-latest
