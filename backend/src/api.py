@@ -46,6 +46,38 @@ def search(q:str=Query(min_length=2,max_length=200),limit:int=Query(default=20,g
   rows=db.scalars(select(Organization).where(func.similarity(Organization.normalized_legal_name,norm)>=0.25).order_by(func.similarity(Organization.normalized_legal_name,norm).desc()).limit(limit)).all()
   if rows:mode='postgres_trigram'
  return {'items':[org_out(o) for o in rows],'count':len(rows),'query':q,'match_mode':mode,'warning':'Name matches are candidates for review, not identity verification.'}
+def _record_quality(org):
+ fields = {
+  'legal_name': {'present': bool(org.legal_name), 'weight': 25},
+  'registration_number': {'present': bool(org.normalized_registration_number), 'weight': 25},
+  'tax_pin': {'present': bool(org.normalized_tax_pin), 'weight': 20},
+  'source_name': {'present': bool(org.source_name), 'weight': 10},
+  'source_file': {'present': bool(org.source_file), 'weight': 10},
+  'last_seen_at': {'present': bool(org.last_seen_at), 'weight': 10},
+ }
+ score = sum(item['weight'] for item in fields.values() if item['present'])
+ flags = [f'missing_{name}' for name,item in fields.items() if not item['present']]
+ if org.data_quality_status == 'POSSIBLE_DUPLICATE_REVIEW':
+  flags.append('possible_duplicate_review')
+ if org.data_quality_status in {'IMPORTED_UNVERIFIED','UNREVIEWED','POSSIBLE_DUPLICATE_REVIEW'}:
+  flags.append('not_authoritatively_verified')
+ return {
+  'organization_id': org.id,
+  'completeness_score': score,
+  'fields': {name:{'present':item['present'],'weight':item['weight']} for name,item in fields.items()},
+  'flags': flags,
+  'source': {'name':org.source_name,'file':org.source_file,'row':org.source_row,'published_at':org.source_published_at.isoformat() if org.source_published_at else None},
+  'data_quality_status': org.data_quality_status,
+  'verification_status': 'not_verified',
+  'score_definition': 'Weighted field completeness and source attribution only. This score is not a probability, trust rating, or legal verification result.'
+ }
+
+@router.get('/api/v1/organizations/{organization_id}/quality',dependencies=[Depends(require_api_key)])
+def organization_quality(organization_id:str,db:Session=Depends(get_db)):
+ org=db.get(Organization,organization_id)
+ if not org:raise HTTPException(404,'Organization record not found')
+ return _record_quality(org)
+
 @router.get('/api/v1/organizations',dependencies=[Depends(require_api_key)])
 def list_orgs(page:int=Query(default=1,ge=1),page_size:int=Query(default=25,ge=1,le=100),q:str|None=None,db:Session=Depends(get_db)):
  from .ingestion.normalizer import normalize_identifier,normalize_legal_name
