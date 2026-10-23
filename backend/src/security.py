@@ -75,7 +75,8 @@ async def _take_token(identity, request):
         except HTTPException:
             raise
         except Exception:
-            pass
+            if settings.app_env.lower() == 'production' and settings.redis_url:
+                raise HTTPException(503, 'Distributed rate limiter is unavailable')
     now = time.monotonic()
     with _bucket_lock:
         tokens, last = _local_buckets.get(key, (float(capacity), now))
