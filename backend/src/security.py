@@ -117,13 +117,17 @@ def _validate_customer_api_key(raw_key, request):
                 "error_code":"API_KEY_ENVIRONMENT_MISMATCH"})
             raise HTTPException(status_code=403, detail=environment_mismatch_detail(key.environment, runtime_environment))
         path, method = request.url.path, request.method.upper()
-        required_scope = "registry:read"
-        if path.startswith("/api/v1/ingestion/uploads") and method == "POST":
-            required_scope = "ingestion:write"
+        required_scope = None
+        if path in {"/api/v1/registry/lookup", "/api/v1/registry/search", "/api/v1/organizations", "/api/v1/metrics/summary", "/api/v1/exports/organizations.csv"} and method == "GET":
+            required_scope = "registry:read"
         elif path.startswith("/api/v1/sources") and method == "GET":
             required_scope = "sources:read"
-        if required_scope not in (key.scopes or []):
-            raise HTTPException(403, {"code":"API_KEY_SCOPE_INSUFFICIENT","message":f"This key does not have the {required_scope} permission.","required_scope":required_scope})
+        elif path.startswith("/api/v1/ingestion/uploads") and method == "POST":
+            required_scope = "ingestion:write"
+        elif path.startswith("/api/v1/ingestion") and method == "GET":
+            required_scope = "ingestion:read"
+        if not required_scope or required_scope not in (key.scopes or []):
+            raise HTTPException(403, {"code":"API_KEY_SCOPE_INSUFFICIENT","message":"This key does not have permission for the requested endpoint.","required_scope":required_scope})
         key.last_used_at = now
         db.commit()
         return "customer-api-key:" + key.id
@@ -195,7 +199,7 @@ async def require_api_key(request:Request,
     else:
         if not x_api_key: raise HTTPException(401,'Invalid or missing API key')
         if x_api_key.startswith(("pg_sandbox_","pg_live_")):
-            identity=_validate_customer_api_key(x_api_key,request)
+            identity=await asyncio.to_thread(_validate_customer_api_key,x_api_key,request)
         else:
             if settings.require_hmac: raise HTTPException(401,'Signed internal request required')
             keys=settings.api_key_list
