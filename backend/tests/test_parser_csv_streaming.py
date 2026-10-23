@@ -62,3 +62,8 @@ def test_windows_1252_character_after_initial_sample_is_detected():
     payload = b"legal_name\n" + b"A" * 8190 + b"\nCaf\xe9 Limited\n"
     rows = list(iter_csv_records(payload, 10))
     assert rows[1][1]["legal_name"] == "Café Limited"
+
+def test_nul_bytes_anywhere_in_csv_are_rejected_as_binary():
+    payload = b"legal_name\n" + b"A" * 8190 + b"\x00\n"
+    with pytest.raises(ValueError, match="binary data"):
+        list(iter_csv_records(payload, 10))
