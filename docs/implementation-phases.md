@@ -14,6 +14,7 @@ This plan defines deliverables and release gates. It is intentionally honest abo
 ## Phase 2 — Ingestion reliability
 - [x] Add XLSX support with read-only row iteration, archive signature checks, and uncompressed-size/entry limits; CSV remains streaming and PDFs remain bounded/manual-review.
 - [x] Add a non-persistent CSV/XLSX preview endpoint with sample rows and size limits.
+- [x] Add audited manual retry for failed CSV/XLSX jobs while retaining persisted row progress; PDF remains manual-review-only.
 - [x] Expose measured identifier-coverage and duplicate-review summary metrics, with definitions that explicitly distinguish coverage from legal verification.
 - [x] Add record-level completeness scoring with field-level evidence and flags; never label the score as legal verification.
 - Persist upload checksum, content signature, source attribution, progress, retry count, and worker lease.
