@@ -1,0 +1,39 @@
+name: Backend quality checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements.txt
+      - name: Compile Python modules
+        run: python -m compileall -q src
+      - name: Run unit tests
+        env:
+          APP_ENV: test
+          DATABASE_URL: sqlite:////tmp/pesaguard-quality.db
+          REGISTRY_API_KEYS: ci-test-only-key
+          LOCAL_STORAGE_PATH: /tmp/pesaguard-test-uploads
+        run: PYTHONPATH=.. python -m pytest -q tests

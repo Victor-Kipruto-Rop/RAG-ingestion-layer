@@ -29,8 +29,21 @@ def process_job(job_id):
    suffix='.'+job.file_name.rsplit('.',1)[-1].lower() if '.' in job.file_name else ''
    raw_import=db.scalar(select(WarehouseRawImport).where(WarehouseRawImport.ingestion_job_id==job.id))
    if suffix=='.pdf':
-    job.status='NEEDS_PDF_PROCESSING';job.error_summary='PDF extraction/OCR is not enabled; upload is retained for a future processing adapter.';job.completed_at=now()
-    if raw_import:raw_import.import_status='NEEDS_PDF_PROCESSING'
+    from .ingestion.pdf_text import extract_pdf_text
+    data=download_bytes(job.object_key)
+    diagnostics=extract_pdf_text(data)
+    job.status='NEEDS_PDF_PROCESSING'
+    if diagnostics.needs_ocr:
+     job.error_summary=f'PDF has {diagnostics.page_count} page(s) but no searchable text; OCR and manual review are required.'
+    else:
+     job.error_summary=f'Extracted {diagnostics.extracted_characters} searchable character(s) from {diagnostics.page_count} page(s); manual review is required. Extracted text is not treated as verified data.'
+    if raw_import:
+     raw_import.import_status='NEEDS_PDF_PROCESSING'
+     metadata=dict(raw_import.metadata_json or {})
+     metadata.update({'pdf_page_count':diagnostics.page_count,'pdf_extracted_characters':diagnostics.extracted_characters,'pdf_needs_ocr':diagnostics.needs_ocr,'pdf_extraction_version':1,'requires_manual_review':True})
+     raw_import.metadata_json=metadata
+    job.completed_at=now()
+    db.add(AuditLog(action='registry_pdf_extraction_diagnostics',actor='ingestion-worker',file_name=job.file_name,details={'job_id':job.id,'page_count':diagnostics.page_count,'extracted_characters':diagnostics.extracted_characters,'needs_ocr':diagnostics.needs_ocr,'manual_review_required':True}))
     db.commit();return
    if raw_import:raw_import.import_status='PROCESSING';db.flush()
    data=download_bytes(job.object_key)
