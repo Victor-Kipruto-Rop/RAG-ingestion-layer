@@ -101,3 +101,16 @@ Record for every production release:
 - Release owner and timestamp
 
 Never label the service production-ready solely because code exists on a branch.
+
+
+## 8. Manual review workflow
+
+- Apply `database/migrations/010_organization_review_decisions.sql` only after confirming that migrations 001–009 are applied and the target database is backed up.
+- Grant `reviews:write` only to keys that need to record reviewer decisions. Reading the queue requires `registry:read`.
+- Use `GET /api/v1/reviews/queue`, `GET /api/v1/reviews/{organization_id}/decisions`, and `POST /api/v1/reviews/{organization_id}/decisions`.
+- Decisions are append-only and audited. `reopened` returns a record to the queue. These decisions do not edit canonical registry fields, auto-merge organizations, or certify legal identity.
+- The reviewer field currently records the authenticated API-key identity. Before customer-facing use, replace this with an authenticated human identity and role-based authorization.
+
+## 9. External registry integrations
+
+BRS, KRA, IPRS, and commercial provider connections remain disabled until the service owner has approved the purpose, data-processing terms, credentials, rate limits, vendor contract, and test environment. Do not infer provider connectivity from a candidate provider name or from imported datasets. A production integration must include provider-specific timeout/retry budgets, idempotency, redacted request/response logging, a circuit breaker, and recorded provider status. Until then, use the manual review workflow and label external verification as not configured.

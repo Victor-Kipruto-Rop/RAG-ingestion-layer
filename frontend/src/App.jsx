@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Activity, AlertCircle, AlertTriangle, ArrowDownRight, ArrowRight, ArrowUpRight,
+  Activity, AlertCircle, AlertTriangle, ArrowDownRight, ArrowRight, ArrowUpRight, ClipboardCheck,
   Bell, Building2, CheckCircle2, ChevronDown, CircleDot, Clock3, Database,
   FileCheck2, FileSpreadsheet, FileText, HardDrive, LayoutDashboard, Menu,
   MoreHorizontal, RefreshCw, Search, Server, Settings, ShieldCheck, SlidersHorizontal,
@@ -14,6 +14,7 @@ const NAV = [
   { name: 'Ingestion Jobs', icon: Activity, group: 'WORKSPACE' },
   { name: 'Registry Records', icon: Building2, group: 'WORKSPACE' },
   { name: 'Data Quality', icon: FileCheck2, group: 'GOVERNANCE' },
+  { name: 'Manual Review', icon: ClipboardCheck, group: 'GOVERNANCE' },
   { name: 'Warehouse', icon: HardDrive, group: 'GOVERNANCE' },
   { name: 'Validation Rules', icon: ShieldCheck, group: 'GOVERNANCE' },
   { name: 'Audit Logs', icon: ScrollText, group: 'ADMINISTRATION' },
@@ -373,7 +374,7 @@ export function APIKeysPage() {
         <label>Environment<select value={environment} onChange={e => setEnvironment(e.target.value)}><option value="sandbox">Sandbox · testing only</option><option value="production">Production · live requests</option></select></label>
         <label>Expiry<select value={expires} onChange={e => setExpires(e.target.value)}><option value="30">30 days</option><option value="90">90 days</option><option value="180">180 days</option><option value="365">365 days</option><option value="">No expiry</option></select></label>
         <div className="keys-scope-field"><span>Permissions</span><div className="keys-scopes">
-          {['registry:read','ingestion:write','sources:write','exports:read'].map(scope => <label key={scope}><input type="checkbox" checked={scopes.includes(scope)} onChange={() => toggleScope(scope)}/><span>{scope}</span></label>)}
+          {['registry:read','ingestion:write','sources:write','exports:read','reviews:write'].map(scope => <label key={scope}><input type="checkbox" checked={scopes.includes(scope)} onChange={() => toggleScope(scope)}/><span>{scope}</span></label>)}
         </div></div>
         <div className="keys-environment-warning"><ShieldCheck size={17}/><span><strong>Environment lock</strong> — sandbox credentials are rejected by production deployments, return API_KEY_ENVIRONMENT_MISMATCH, and generate a security event. The server deployment's DATASOURCE_ENVIRONMENT determines the target; a client header cannot override it.</span></div>
         <button className="button-primary" disabled={loading || !token.trim() || scopes.length === 0}><KeyRound size={16}/> Generate {environment === 'sandbox' ? 'sandbox' : 'production'} key</button>
@@ -390,6 +391,79 @@ export function APIKeysPage() {
       <div className="panel-heading"><div><h2>Security events</h2><p>Recent managed-key misuse and permission-denial events.</p></div></div>
       {!events.length ? <div className="keys-empty"><ShieldCheck size={22}/><strong>No security events loaded</strong><span>Events appear when managed keys are used incorrectly or denied.</span></div> :
         <div className="table-scroll"><table className="data-table keys-table"><thead><tr><th>EVENT</th><th>KEY PREFIX</th><th>KEY ENVIRONMENT</th><th>REQUEST ENVIRONMENT</th><th>ENDPOINT</th><th>TIME</th></tr></thead><tbody>{events.map(event => <tr key={event.id}><td><StatusPill value={event.event_type}/></td><td>{event.key_prefix || 'Unknown key'}</td><td>{event.key_environment || 'Unknown'}</td><td>{event.expected_environment || 'Unknown'}</td><td>{event.http_method} {event.endpoint}</td><td>{dateLabel(event.created_at)}</td></tr>)}</tbody></table></div>}
+    </section>
+  </div>;
+}
+
+export function ManualReviewPage({ request }) {
+  const [items, setItems] = useState([]);
+  const [drafts, setDrafts] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [savingId, setSavingId] = useState('');
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const load = async () => {
+    setLoading(true); setError('');
+    try {
+      const response = await request('/api/v1/reviews/queue?limit=100');
+      const body = await response.json();
+      setItems(body.items || []);
+      setDrafts(current => {
+        const next = { ...current };
+        for (const item of (body.items || [])) {
+          if (!next[item.organization_id]) next[item.organization_id] = { decision: 'needs_more_evidence', reason: '' };
+        }
+        return next;
+      });
+    } catch (e) { setError(typeof e.message === 'string' ? e.message : 'Unable to load the review queue.'); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, [request]);
+  const updateDraft = (id, field, value) => setDrafts(current => ({
+    ...current,
+    [id]: { ...(current[id] || { decision: 'needs_more_evidence', reason: '' }), [field]: value },
+  }));
+  const submit = async (event, item) => {
+    event.preventDefault();
+    const draft = drafts[item.organization_id] || {};
+    if ((draft.reason || '').trim().length < 5) {
+      setError('Enter a review reason of at least 5 characters.');
+      return;
+    }
+    setSavingId(item.organization_id); setError(''); setMessage('');
+    try {
+      const response = await request(`/api/v1/reviews/${item.organization_id}/decisions`, {
+        method: 'POST',
+        body: JSON.stringify({ decision: draft.decision, reason: draft.reason.trim() }),
+      });
+      await response.json();
+      setMessage(`Review decision saved for ${item.legal_name}.`);
+      setDrafts(current => ({ ...current, [item.organization_id]: { ...current[item.organization_id], reason: '' } }));
+      await load();
+    } catch (e) { setError(typeof e.message === 'string' ? e.message : 'Unable to save this review decision.'); }
+    finally { setSavingId(''); }
+  };
+  return <div className="governance-workspace">
+    <div className="page-heading"><div><div className="eyebrow-label">DATA GOVERNANCE</div><h1>Manual review</h1><p>Record and audit reviewer decisions without changing canonical registry data or automatically merging organizations.</p></div><button className="button-secondary" onClick={load} disabled={loading}><RefreshCw size={14} className={loading ? 'spin' : ''}/> Refresh queue</button></div>
+    {error && <div className="alert-banner error" role="alert"><AlertTriangle size={16}/><span>{error}</span></div>}
+    {message && <div className="alert-banner" role="status"><CheckCircle2 size={16}/><span>{message}</span></div>}
+    <section className="panel">
+      <div className="panel-heading"><div><h2>Review queue</h2><p>{items.length} record(s) loaded. Records needing more evidence or reopened decisions remain in the queue.</p></div><span className="record-count">{number(items.length)} records</span></div>
+      {!items.length && !loading ? <div className="keys-empty"><ClipboardCheck size={22}/><strong>No records awaiting review</strong><span>Unreviewed records will appear here when available.</span></div> : <div className="table-scroll"><table className="data-table review-table"><thead><tr><th>ORGANIZATION</th><th>REGISTRATION</th><th>SOURCE</th><th>QUALITY</th><th>DECISION</th><th>REVIEW REASON</th><th>ACTION</th></tr></thead><tbody>
+        {items.map(item => {
+          const draft = drafts[item.organization_id] || { decision: 'needs_more_evidence', reason: '' };
+          return <tr key={item.organization_id}>
+            <td><strong>{item.legal_name}</strong><small>{item.organization_id}</small></td>
+            <td>{item.registration_number || 'Not provided'}</td><td>{item.source_name || 'Unknown source'}</td><td><StatusPill value={item.data_quality_status}/></td>
+            <td><select aria-label={`Decision for ${item.legal_name}`} value={draft.decision} onChange={e => updateDraft(item.organization_id, 'decision', e.target.value)}>
+              <option value="possible_duplicate">Possible duplicate</option><option value="not_duplicate">Not a duplicate</option><option value="needs_more_evidence">Need more evidence</option><option value="record_incorrect">Record appears incorrect</option><option value="reopened">Reopen review</option>
+            </select></td>
+            <td><input aria-label={`Reason for ${item.legal_name}`} value={draft.reason} onChange={e => updateDraft(item.organization_id, 'reason', e.target.value)} placeholder="Explain the evidence reviewed" maxLength={2000}/></td>
+            <td><button className="button-primary" disabled={savingId === item.organization_id || loading} onClick={e => submit(e, item)}>{savingId === item.organization_id ? 'Saving…' : 'Save decision'}</button></td>
+          </tr>;
+        })}
+      </tbody></table></div>}
+      <p className="small-print">Review decisions are internal assessments only. They are not proof of fraud, legal non-compliance, or authoritative verification from BRS/KRA/IPRS.</p>
     </section>
   </div>;
 }
@@ -461,7 +535,7 @@ export default function App() {
 
   const metrics = summary || {};
   const navToUpload = () => setPage('Upload center');
-  const knownPage = ['Overview', 'Data Sources', 'Ingestion Jobs', 'Registry Records', 'Data Quality', 'Warehouse', 'Validation Rules', 'Audit Logs', 'Settings', 'API Keys', 'Upload center'].includes(page);
+  const knownPage = ['Overview', 'Data Sources', 'Ingestion Jobs', 'Registry Records', 'Data Quality', 'Manual Review', 'Warehouse', 'Validation Rules', 'Audit Logs', 'Settings', 'API Keys', 'Upload center'].includes(page);
 
   return <div className="app-shell">
     {mobile && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setMobile(false)} />}
@@ -494,6 +568,7 @@ export default function App() {
         {page === 'API Keys' && <APIKeysPage />}
         {page === 'Data Sources' && <DataSourcesPage request={request} />}
         {page === 'Data Quality' && <DataQualityPage request={request} />}
+        {page === 'Manual Review' && <ManualReviewPage request={request} />}
         {page === 'Validation Rules' && <ValidationRulesPage request={request} />}
         {page === 'Audit Logs' && <AuditLogsPage request={request} />}
         {page === 'Warehouse' && <section className="panel full-panel"><div className="panel-heading"><div><h2>Warehouse records</h2><p>Browse the canonical organization records currently exposed by the registry API.</p></div><span className="record-count">{number(orgTotal)} records</span></div><OrganizationsTable rows={orgs} total={orgTotal} page={orgPage} pageSize={100} onPageChange={setOrgPage} /></section>}

@@ -28,6 +28,8 @@ Apply in order to PostgreSQL/Supabase:
 6. `database/migrations/006_failed_imports_dlq.sql`
 7. `database/migrations/007_ingestion_row_progress.sql`
 8. `database/migrations/008_job_correlation_id.sql`
+9. `database/migrations/009_managed_api_keys.sql`
+10. `database/migrations/010_organization_review_decisions.sql`
 
 Set `APP_ENV=production` only after migrations are applied. Production startup intentionally does not create tables automatically.
 
@@ -73,7 +75,7 @@ The API returns found, a matching organization when present, source metadata, da
 - `POST /api/v1/ingestion/uploads`
 - `GET /api/v1/ingestion/jobs`
 - `GET /api/v1/ingestion/jobs/{job_id}/errors`
-- `GET /api/v1/metrics/summary`
+- `GET /api/v1/metrics/summary`\n- `GET /api/v1/reviews/queue` — review-only queue of imported records\n- `GET /api/v1/reviews/{organization_id}/decisions`\n- `POST /api/v1/reviews/{organization_id}/decisions` — append an auditable review decision (requires `reviews:write` on managed keys)
 - `GET /api/v1/exports/organizations.csv`
 
 ## Production requirements and current boundaries
