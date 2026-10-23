@@ -116,7 +116,7 @@ def _managed_key_from_db(raw_key):
 def _required_scope(request):
     path=request.url.path;method=request.method.upper()
     if path.startswith('/api/v1/ingestion/uploads'): return 'ingestion:write' if method in {'POST','PUT','PATCH'} else 'registry:read'
-    if path.startswith('/api/v1/sources') and method in {'POST','PATCH','DELETE'}: return 'sources:write'
+    if path.startswith('/api/v1/reviews/') and method in {'POST','PUT','PATCH','DELETE'}: return 'reviews:write'\n    if path.startswith('/api/v1/sources') and method in {'POST','PATCH','DELETE'}: return 'sources:write'
     if path.startswith('/api/v1/exports/'): return 'exports:read'
     if path.startswith('/api/v1/quality/') or path.startswith('/api/v1/registry/match-candidates') or path.startswith('/api/v1/warehouse/'): return 'registry:read'
     if path.startswith('/api/v1/registry/') or path.startswith('/api/v1/organizations') or path.startswith('/api/v1/metrics/') or path.startswith('/api/v1/ingestion/jobs') or path.startswith('/api/v1/sources'): return 'registry:read'
@@ -139,7 +139,7 @@ async def require_api_key(request:Request,x_api_key:str|None=Header(default=None
         if not hmac.compare_digest(expected,x_internal_signature.lower()): raise HTTPException(401,'Invalid internal signature')
         if not await _check_nonce(x_internal_nonce,max(60,settings.hmac_nonce_ttl_seconds)): raise HTTPException(401,'Internal request replay detected')
         identity='hmac-client:'+(request.client.host if request.client else 'unknown')
-        request.state.api_key_scopes=['registry:read','ingestion:write','sources:write','exports:read']
+        request.state.api_key_scopes=['registry:read','ingestion:write','sources:write','exports:read','reviews:write']
     else:
         if not x_api_key: raise HTTPException(401,'Invalid or missing API key')
         managed_prefix=x_api_key.startswith('pg_sandbox_') or x_api_key.startswith('pg_live_')
