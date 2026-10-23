@@ -1,4 +1,279 @@
-import React,{useCallback,useEffect,useState}from'react';import{Activity,Building2,Database,FileUp,FileText,Search,RefreshCw,ShieldCheck,AlertTriangle,CheckCircle2,Clock3,Menu,X}from'lucide-react';import{api}from'./api.js';
-function Status({value}){const good=['healthy','COMPLETED','COMPLETED_WITH_ERRORS','ready','record_found','connected'].includes(value);return <span className={`status ${good?'good':''}`}><i/>{value||'unknown'}</span>}
-export default function App(){const[page,setPage]=useState('Overview'),[key,setKey]=useState(''),[connected,setConnected]=useState(false),[summary,setSummary]=useState(null),[orgs,setOrgs]=useState([]),[orgPage,setOrgPage]=useState(1),[orgTotal,setOrgTotal]=useState(0),[jobs,setJobs]=useState([]),[query,setQuery]=useState(''),[debouncedQuery,setDebouncedQuery]=useState(''),[file,setFile]=useState(null),[loading,setLoading]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState(''),[mobile,setMobile]=useState(false);const request=useCallback((path,opts={})=>api(path,{...opts,headers:{...(opts.headers||{}),'X-API-Key':key}}),[key]);const refresh=useCallback(async()=>{if(!key)return;setLoading(true);setError('');try{const [m,o,j]=await Promise.all([request('/api/v1/metrics/summary'),request(`/api/v1/organizations?page=${orgPage}&page_size=100${debouncedQuery?`&q=${encodeURIComponent(debouncedQuery)}`:''}`),request('/api/v1/ingestion/jobs?page_size=50')]);const orgResult=await o.json();setSummary(await m.json());setOrgs(orgResult.items||[]);setOrgTotal(orgResult.total||0);setJobs((await j.json()).items||[]);setConnected(true)}catch(e){setConnected(false);setError(e.message)}finally{setLoading(false)}},[key,request,orgPage,debouncedQuery]);useEffect(()=>{if(key)refresh()},[key,refresh]);useEffect(()=>{const timer=setTimeout(()=>setDebouncedQuery(query),300);return()=>clearTimeout(timer)},[query]);const upload=async e=>{e.preventDefault();if(!file)return;setLoading(true);setError('');setMessage('Uploading file and creating an ingestion job…');try{let x;if(file.size>50*1024*1024){const pre=await request('/api/v1/ingestion/uploads/presign',{method:'POST',body:JSON.stringify({file_name:file.name,size_bytes:file.size})});const ticket=await pre.json();setMessage('Uploading directly to private object storage…');const putStatus=await new Promise((resolve,reject)=>{const xhr=new XMLHttpRequest();xhr.open('PUT',ticket.upload_url);xhr.setRequestHeader('Content-Type',ticket.content_type);xhr.upload.onprogress=event=>{if(event.lengthComputable)setMessage(`Uploading directly to private object storage… ${Math.round(event.loaded/event.total*100)}%`)};xhr.onload=()=>resolve(xhr.status);xhr.onerror=()=>reject(new Error('Direct storage upload failed. Check bucket CORS and retry before the upload URL expires.'));xhr.send(file)});if(putStatus<200||putStatus>=300)throw new Error('Direct storage upload failed. Check bucket CORS and retry before the upload URL expires.');const complete=await request(`/api/v1/ingestion/uploads/${ticket.job_id}/complete`,{method:'POST'});x=await complete.json()}else{const form=new FormData();form.append('file',file);const r=await request('/api/v1/ingestion/uploads',{method:'POST',body:form});x=await r.json()}setMessage(`Queued job ${String(x.job_id||'').slice(0,8)}. The worker will process this upload asynchronously; refresh the ingestion jobs list to see results.`);setFile(null);await refresh()}catch(err){setMessage('');setError(err.message)}finally{setLoading(false)}};const filtered=orgs;const nav=[['Overview',Activity],['Organizations',Building2],['Ingestion jobs',Clock3],['Upload center',FileUp]];return <div className="shell"><aside className={`sidebar ${mobile?'show':''}`}><div className="brand"><div className="brand-mark">P</div><div><b>PesaGuard</b><small>REGISTRY PLATFORM</small></div><button className="mobile-close" onClick={()=>setMobile(false)}><X size={18}/></button></div><div className="workspace"><i/> INTERNAL DATA SERVICES</div><nav>{nav.map(([label,Icon])=><button key={label} className={page===label?'active':''} onClick={()=>{setPage(label);setMobile(false)}}><Icon size={18}/>{label}</button>)}</nav><div className="sidebar-bottom"><ShieldCheck size={17}/><div><b>Secure workspace</b><small>Preview only · not production auth</small></div></div></aside><main className="main"><header className="topbar"><button className="menu-button" onClick={()=>setMobile(!mobile)}><Menu/></button><div><div className="eyebrow">PESAGUARD / DATA INFRASTRUCTURE</div><h1>{page}</h1></div><div className="top-actions"><span className={`connection ${connected?'online':''}`}><i/>{connected?'API connected':'Not connected'}</span><button className="icon-button" onClick={refresh} aria-label="Refresh"><RefreshCw size={17}/></button></div></header><section className="content"><div className="connect-panel"><div><b>Connect to Registry API</b><p>Enter the backend internal API key. Development/admin preview only. A key entered here is exposed to the browser; never use a production service key.</p></div><form onSubmit={e=>{e.preventDefault();refresh()}}><input type="password" value={key} onChange={e=>setKey(e.target.value)} placeholder="Internal API key" autoComplete="off"/><button className="primary">Connect</button></form></div>{error&&<div className="notice error"><AlertTriangle size={17}/>{error}</div>}{message&&<div className="notice success"><CheckCircle2 size={17}/>{message}</div>}{page==='Overview'&&<><div className="welcome"><div><span className="tag">REGISTRY OPERATIONS</span><h2>Corporate data, organized.</h2><p>Manage source datasets, inspect indexed organizations, and monitor ingestion activity from one workspace.</p></div><div className="welcome-icon"><Database size={45}/></div></div><div className="metrics"><Metric icon={Building2} label="Indexed organizations" value={summary?.total_organizations??'—'} note="Persisted registry records"/><Metric icon={FileText} label="Ingestion jobs" value={summary?.total_jobs??'—'} note="Tracked import runs"/><Metric icon={CheckCircle2} label="Completed jobs" value={summary?.completed_jobs??'—'} note="Successfully processed"/><Metric icon={AlertTriangle} label="Failed jobs" value={summary?.failed_jobs??'—'} note="Requires investigation"/></div><div className="section-grid"><div className="card"><div className="card-heading"><div><h3>Recent ingestion jobs</h3><p>Latest persisted pipeline activity</p></div><button className="text-button" onClick={()=>setPage('Ingestion jobs')}>View all</button></div><JobTable jobs={jobs.slice(0,5)}/></div><div className="card"><div className="card-heading"><div><h3>Service overview</h3><p>Live API response state</p></div><Activity size={18}/></div><Health label="Registry API" value={connected?'connected':'not connected'} good={connected}/><Health label="Database metrics" value={summary?'available':'unknown'} good={!!summary}/><Health label="External verification" value="not configured"/><p className="footnote">A local registry match is not authoritative KYB verification.</p></div></div></>}{page==='Organizations'&&<div className="card"><div className="card-heading"><div><h3>Organization registry</h3><p>Search imported records and inspect their source information.</p></div><div className="searchbox"><Search size={16}/><input value={query} onChange={e=>{setQuery(e.target.value);setOrgPage(1)}} placeholder="Search name or registration no."/></div></div><OrgTable rows={filtered} page={orgPage} total={orgTotal} pageSize={100} onPageChange={setOrgPage}/></div>}{page==='Ingestion jobs'&&<div className="card"><div className="card-heading"><div><h3>Ingestion history</h3><p>Persisted import outcomes.</p></div><button className="secondary" onClick={refresh}><RefreshCw size={15}/> Refresh</button></div><JobTable jobs={jobs}/></div>}{page==='Upload center'&&<div className="card upload-card"><div className="card-heading"><div><h3>Import registry dataset</h3><p>CSV records are ingested. CSV uploads are queued for background processing. PDF uploads are retained but not parsed into records yet.</p></div><FileUp size={22}/></div><form onSubmit={upload}><label className="dropzone"><input type="file" accept=".csv,.pdf" onChange={e=>setFile(e.target.files?.[0]||null)}/><div className="upload-icon"><FileUp size={28}/></div><b>{file?file.name:'Choose a dataset to upload'}</b><span>{file?`${(file.size/1048576).toFixed(2)} MB`:'CSV or PDF · backend size limits apply'}</span><small>Use only datasets you are authorized to process.</small></label><button className="primary" disabled={!file||loading}>{loading?'Processing…':'Queue import'}</button></form></div>}<footer><span>© PesaGuard · Internal Registry</span><span>{loading?'Working…':'Ready for operator action'}</span></footer></section></main></div>}
-function Metric({icon:Icon,label,value,note}){return <div className="metric"><div className="metric-icon"><Icon size={19}/></div><span>{label}</span><strong>{value}</strong><small>{note}</small></div>}function Health({label,value,good}){return <div className="health-row"><span><i className={good?'health-good':''}/>{label}</span><Status value={value}/></div>}function OrgTable({rows,page,total,pageSize,onPageChange}){const pages=Math.max(1,Math.ceil(total/pageSize));if(!rows.length)return <Empty text="No organization records found" note="Connect the API or adjust the search to find records."/>;return <><div className="table-wrap"><table><thead><tr><th>LEGAL NAME</th><th>REGISTRATION NO.</th><th>STATUS</th><th>SOURCE FILE</th></tr></thead><tbody>{rows.map(o=><tr key={o.id}><td><b>{o.legal_name}</b><small className="subline">ID {o.id.slice(0,8)}</small></td><td>{o.registration_number||'—'}</td><td><Status value={o.status}/></td><td>{o.source_file||'—'}</td></tr>)}</tbody></table></div><div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,padding:'14px 0',flexWrap:'wrap'}}><span style={{fontSize:13,color:'var(--muted,#64748b)'}}>Showing {total?((page-1)*pageSize+1):0}–{Math.min(page*pageSize,total)} of {total} organizations</span><div style={{display:'flex',gap:8}}><button className="secondary" disabled={page<=1} onClick={()=>onPageChange(page-1)}>Previous</button><button className="secondary" disabled={page>=pages} onClick={()=>onPageChange(page+1)}>Next</button></div></div></>}function JobTable({jobs}){if(!jobs.length)return <Empty text="No ingestion jobs yet" note="Upload a dataset to create the first job."/>;return <div className="table-wrap"><table><thead><tr><th>FILE</th><th>STATUS</th><th>PROCESSED</th><th>INSERTED</th><th>CREATED</th></tr></thead><tbody>{jobs.map(j=><tr key={j.id}><td><b>{j.file_name}</b><small className="subline">{j.id.slice(0,8)}</small></td><td><Status value={j.status}/></td><td>{j.records_processed}</td><td>{j.records_inserted}</td><td>{j.created_at?new Date(j.created_at).toLocaleString():'—'}</td></tr>)}</tbody></table></div>}function Empty({text,note}){return <div className="empty"><Database size={27}/><b>{text}</b><span>{note}</span></div>}
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Activity, AlertCircle, AlertTriangle, ArrowDownRight, ArrowRight, ArrowUpRight,
+  Bell, Building2, CheckCircle2, ChevronDown, CircleDot, Clock3, Database,
+  FileCheck2, FileSpreadsheet, FileText, HardDrive, LayoutDashboard, Menu,
+  MoreHorizontal, RefreshCw, Search, Server, Settings, ShieldCheck, SlidersHorizontal,
+  Upload, X, ScrollText, Workflow
+} from 'lucide-react';
+import { api } from './api.js';
+
+const NAV = [
+  { name: 'Overview', icon: LayoutDashboard, group: 'WORKSPACE' },
+  { name: 'Data Sources', icon: Database, group: 'WORKSPACE' },
+  { name: 'Ingestion Jobs', icon: Activity, group: 'WORKSPACE' },
+  { name: 'Registry Records', icon: Building2, group: 'WORKSPACE' },
+  { name: 'Data Quality', icon: FileCheck2, group: 'GOVERNANCE' },
+  { name: 'Warehouse', icon: HardDrive, group: 'GOVERNANCE' },
+  { name: 'Validation Rules', icon: ShieldCheck, group: 'GOVERNANCE' },
+  { name: 'Audit Logs', icon: ScrollText, group: 'ADMINISTRATION' },
+  { name: 'Settings', icon: Settings, group: 'ADMINISTRATION' },
+];
+
+const dateLabel = (value) => {
+  if (!value) return '—';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+};
+const number = (value) => Number(value || 0).toLocaleString();
+const statusTone = (value) => {
+  const status = String(value || '').toLowerCase();
+  if (['completed', 'completed_with_errors', 'healthy', 'connected', 'ready'].includes(status)) return 'success';
+  if (['processing', 'running', 'in_progress', 'pending', 'queued', 'pending_submission'].includes(status)) return 'warning';
+  if (['failed', 'error', 'rejected', 'verification_failed'].includes(status)) return 'danger';
+  return 'neutral';
+};
+
+function StatusPill({ value }) {
+  const tone = statusTone(value);
+  return <span className={`status-pill ${tone}`}><i />{String(value || 'Unknown').replaceAll('_', ' ')}</span>;
+}
+
+function Sidebar({ page, setPage, mobile, setMobile }) {
+  let group = '';
+  return <aside className={`sidebar ${mobile ? 'sidebar-open' : ''}`}>
+    <div className="brand-row">
+      <div className="brand-mark"><Database size={19} strokeWidth={2.2} /></div>
+      <div className="brand-copy"><strong>PesaGuard</strong><span>DATASOURCE</span></div>
+      <button className="icon-button mobile-close" onClick={() => setMobile(false)} aria-label="Close menu"><X size={18} /></button>
+    </div>
+    <div className="workspace-chip"><span className="pulse-dot" />INTERNAL DATA PLATFORM</div>
+    <nav className="side-nav">
+      {NAV.map((item) => {
+        const showGroup = item.group !== group;
+        group = item.group;
+        return <React.Fragment key={item.name}>
+          {showGroup && <div className="nav-group-label">{item.group}</div>}
+          <button className={`nav-item ${page === item.name ? 'active' : ''}`} onClick={() => { setPage(item.name); setMobile(false); }}>
+            <item.icon size={18} strokeWidth={1.8} /><span>{item.name}</span>
+            {item.name === 'Ingestion Jobs' && <span className="nav-count">Live</span>}
+          </button>
+        </React.Fragment>;
+      })}
+    </nav>
+    <div className="sidebar-footer">
+      <div className="secure-icon"><ShieldCheck size={17} /></div>
+      <div><strong>Secure workspace</strong><span>Operator access</span></div>
+      <span className="footer-online" title="API connection status" />
+    </div>
+  </aside>;
+}
+
+function Topbar({ page, connected, onRefresh, loading, search, setSearch, setMobile }) {
+  return <header className="topbar">
+    <div className="topbar-left">
+      <button className="icon-button mobile-menu" onClick={() => setMobile(true)} aria-label="Open menu"><Menu size={20} /></button>
+      <div className="breadcrumb"><span>Datasource</span><span className="breadcrumb-slash">/</span><strong>{page}</strong></div>
+    </div>
+    <div className="topbar-tools">
+      <label className="global-search"><Search size={16} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search records, jobs, sources…" /><kbd>⌘ K</kbd></label>
+      <div className="environment"><span className={connected ? 'pulse-dot' : 'pulse-dot muted'} />{connected ? 'API connected' : 'Preview'}<ChevronDown size={14} /></div>
+      <button className="icon-button notification-button" aria-label="Notifications"><Bell size={18} /><i /></button>
+      <button className="profile-chip" aria-label="Account menu"><span>VK</span><ChevronDown size={14} /></button>
+      <button className="icon-button refresh-button" onClick={onRefresh} aria-label="Refresh data" disabled={loading}><RefreshCw size={17} className={loading ? 'spin' : ''} /></button>
+    </div>
+  </header>;
+}
+
+function MetricCard({ icon: Icon, label, value, note, accent = 'green' }) {
+  return <article className="metric-card">
+    <div className="metric-top"><span>{label}</span><span className={`metric-icon ${accent}`}><Icon size={18} strokeWidth={1.8} /></span></div>
+    <div className="metric-value">{value}</div>
+    <div className="metric-note"><span>{note}</span></div>
+  </article>;
+}
+
+function ActivityChart({ jobs }) {
+  const points = useMemo(() => {
+    const days = new Map();
+    for (const job of jobs) {
+      if (!job.created_at) continue;
+      const date = new Date(job.created_at);
+      if (Number.isNaN(date.getTime())) continue;
+      const key = date.toISOString().slice(0, 10);
+      const row = days.get(key) || { key, label: date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }), processed: 0, inserted: 0, jobs: 0 };
+      row.processed += Number(job.records_processed || 0);
+      row.inserted += Number(job.records_inserted || 0);
+      row.jobs += 1;
+      days.set(key, row);
+    }
+    return [...days.values()].sort((a, b) => a.key.localeCompare(b.key)).slice(-7);
+  }, [jobs]);
+  const max = Math.max(1, ...points.flatMap(p => [p.processed, p.inserted]));
+  const chartPoints = (field) => points.map((p, i) => {
+    const x = points.length <= 1 ? 50 : 28 + i * (244 / (points.length - 1));
+    const y = 150 - (p[field] / max) * 112;
+    return `${x},${y}`;
+  }).join(' ');
+  return <div className="chart-area">
+    {points.length ? <>
+      <div className="chart-legend"><span><i className="legend-green" />Records processed</span><span><i className="legend-mint" />Records inserted</span><span className="chart-note">Based on loaded jobs</span></div>
+      <svg className="activity-chart" viewBox="0 0 300 190" role="img" aria-label="Records processed and inserted by job creation date" preserveAspectRatio="none">
+        {[38, 76, 114, 152].map(y => <line key={y} x1="28" x2="274" y1={y} y2={y} className="chart-grid" />)}
+        <polyline points={chartPoints('processed')} className="chart-line chart-line-dark" />
+        <polyline points={chartPoints('inserted')} className="chart-line chart-line-mint" />
+        {points.map((p, i) => {
+          const x = points.length <= 1 ? 50 : 28 + i * (244 / (points.length - 1));
+          return <g key={p.key}><circle cx={x} cy={150 - (p.processed / max) * 112} r="3.5" className="chart-point-dark" /><circle cx={x} cy={150 - (p.inserted / max) * 112} r="3.5" className="chart-point-mint" /></g>;
+        })}
+      </svg>
+      <div className="chart-xlabels">{points.map(p => <span key={p.key}>{p.label}</span>)}</div>
+    </> : <div className="chart-empty"><Activity size={25} /><strong>Activity will appear here</strong><span>Connect the API and process ingestion jobs to populate this chart.</span></div>}
+  </div>;
+}
+
+function QualityPanel({ summary }) {
+  const valid = summary?.data_quality?.valid_percentage;
+  const missing = summary?.data_quality?.missing_percentage;
+  const duplicate = summary?.data_quality?.duplicate_percentage;
+  const hasQuality = [valid, missing, duplicate].some(v => v !== undefined && v !== null);
+  const rows = hasQuality ? [
+    ['Valid records', Number(valid || 0), 'quality-valid'],
+    ['Missing required fields', Number(missing || 0), 'quality-missing'],
+    ['Duplicate candidates', Number(duplicate || 0), 'quality-duplicate'],
+  ] : null;
+  return <div className="quality-panel">
+    <div className="card-heading"><div><h2>Data quality</h2><p>Registry validation overview</p></div><div className="heading-icon"><SlidersHorizontal size={17} /></div></div>
+    {rows ? rows.map(([label, pct, cls]) => <div className="quality-row" key={label}><div className="quality-label"><span>{label}</span><strong>{pct.toFixed(1)}%</strong></div><div className="quality-track"><span className={cls} style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} /></div></div>) : <div className="quality-unavailable"><ShieldCheck size={24} /><strong>Quality metrics not available yet</strong><span>The API does not currently expose aggregate quality percentages. Values are intentionally not estimated.</span></div>}
+    <div className="quality-foot"><span className="tiny-dot" />{hasQuality ? 'Metrics returned by API' : 'Waiting for quality metrics endpoint'}</div>
+  </div>;
+}
+
+function JobsTable({ jobs, compact = false, search = '' }) {
+  const filtered = jobs.filter(j => [j.file_name, j.status, j.source_name, j.id].some(v => String(v || '').toLowerCase().includes(search.toLowerCase())));
+  if (!filtered.length) return <div className="empty-state"><div className="empty-icon"><Database size={23} /></div><strong>{search ? 'No matching ingestion jobs' : 'No ingestion jobs yet'}</strong><span>{search ? 'Try a different search term.' : 'Upload a dataset to create your first ingestion job.'}</span></div>;
+  return <div className="table-scroll"><table className="data-table"><thead><tr><th>DATASET / FILE</th><th>STATUS</th><th>PROCESSED</th><th>INSERTED</th><th>CREATED</th><th /></tr></thead><tbody>
+    {filtered.slice(0, compact ? 5 : 50).map(job => <tr key={job.id}>
+      <td><div className="file-cell"><span className={`file-icon ${String(job.file_name || '').toLowerCase().endsWith('.pdf') ? 'pdf' : 'csv'}`}>{String(job.file_name || '').toLowerCase().endsWith('.pdf') ? <FileText size={17} /> : <FileSpreadsheet size={17} />}</span><span><strong>{job.file_name || 'Unnamed dataset'}</strong><small>JOB-{String(job.id || '').slice(0, 8).toUpperCase()}</small></span></div></td>
+      <td><StatusPill value={job.status} /></td><td>{number(job.records_processed)}</td><td>{number(job.records_inserted)}</td><td className="date-cell">{dateLabel(job.created_at)}</td><td><button className="row-action" title="Job actions" aria-label="Job actions"><MoreHorizontal size={18} /></button></td>
+    </tr>)}
+  </tbody></table></div>;
+}
+
+function OrganizationsTable({ rows, total, page, pageSize, onPageChange }) {
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  if (!rows.length) return <div className="empty-state"><div className="empty-icon"><Building2 size={23} /></div><strong>No registry records found</strong><span>Connect the API or import a dataset to populate the registry.</span></div>;
+  return <>
+    <div className="table-scroll"><table className="data-table"><thead><tr><th>ORGANIZATION</th><th>REGISTRATION NUMBER</th><th>STATUS</th><th>SOURCE FILE</th></tr></thead><tbody>{rows.map(org => <tr key={org.id}><td><div className="org-cell"><span className="org-avatar"><Building2 size={16} /></span><span><strong>{org.legal_name || 'Unnamed organization'}</strong><small>Record {String(org.id || '').slice(0, 8)}</small></span></div></td><td>{org.registration_number || '—'}</td><td><StatusPill value={org.status} /></td><td>{org.source_file || '—'}</td></tr>)}</tbody></table></div>
+    <div className="pagination"><span>Showing {total ? ((page - 1) * pageSize + 1) : 0}–{Math.min(page * pageSize, total)} of {number(total)} organizations</span><div><button className="button-secondary" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>Previous</button><button className="button-secondary" disabled={page >= pages} onClick={() => onPageChange(page + 1)}>Next</button></div></div>
+  </>;
+}
+
+function ServiceStatus({ label, detail, icon: Icon, value, connected }) {
+  return <div className="service-card"><div className="service-icon"><Icon size={19} /></div><div className="service-copy"><strong>{label}</strong><span>{detail}</span></div><StatusPill value={value || (connected ? 'Connected' : 'Unknown')} /></div>;
+}
+
+export default function App() {
+  const [page, setPage] = useState('Overview');
+  const [key, setKey] = useState('');
+  const [connected, setConnected] = useState(false);
+  const [summary, setSummary] = useState(null);
+  const [orgs, setOrgs] = useState([]);
+  const [orgPage, setOrgPage] = useState(1);
+  const [orgTotal, setOrgTotal] = useState(0);
+  const [jobs, setJobs] = useState([]);
+  const [search, setSearch] = useState('');
+  const [file, setFile] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const [mobile, setMobile] = useState(false);
+
+  const request = useCallback((path, opts = {}) => api(path, { ...opts, headers: { ...(opts.headers || {}), 'X-API-Key': key } }), [key]);
+  const refresh = useCallback(async () => {
+    if (!key) return;
+    setLoading(true); setError('');
+    try {
+      const [metricsResponse, orgResponse, jobsResponse] = await Promise.all([
+        request('/api/v1/metrics/summary'),
+        request(`/api/v1/organizations?page=${orgPage}&page_size=100${search ? `&q=${encodeURIComponent(search)}` : ''}`),
+        request('/api/v1/ingestion/jobs?page_size=50')
+      ]);
+      const metrics = await metricsResponse.json();
+      const orgResult = await orgResponse.json();
+      const jobsResult = await jobsResponse.json();
+      setSummary(metrics); setOrgs(orgResult.items || []); setOrgTotal(orgResult.total || 0);
+      setJobs(jobsResult.items || []); setConnected(true);
+    } catch (e) { setConnected(false); setError(e.message || 'Unable to connect to the Registry API.'); }
+    finally { setLoading(false); }
+  }, [key, request, orgPage, search]);
+
+  useEffect(() => { if (key) refresh(); }, [key, refresh]);
+  const upload = async (event) => {
+    event.preventDefault();
+    if (!file) return;
+    setLoading(true); setError(''); setMessage('Uploading file and creating an ingestion job…');
+    try {
+      let result;
+      if (file.size > 50 * 1024 * 1024) {
+        const presignResponse = await request('/api/v1/ingestion/uploads/presign', { method: 'POST', body: JSON.stringify({ file_name: file.name, size_bytes: file.size }) });
+        const ticket = await presignResponse.json();
+        setMessage('Uploading directly to private object storage…');
+        const putStatus = await new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest(); xhr.open('PUT', ticket.upload_url); xhr.setRequestHeader('Content-Type', ticket.content_type);
+          xhr.upload.onprogress = (e) => { if (e.lengthComputable) setMessage(`Uploading directly to private object storage… ${Math.round(e.loaded / e.total * 100)}%`); };
+          xhr.onload = () => resolve(xhr.status); xhr.onerror = () => reject(new Error('Direct storage upload failed. Check bucket CORS and retry before the upload URL expires.')); xhr.send(file);
+        });
+        if (putStatus < 200 || putStatus >= 300) throw new Error('Direct storage upload failed. Check bucket CORS and retry before the upload URL expires.');
+        const completeResponse = await request(`/api/v1/ingestion/uploads/${ticket.job_id}/complete`, { method: 'POST' });
+        result = await completeResponse.json();
+      } else {
+        const form = new FormData(); form.append('file', file);
+        const response = await request('/api/v1/ingestion/uploads', { method: 'POST', body: form });
+        result = await response.json();
+      }
+      setMessage(`Queued job ${String(result.job_id || '').slice(0, 8)}. Processing runs asynchronously; refresh the jobs list for the outcome.`);
+      setFile(null); await refresh();
+    } catch (e) { setMessage(''); setError(e.message || 'Upload failed.'); }
+    finally { setLoading(false); }
+  };
+
+  const metrics = summary || {};
+  const navToUpload = () => setPage('Upload center');
+  const knownPage = ['Overview', 'Registry Records', 'Ingestion Jobs', 'Upload center'].includes(page);
+
+  return <div className="app-shell">
+    {mobile && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setMobile(false)} />}
+    <Sidebar page={page} setPage={setPage} mobile={mobile} setMobile={setMobile} />
+    <main className="main-content">
+      <Topbar page={page} connected={connected} onRefresh={refresh} loading={loading} search={search} setSearch={setSearch} setMobile={setMobile} />
+      <div className="page-content">
+        {!connected && <section className="connect-banner"><div className="connect-banner-icon"><ShieldCheck size={20} /></div><div className="connect-copy"><strong>Connect your datasource</strong><p>Enter the internal API key to load live registry metrics and ingestion jobs. Avoid production service keys in browser-based previews.</p></div><form onSubmit={e => { e.preventDefault(); refresh(); }}><input type="password" value={key} onChange={e => setKey(e.target.value)} placeholder="Internal API key" autoComplete="off" /><button className="button-primary">Connect <ArrowRight size={15} /></button></form></section>}
+        {error && <div className="alert-banner error"><AlertTriangle size={17} /><span>{error}</span><button onClick={() => setError('')} aria-label="Dismiss error"><X size={16} /></button></div>}
+        {message && <div className="alert-banner success"><CheckCircle2 size={17} /><span>{message}</span><button onClick={() => setMessage('')} aria-label="Dismiss message"><X size={16} /></button></div>}
+
+        {page === 'Overview' && <>
+          <div className="page-heading"><div><div className="eyebrow-label">REGISTRY OPERATIONS</div><h1>Datasource overview</h1><p>Monitor registry ingestion, data quality, and warehouse activity from one workspace.</p></div><div className="heading-actions"><button className="button-secondary" onClick={() => setPage('Ingestion Jobs')}>View jobs</button><button className="button-primary" onClick={navToUpload}><Upload size={16} /> Upload dataset</button></div></div>
+          <div className="metric-grid">
+            <MetricCard icon={Building2} label="Indexed organizations" value={summary ? number(metrics.total_organizations) : '—'} note="Persisted registry records" />
+            <MetricCard icon={Workflow} label="Ingestion jobs" value={summary ? number(metrics.total_jobs) : '—'} note="Tracked import runs" accent="mint" />
+            <MetricCard icon={CheckCircle2} label="Completed jobs" value={summary ? number(metrics.completed_jobs) : '—'} note="Successfully processed" accent="green" />
+            <MetricCard icon={AlertCircle} label="Failed jobs" value={summary ? number(metrics.failed_jobs) : '—'} note="May require investigation" accent="amber" />
+          </div>
+          <div className="dashboard-grid">
+            <section className="panel activity-panel"><div className="panel-heading"><div><h2>Ingestion activity</h2><p>Processed and inserted records from recent jobs</p></div><span className="panel-period"><Activity size={14} /> Recent activity</span></div><ActivityChart jobs={jobs} /></section>
+            <section className="panel"><QualityPanel summary={summary} /></section>
+          </div>
+          <section className="panel jobs-panel"><div className="panel-heading"><div><h2>Recent ingestion jobs</h2><p>Latest persisted pipeline activity</p></div><button className="button-link" onClick={() => setPage('Ingestion Jobs')}>View all jobs <ArrowRight size={15} /></button></div><JobsTable jobs={jobs} compact search={search} /></section>
+          <section className="infra-section"><div className="section-title"><div><h2>Infrastructure health</h2><p>Connection state reported by the current datasource session</p></div><span className="health-summary"><i /> {connected ? 'API reachable' : 'Awaiting connection'}</span></div><div className="service-grid"><ServiceStatus label="Registry API" detail="Datasource application" value={connected ? 'Connected' : 'Not connected'} connected={connected} icon={Server} /><ServiceStatus label="Database metrics" detail="Registry data access" value={summary ? 'Available' : 'Unknown'} connected={!!summary} icon={Database} /><ServiceStatus label="External verification" detail="KRA / BRS integrations" value="Not configured" connected={false} icon={ShieldCheck} /></div></section>
+        </>}
+
+        {page === 'Ingestion Jobs' && <section className="panel full-panel"><div className="panel-heading"><div><h2>Ingestion jobs</h2><p>Inspect persisted import outcomes and processing counts.</p></div><button className="button-secondary" onClick={refresh} disabled={loading}><RefreshCw size={15} className={loading ? 'spin' : ''} /> Refresh</button></div><JobsTable jobs={jobs} search={search} /></section>}
+        {page === 'Registry Records' && <section className="panel full-panel"><div className="panel-heading"><div><h2>Registry records</h2><p>Search imported organizations and inspect source information.</p></div><span className="record-count">{number(orgTotal)} records</span></div><OrganizationsTable rows={orgs} total={orgTotal} page={orgPage} pageSize={100} onPageChange={setOrgPage} /></section>}
+        {page === 'Upload center' && <section className="panel upload-panel"><div className="panel-heading"><div><h2>Upload dataset</h2><p>Submit registry files for asynchronous ingestion.</p></div><div className="heading-icon"><Upload size={18} /></div></div><form onSubmit={upload} className="upload-form"><label className="dropzone"><input type="file" accept=".csv,.pdf" onChange={e => setFile(e.target.files?.[0] || null)} /><span className="dropzone-icon"><Upload size={25} /></span><strong>{file ? file.name : 'Choose a dataset to upload'}</strong><span>{file ? `${(file.size / 1048576).toFixed(2)} MB · ready to submit` : 'Drag a file here or browse from your device'}</span><small>CSV and PDF · backend size limits apply</small></label><div className="upload-actions"><p>Only upload datasets you are authorized to process. PDF files may be stored even where structured extraction is not yet enabled.</p><button className="button-primary" disabled={!file || loading}>{loading ? 'Submitting…' : <><Upload size={16} /> Queue import</>}</button></div></form></section>}
+        {!knownPage && <section className="coming-soon panel"><div className="coming-icon"><Database size={25} /></div><span className="eyebrow-label">DATASOURCE MODULE</span><h2>{page}</h2><p>This navigation entry is reserved for the {page.toLowerCase()} workspace. Its production data view has not been connected yet, so this screen does not display fabricated records.</p><button className="button-secondary" onClick={() => setPage('Overview')}>Return to overview</button></section>}
+        <footer className="page-footer"><span>© PesaGuard Datasource</span><span><span className={connected ? 'footer-status-dot' : 'footer-status-dot muted'} />{connected ? 'Connected to datasource API' : 'Local preview · not connected'}</span></footer>
+      </div>
+    </main>
+  </div>;
+}
