@@ -6,6 +6,7 @@ This document distinguishes code present in the repository from work that still 
 - [x] Streaming CSV parser and large-fixture regression coverage are present.
 - [x] Named CI steps are configured to make failures actionable.
 - [x] Managed API-key hardening regression tests added for environment mismatch, scope denial, key hashing, and operator authentication.
+- [x] Added route-level regression tests for key creation, hash-only persistence, environment mismatch security events, scope denial, revocation, rotation and review-only quality matches. CI execution is still pending verification.
 - [ ] Run the full backend test suite and frontend build/tests on the latest commit; record results.
 - [ ] Inspect the first failing CI job if CI fails, and fix it rather than suppressing it.
 - [ ] Complete a read-only production health check; do not process or alter queued production jobs as a test.
@@ -31,6 +32,7 @@ This document distinguishes code present in the repository from work that still 
 ## Phase 4 — Data quality and entity resolution
 - [x] Quality summary, source freshness, validation-rule descriptions and fuzzy match candidates are exposed.
 - [x] Match candidates are explicitly review-only; name similarity never triggers automatic merges.
+- [x] Added a regression test for quality summary output and review-only fuzzy match candidates.
 - [ ] Add tests for conflicting identifiers, repeated imports, false positives and freshness boundaries.
 - [ ] Add a durable reviewer decision workflow before any future merge/identity-resolution automation.
 - [ ] Add lineage/change-history UI and verify source attribution end to end.
@@ -42,7 +44,7 @@ This document distinguishes code present in the repository from work that still 
 - [x] The key prefix is checked against the environment stored for the key.
 - [x] Key management requires a server-side operator bearer token; it is not tenant self-service authentication.
 - [x] HMAC signing, timestamp tolerance, nonce replay protection and Redis-backed shared rate limiting are implemented as optional controls.
-- [ ] Run the security regression tests in CI and validate actual migration-backed key creation, use, rotation and revocation against an isolated test database.
+- [x] Added API-level regression tests for key creation, rotation, revocation, scope denial and environment mismatch. CI execution and isolated migration-backed PostgreSQL verification remain pending.
 - [ ] Coordinate the migration from legacy shared REGISTRY_API_KEYS; legacy shared keys do not have per-key environment isolation.
 - [ ] Keep DATASOURCE_ADMIN_TOKEN, HMAC secrets, Redis credentials and production API keys server-side only.
 - [ ] Review data retention, privacy and access-control policy with the service owner before storing real registry datasets.
