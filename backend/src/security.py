@@ -127,6 +127,10 @@ def _validate_customer_api_key(raw_key, request):
         elif path.startswith("/api/v1/ingestion") and method == "GET":
             required_scope = "ingestion:read"
         if not required_scope or required_scope not in (key.scopes or []):
+            _audit_key_security_event(key, request, "api_key.scope_denied", {
+                "required_scope": required_scope,
+                "error_code": "API_KEY_SCOPE_INSUFFICIENT",
+            })
             raise HTTPException(403, {"code":"API_KEY_SCOPE_INSUFFICIENT","message":"This key does not have permission for the requested endpoint.","required_scope":required_scope})
         key.last_used_at = now
         db.commit()
