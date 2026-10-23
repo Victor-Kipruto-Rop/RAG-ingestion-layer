@@ -25,10 +25,11 @@ def make_org(suffix):
 def test_review_case_records_decision_without_mutating_organization():
     suffix = uuid.uuid4().hex[:8].upper()
     organization_id = make_org(suffix)
+    related_organization_id = make_org(suffix + "_RELATED")
     case_id = None
     try:
         created = client.post("/api/v1/quality/reviews", headers=API_HEADERS, json={
-            "organization_id": organization_id, "case_type": "possible_duplicate",
+            "organization_id": organization_id, "related_organization_id": related_organization_id, "case_type": "possible_duplicate",
             "severity": "review", "summary": "Review a possible similar-name candidate",
             "evidence": {"similarity_score": 87.4, "source": "fictional-test"},
         })
@@ -60,8 +61,11 @@ def test_review_case_records_decision_without_mutating_organization():
                 if case:
                     db.delete(case)
             org = db.get(Organization, organization_id)
+            related_org = db.get(Organization, related_organization_id)
             if org:
                 db.delete(org)
+            if related_org:
+                db.delete(related_org)
             db.commit()
 
 
