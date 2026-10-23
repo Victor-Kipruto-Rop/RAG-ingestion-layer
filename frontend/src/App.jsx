@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Activity, AlertCircle, AlertTriangle, ArrowDownRight, ArrowRight, ArrowUpRight,
-  Bell, Building2, CheckCircle2, ChevronDown, CircleDot, Clock3, Database,
+  Bell, Building2, CheckCircle2, ChevronDown, CircleDot, Clock3, Database, KeyRound,
   FileCheck2, FileSpreadsheet, FileText, HardDrive, LayoutDashboard, Menu,
   MoreHorizontal, RefreshCw, Search, Server, Settings, ShieldCheck, SlidersHorizontal,
   Upload, X, ScrollText, Workflow
 } from 'lucide-react';
-import { api } from './api.js';
+import { api } from './api.js';\nimport ApiKeysPanel from './ApiKeysPanel.jsx';
 
 const NAV = [
   { name: 'Overview', icon: LayoutDashboard, group: 'WORKSPACE' },
@@ -17,7 +17,7 @@ const NAV = [
   { name: 'Warehouse', icon: HardDrive, group: 'GOVERNANCE' },
   { name: 'Validation Rules', icon: ShieldCheck, group: 'GOVERNANCE' },
   { name: 'Audit Logs', icon: ScrollText, group: 'ADMINISTRATION' },
-  { name: 'Settings', icon: Settings, group: 'ADMINISTRATION' },
+  { name: 'API Keys', icon: KeyRound, group: 'ADMINISTRATION' },\n  { name: 'Settings', icon: Settings, group: 'ADMINISTRATION' },
 ];
 
 const dateLabel = (value) => {
@@ -240,7 +240,7 @@ export default function App() {
 
   const metrics = summary || {};
   const navToUpload = () => setPage('Upload center');
-  const knownPage = ['Overview', 'Registry Records', 'Ingestion Jobs', 'Upload center'].includes(page);
+  const knownPage = ['Overview', 'Registry Records', 'Ingestion Jobs', 'Upload center', 'API Keys'].includes(page);
 
   return <div className="app-shell">
     {mobile && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setMobile(false)} />}
@@ -270,7 +270,7 @@ export default function App() {
 
         {page === 'Ingestion Jobs' && <section className="panel full-panel"><div className="panel-heading"><div><h2>Ingestion jobs</h2><p>Inspect persisted import outcomes and processing counts.</p></div><button className="button-secondary" onClick={refresh} disabled={loading}><RefreshCw size={15} className={loading ? 'spin' : ''} /> Refresh</button></div><JobsTable jobs={jobs} search={search} /></section>}
         {page === 'Registry Records' && <section className="panel full-panel"><div className="panel-heading"><div><h2>Registry records</h2><p>Search imported organizations and inspect source information.</p></div><span className="record-count">{number(orgTotal)} records</span></div><OrganizationsTable rows={orgs} total={orgTotal} page={orgPage} pageSize={100} onPageChange={setOrgPage} /></section>}
-        {page === 'Upload center' && <section className="panel upload-panel"><div className="panel-heading"><div><h2>Upload dataset</h2><p>Submit registry files for asynchronous ingestion.</p></div><div className="heading-icon"><Upload size={18} /></div></div><form onSubmit={upload} className="upload-form"><label className="dropzone"><input type="file" accept=".csv,.pdf" onChange={e => setFile(e.target.files?.[0] || null)} /><span className="dropzone-icon"><Upload size={25} /></span><strong>{file ? file.name : 'Choose a dataset to upload'}</strong><span>{file ? `${(file.size / 1048576).toFixed(2)} MB · ready to submit` : 'Drag a file here or browse from your device'}</span><small>CSV and PDF · backend size limits apply</small></label><div className="upload-actions"><p>Only upload datasets you are authorized to process. PDF files may be stored even where structured extraction is not yet enabled.</p><button className="button-primary" disabled={!file || loading}>{loading ? 'Submitting…' : <><Upload size={16} /> Queue import</>}</button></div></form></section>}
+        {page === 'API Keys' && <ApiKeysPanel />}\n        {page === 'Upload center' && <section className="panel upload-panel"><div className="panel-heading"><div><h2>Upload dataset</h2><p>Submit registry files for asynchronous ingestion.</p></div><div className="heading-icon"><Upload size={18} /></div></div><form onSubmit={upload} className="upload-form"><label className="dropzone"><input type="file" accept=".csv,.pdf" onChange={e => setFile(e.target.files?.[0] || null)} /><span className="dropzone-icon"><Upload size={25} /></span><strong>{file ? file.name : 'Choose a dataset to upload'}</strong><span>{file ? `${(file.size / 1048576).toFixed(2)} MB · ready to submit` : 'Drag a file here or browse from your device'}</span><small>CSV and PDF · backend size limits apply</small></label><div className="upload-actions"><p>Only upload datasets you are authorized to process. PDF files may be stored even where structured extraction is not yet enabled.</p><button className="button-primary" disabled={!file || loading}>{loading ? 'Submitting…' : <><Upload size={16} /> Queue import</>}</button></div></form></section>}
         {!knownPage && <section className="coming-soon panel"><div className="coming-icon"><Database size={25} /></div><span className="eyebrow-label">DATASOURCE MODULE</span><h2>{page}</h2><p>This navigation entry is reserved for the {page.toLowerCase()} workspace. Its production data view has not been connected yet, so this screen does not display fabricated records.</p><button className="button-secondary" onClick={() => setPage('Overview')}>Return to overview</button></section>}
         <footer className="page-footer"><span>© PesaGuard Datasource</span><span><span className={connected ? 'footer-status-dot' : 'footer-status-dot muted'} />{connected ? 'Connected to datasource API' : 'Local preview · not connected'}</span></footer>
       </div>
