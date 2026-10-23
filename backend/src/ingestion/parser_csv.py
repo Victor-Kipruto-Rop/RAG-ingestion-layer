@@ -40,9 +40,11 @@ def iter_csv_file(file_obj, max_records: int):
             if row_number - 1 > max_records:
                 raise ValueError(f"CSV exceeds configured limit of {max_records} records")
             if row.get("__extra_columns__"):
-                raise ValueError(f"CSV row {row_number} contains more values than the header")
+                yield row_number, {"__csv_parse_error__": "CSV row contains more values than the header"}
+                continue
             if any(value is None for key, value in row.items() if key != "__extra_columns__"):
-                raise ValueError(f"CSV row {row_number} contains fewer values than the header")
+                yield row_number, {"__csv_parse_error__": "CSV row contains fewer values than the header"}
+                continue
             yield row_number, {
                 str(key or "").strip(): str(value or "").strip()
                 for key, value in row.items()
