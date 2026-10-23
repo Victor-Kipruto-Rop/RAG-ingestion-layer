@@ -1,5 +1,5 @@
 """Run with: python -m src.worker. PostgreSQL is recommended for multiple workers."""
-import logging,time
+import argparse,logging,time
 from datetime import datetime,timezone,timedelta
 from sqlalchemy import select
 from .config import settings
@@ -88,6 +88,22 @@ def recover_stale_jobs():
    else:
     job.status='FAILED';job.completed_at=now();job.error_summary='Worker interrupted repeatedly; maximum attempts reached.'
   if stale:db.commit();log.warning('Recovered stale jobs: %s',len(stale))
+def run_batch(max_jobs=None):
+ """Process a bounded number of eligible jobs, then exit for scheduled runners."""
+ logging.basicConfig(level=logging.INFO)
+ limit=max(1, int(max_jobs if max_jobs is not None else settings.worker_max_jobs_per_run))
+ log.info('Scheduled ingestion batch starting; max_jobs=%s', limit)
+ recover_stale_jobs()
+ processed=0
+ for _ in range(limit):
+  job_id=claim_job()
+  if not job_id:
+   break
+  process_job(job_id)
+  processed+=1
+ log.info('Scheduled ingestion batch finished; claimed_jobs=%s', processed)
+ return processed
+
 def run_forever():
  logging.basicConfig(level=logging.INFO);log.info('Ingestion worker starting')
  while True:
@@ -98,4 +114,13 @@ def run_forever():
    else:time.sleep(max(0.25,settings.worker_poll_seconds))
   except KeyboardInterrupt:break
   except Exception:log.exception('Worker loop error');time.sleep(max(1,settings.worker_retry_seconds))
-if __name__=='__main__':run_forever()
+
+if __name__=='__main__':
+ parser=argparse.ArgumentParser(description='PesaGuard ingestion worker')
+ parser.add_argument('--batch', action='store_true', help='Process a bounded batch and exit')
+ parser.add_argument('--max-jobs', type=int, default=None, help='Override the batch job limit')
+ args=parser.parse_args()
+ if args.batch:
+  run_batch(args.max_jobs)
+ else:
+  run_forever()
