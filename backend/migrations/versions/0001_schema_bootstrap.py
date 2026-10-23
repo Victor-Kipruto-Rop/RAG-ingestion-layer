@@ -16,7 +16,9 @@ depends_on = None
 def upgrade():
     # Bootstrap only: create missing tables for a clean installation.
     # Existing deployments should stamp this revision only after schema comparison.
-    Base.metadata.create_all(bind=op.get_bind(), checkfirst=True)
+    bootstrap_tables = ('internal_organizations', 'organization_record_versions', 'registry_sources', 'ingestion_jobs', 'ingestion_row_errors', 'ingestion_audit_logs', 'warehouse_raw_imports', 'warehouse_access_logs')
+    tables = [Base.metadata.tables[name] for name in bootstrap_tables if name in Base.metadata.tables]
+    Base.metadata.create_all(bind=op.get_bind(), tables=tables, checkfirst=True)
 
 def downgrade():
     raise RuntimeError('The baseline migration is intentionally irreversible. Use a reviewed forward migration; never drop the production schema.')
