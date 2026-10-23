@@ -7,7 +7,7 @@ import structlog
 from prometheus_client import Counter,Histogram,Gauge,generate_latest,CONTENT_TYPE_LATEST
 from fastapi import Request,Header
 from fastapi.responses import Response
-from sqlalchemy import event,func
+from sqlalchemy import event,func,select
 from fastapi import FastAPI,HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
@@ -15,6 +15,8 @@ from .config import settings,validate_runtime_config
 from .database import engine,SessionLocal
 from . import models
 from .api import router
+from .key_management import router as key_management_router
+from .quality import router as quality_router
 from .models import WarehouseAccessLog
 structlog.configure(processors=[structlog.processors.TimeStamper(fmt='iso'),structlog.processors.add_log_level,structlog.processors.format_exc_info,structlog.processors.JSONRenderer()],logger_factory=structlog.stdlib.LoggerFactory())
 logging.basicConfig(level=logging.INFO,format='%(message)s')
@@ -39,8 +41,10 @@ async def lifespan(app):
  validate_runtime_config()
  yield
 app=FastAPI(title=settings.app_name,version='1.0.0',description='Internal registry ingestion and lookup API',lifespan=lifespan)
-app.add_middleware(CORSMiddleware,allow_origins=settings.cors_origin_list,allow_credentials=False,allow_methods=['GET','POST','PATCH','OPTIONS'],allow_headers=['Content-Type','X-API-Key','X-Correlation-ID','Idempotency-Key','X-Registry-Source'])
+app.add_middleware(CORSMiddleware,allow_origins=settings.cors_origin_list,allow_credentials=False,allow_methods=['GET','POST','PATCH','DELETE','OPTIONS'],allow_headers=['Content-Type','Authorization','X-API-Key','X-Correlation-ID','Idempotency-Key','X-Registry-Source','X-Internal-Signature','X-Internal-Timestamp','X-Internal-Nonce'])
 app.include_router(router)
+app.include_router(key_management_router)
+app.include_router(quality_router)
 @app.middleware('http')
 async def warehouse_access_telemetry(request,call_next):
  path=request.url.path
