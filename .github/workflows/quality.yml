@@ -36,4 +36,4 @@ jobs:
           DATABASE_URL: sqlite:////tmp/pesaguard-quality.db
           REGISTRY_API_KEYS: ci-test-only-key
           LOCAL_STORAGE_PATH: /tmp/pesaguard-test-uploads
-        run: PYTHONPATH=.. python -m pytest -q ../tests
+        run: PYTHONPATH=.. python -m pytest -q tests
