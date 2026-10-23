@@ -51,6 +51,8 @@ jobs:
           node-version: '22'
       - name: Install frontend dependencies
         run: npm install --no-audit --no-fund
+      - name: Run frontend unit tests
+        run: npm test
       - name: Build frontend assets
         run: npm run build
       - name: Build production frontend container
