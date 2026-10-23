@@ -1,6 +1,7 @@
 import csv,io,logging,uuid,hashlib
 from datetime import datetime,timezone
 from fastapi import APIRouter,Depends,File,HTTPException,Query,UploadFile,Header,Request
+from pydantic import BaseModel,Field
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select,func,or_
 from sqlalchemy.orm import Session
@@ -8,7 +9,7 @@ from .config import settings
 from .database import get_db
 from .models import Organization,OrganizationRecordVersion,IngestionJob,IngestionRowError,AuditLog,RegistrySource,WarehouseRawImport
 from .security import require_api_key
-from .storage import upload_fileobj,StorageNotConfigured
+from .storage import upload_fileobj,StorageNotConfigured,presign_upload_url,head_object,read_object_prefix
 from .cache import get_json,set_json
 router=APIRouter();log=logging.getLogger(__name__)
 def org_out(o):
@@ -69,6 +70,66 @@ def create_source(payload:dict,db:Session=Depends(get_db)):
  if db.scalar(select(RegistrySource).where(RegistrySource.source_key==key)):raise HTTPException(409,'source_key already exists')
  source=RegistrySource(source_key=key,display_name=name,jurisdiction=str(payload.get('jurisdiction') or 'KE')[:100],source_type=str(payload.get('source_type') or 'IMPORTED_DATASET')[:40],authority_url=payload.get('authority_url'),licence_reference=payload.get('licence_reference'),freshness_sla_hours=payload.get('freshness_sla_hours'),precedence=int(payload.get('precedence',100)),enabled=bool(payload.get('enabled',True)),notes=payload.get('notes'))
  db.add(source);db.commit();db.refresh(source);return source_out(source)
+class DirectUploadRequest(BaseModel):
+ file_name:str=Field(min_length=1,max_length=500)
+ size_bytes:int=Field(gt=0)
+
+@router.post('/api/v1/ingestion/uploads/presign',dependencies=[Depends(require_api_key)],status_code=201)
+def presign_direct_upload(payload:DirectUploadRequest,request:Request,db:Session=Depends(get_db),correlation_id:str|None=Header(default=None,alias='X-Correlation-ID'),idempotency_key:str|None=Header(default=None,alias='Idempotency-Key')):
+ name=payload.file_name.replace(chr(92),'/').split('/')[-1]
+ suffix='.'+name.rsplit('.',1)[-1].lower() if '.' in name else ''
+ if suffix not in {'.csv','.pdf'}:raise HTTPException(415,'Only CSV and PDF files are accepted')
+ if payload.size_bytes>settings.max_direct_upload_bytes:raise HTTPException(413,'File exceeds configured direct-upload limit')
+ content_type='application/pdf' if suffix=='.pdf' else 'text/csv'
+ correlation_id=(correlation_id or getattr(request.state,'request_id',None) or str(uuid.uuid4()))[:100]
+ if idempotency_key:
+  prior=db.scalar(select(IngestionJob).where(IngestionJob.idempotency_key==idempotency_key))
+  if prior:
+   raw=db.scalar(select(WarehouseRawImport).where(WarehouseRawImport.ingestion_job_id==prior.id))
+   if prior.status!='UPLOADING' or not raw or raw.byte_size!=payload.size_bytes:raise HTTPException(409,'Idempotency key is already associated with a different or completed upload')
+   try:url=presign_upload_url(prior.object_key,content_type,settings.direct_upload_url_ttl_seconds)
+   except StorageNotConfigured as exc:raise HTTPException(503,'Direct object storage is not configured') from exc
+   return {'job_id':prior.id,'status':prior.status,'upload_url':url,'content_type':content_type,'expires_in_seconds':settings.direct_upload_url_ttl_seconds,'idempotent_replay':True}
+ job=IngestionJob(file_name=name,correlation_id=correlation_id,content_type=content_type,status='UPLOADING',source_name='direct_r2_upload',idempotency_key=idempotency_key)
+ db.add(job);db.flush()
+ key=f'registry-uploads/{job.id}/{uuid.uuid4().hex}-{name}'
+ try:url=presign_upload_url(key,content_type,settings.direct_upload_url_ttl_seconds)
+ except StorageNotConfigured as exc:db.rollback();raise HTTPException(503,'Direct object storage is not configured') from exc
+ job.object_key=key
+ expires_at=int(datetime.now(timezone.utc).timestamp())+settings.direct_upload_url_ttl_seconds
+ db.add(WarehouseRawImport(ingestion_job_id=job.id,object_key=key,original_filename=name,content_type=content_type,byte_size=payload.size_bytes,source_name='direct_r2_upload',uploaded_by='internal-service',import_status='UPLOADING',metadata_json={'correlation_id':correlation_id,'file_suffix':suffix,'upload_expires_at':expires_at,'direct_upload':True}))
+ db.add(AuditLog(action='registry_direct_upload_presigned',actor='internal-service',file_name=name,details={'job_id':job.id,'correlation_id':correlation_id,'expected_size_bytes':payload.size_bytes}))
+ db.commit()
+ return {'job_id':job.id,'status':job.status,'upload_url':url,'content_type':content_type,'expires_in_seconds':settings.direct_upload_url_ttl_seconds,'idempotent_replay':False}
+
+@router.post('/api/v1/ingestion/uploads/{job_id}/complete',dependencies=[Depends(require_api_key)])
+def complete_direct_upload(job_id:str,db:Session=Depends(get_db)):
+ job=db.get(IngestionJob,job_id)
+ if not job:raise HTTPException(404,'Ingestion job not found')
+ if job.status!='UPLOADING':return {'job_id':job.id,'status':job.status,'idempotent_replay':True}
+ raw=db.scalar(select(WarehouseRawImport).where(WarehouseRawImport.ingestion_job_id==job.id))
+ if not raw:raise HTTPException(409,'Upload metadata is missing')
+ if int((raw.metadata_json or {}).get('upload_expires_at',0))<int(datetime.now(timezone.utc).timestamp()):
+  job.status='FAILED';job.error_summary='Direct upload URL expired before completion.';job.completed_at=datetime.now(timezone.utc);raw.import_status='FAILED';db.commit();raise HTTPException(410,'Direct upload expired; create a new upload job')
+ try:
+  metadata=head_object(job.object_key)
+  prefix=read_object_prefix(job.object_key,4096)
+ except StorageNotConfigured as exc:raise HTTPException(503,'Direct object storage is not configured') from exc
+ except Exception as exc:raise HTTPException(502,'Unable to verify uploaded object') from exc
+ actual_size=int(metadata.get('ContentLength',0) or 0)
+ if actual_size<=0 or actual_size>settings.max_direct_upload_bytes or actual_size!=raw.byte_size:
+  job.status='FAILED';job.error_summary='Uploaded object size did not match the declared size.';job.completed_at=datetime.now(timezone.utc);raw.import_status='FAILED';db.commit();raise HTTPException(422,'Uploaded object size did not match the declared size')
+ suffix='.'+job.file_name.rsplit('.',1)[-1].lower() if '.' in job.file_name else ''
+ if suffix=='.pdf' and not prefix.startswith(b'%PDF-'):
+  job.status='FAILED';job.error_summary='PDF signature validation failed.';job.completed_at=datetime.now(timezone.utc);raw.import_status='FAILED';db.commit();raise HTTPException(415,'PDF file signature is invalid')
+ if suffix=='.csv' and b'\\x00' in prefix:
+  job.status='FAILED';job.error_summary='CSV binary signature validation failed.';job.completed_at=datetime.now(timezone.utc);raw.import_status='FAILED';db.commit();raise HTTPException(415,'CSV contains binary data')
+ raw.byte_size=actual_size;raw.import_status='QUEUED'
+ raw.metadata_json={**(raw.metadata_json or {}),'r2_etag':str(metadata.get('ETag','')).strip('"'),'upload_completed_at':datetime.now(timezone.utc).isoformat()}
+ job.status='QUEUED';job.error_summary=None
+ db.add(AuditLog(action='registry_direct_upload_completed',actor='internal-service',file_name=job.file_name,details={'job_id':job.id,'correlation_id':job.correlation_id,'byte_size':actual_size}))
+ db.commit()
+ return {'job_id':job.id,'status':job.status,'file_name':job.file_name,'correlation_id':job.correlation_id,'message':'Object verified in private storage and queued for background processing.'}
 @router.post('/api/v1/ingestion/uploads',dependencies=[Depends(require_api_key)],status_code=202)
 async def upload(request:Request,file:UploadFile=File(...),db:Session=Depends(get_db),correlation_id:str|None=Header(default=None,alias='X-Correlation-ID'),idempotency_key:str|None=Header(default=None,alias='Idempotency-Key'),source_key:str|None=Header(default=None,alias='X-Registry-Source')):
  correlation_id=(correlation_id or getattr(request.state,'request_id',None) or str(uuid.uuid4()))[:100]
