@@ -170,3 +170,38 @@ class APIKeySecurityEvent(Base):
  client_ip:Mapped[str|None]=mapped_column(String(80))
  details:Mapped[dict]=mapped_column(json_type,default=dict,nullable=False)
  created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
+
+
+class QualityReviewCase(Base):
+    """Durable review queue item. Decisions never auto-merge or rewrite organization data."""
+    __tablename__ = 'quality_review_cases'
+    __table_args__ = (
+        Index('ix_quality_review_cases_status_created', 'status', 'created_at'),
+        Index('ix_quality_review_cases_org_created', 'organization_id', 'created_at'),
+        Index('ix_quality_review_cases_type_status', 'case_type', 'status'),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    organization_id: Mapped[str] = mapped_column(String(36), ForeignKey('internal_organizations.id', ondelete='RESTRICT'), nullable=False, index=True)
+    related_organization_id: Mapped[str | None] = mapped_column(String(36), ForeignKey('internal_organizations.id', ondelete='RESTRICT'), nullable=True, index=True)
+    case_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default='open', nullable=False, index=True)
+    severity: Mapped[str] = mapped_column(String(20), default='review', nullable=False)
+    summary: Mapped[str] = mapped_column(String(1000), nullable=False)
+    evidence: Mapped[dict] = mapped_column(json_type, default=dict, nullable=False)
+    created_by: Mapped[str] = mapped_column(String(200), nullable=False)
+    assigned_to: Mapped[str | None] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, onupdate=now_utc, nullable=False)
+
+class QualityReviewDecision(Base):
+    """Append-only review history; a decision records judgement but does not merge records."""
+    __tablename__ = 'quality_review_decisions'
+    __table_args__ = (Index('ix_quality_review_decisions_case_created', 'case_id', 'created_at'),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    case_id: Mapped[str] = mapped_column(String(36), ForeignKey('quality_review_cases.id', ondelete='RESTRICT'), nullable=False, index=True)
+    decision: Mapped[str] = mapped_column(String(40), nullable=False)
+    notes: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence: Mapped[dict] = mapped_column(json_type, default=dict, nullable=False)
+    reviewer_ref: Mapped[str] = mapped_column(String(200), nullable=False)
+    request_id: Mapped[str | None] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc, nullable=False)
