@@ -30,7 +30,7 @@ The source file and row are retained, alongside source name/record ID and a vers
 8. Commit counts, errors, and audit event atomically where possible.
 9. Make the job result queryable and retryable.
 
-**Current-release limitation:** CSV processing still runs synchronously inside a request and reads a bounded file into memory. For large imports, move processing into a durable worker queue and stream/multipart-upload to R2 before increasing upload limits. PDF upload is tracked but does not yet extract/import PDF records. Do not claim these paths are complete.
+**Current-release limitation:** CSV processing is now queued in the database and handled by a separate worker with bounded retries and row-level error records. The worker still reads each bounded object into memory; implement streaming parsing before increasing the upload limit. PDF upload is tracked but does not yet extract/import PDF records. Do not claim these paths are complete.
 
 ## API contract for PesaGuard
 
@@ -40,7 +40,7 @@ All /api/v1 routes require X-API-Key over HTTPS. Generate a high-entropy secret;
 - GET /api/v1/registry/lookup?tax_pin=... — exact normalized tax PIN lookup.
 - GET /api/v1/registry/search?q=...&limit=20 — substring search and PostgreSQL trigram candidates where configured. Fuzzy candidates must be reviewed; not proof of identity.
 - GET /api/v1/organizations?page=1&page_size=25&q=... — paginated internal administration list.
-- POST /api/v1/ingestion/uploads — bounded CSV or PDF upload.
+- POST /api/v1/ingestion/uploads — bounded CSV or PDF upload; returns 202 and a durable job ID.\n- GET /api/v1/ingestion/jobs/{job_id}/errors — paginated row-level import failures.\n- GET/POST /api/v1/sources — dataset source catalogue.
 - GET /api/v1/ingestion/jobs — ingestion job history.
 - GET /api/v1/metrics/summary — warehouse counters.
 - GET /api/v1/exports/organizations.csv — protected administrative export.
