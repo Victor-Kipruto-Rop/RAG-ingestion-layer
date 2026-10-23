@@ -12,7 +12,7 @@ from fastapi import FastAPI,HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from .config import settings,validate_runtime_config
-from .database import Base,engine,SessionLocal
+from .database import engine,SessionLocal
 from . import models
 from .api import router
 from .models import WarehouseAccessLog
@@ -37,7 +37,6 @@ def _finish_query_timer(conn, cursor, statement, parameters, context, executeman
 @asynccontextmanager
 async def lifespan(app):
  validate_runtime_config()
- if settings.app_env.lower()!='production':Base.metadata.create_all(bind=engine)
  yield
 app=FastAPI(title=settings.app_name,version='1.0.0',description='Internal registry ingestion and lookup API',lifespan=lifespan)
 app.add_middleware(CORSMiddleware,allow_origins=settings.cors_origin_list,allow_credentials=False,allow_methods=['GET','POST','PATCH','OPTIONS'],allow_headers=['Content-Type','X-API-Key','X-Correlation-ID','Idempotency-Key','X-Registry-Source'])
