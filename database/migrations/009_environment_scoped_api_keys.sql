@@ -26,3 +26,8 @@ CREATE TABLE IF NOT EXISTS api_key_audit_events (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS ix_api_key_audit_org_created ON api_key_audit_events(organization_id, created_at DESC);
+
+-- Client SDKs must never access key hashes or audit evidence directly.
+-- The trusted backend database role remains responsible for server-side access.
+ALTER TABLE api_keys ENABLE ROW LEVEL SECURITY;
+ALTER TABLE api_key_audit_events ENABLE ROW LEVEL SECURITY;
