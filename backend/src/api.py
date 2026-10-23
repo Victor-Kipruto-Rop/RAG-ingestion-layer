@@ -79,9 +79,9 @@ class DirectUploadRequest(BaseModel):
 def presign_direct_upload(payload:DirectUploadRequest,request:Request,db:Session=Depends(get_db),correlation_id:str|None=Header(default=None,alias='X-Correlation-ID'),idempotency_key:str|None=Header(default=None,alias='Idempotency-Key')):
  name=payload.file_name.replace(chr(92),'/').split('/')[-1]
  suffix='.'+name.rsplit('.',1)[-1].lower() if '.' in name else ''
- if suffix not in {'.csv','.pdf'}:raise HTTPException(415,'Only CSV and PDF files are accepted')
+ if suffix not in {'.csv','.pdf','.xlsx'}:raise HTTPException(415,'Only CSV, XLSX, and PDF files are accepted')
  if payload.size_bytes>settings.max_direct_upload_bytes:raise HTTPException(413,'File exceeds configured direct-upload limit')
- content_type='application/pdf' if suffix=='.pdf' else 'text/csv'
+ content_type='application/pdf' if suffix=='.pdf' else ('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' if suffix=='.xlsx' else 'text/csv')
  correlation_id=(correlation_id or getattr(request.state,'request_id',None) or str(uuid.uuid4()))[:100]
  if idempotency_key:
   prior=db.scalar(select(IngestionJob).where(IngestionJob.idempotency_key==idempotency_key))
@@ -138,7 +138,7 @@ async def upload(request:Request,file:UploadFile=File(...),db:Session=Depends(ge
  correlation_id=(correlation_id or getattr(request.state,'request_id',None) or str(uuid.uuid4()))[:100]
  name=(file.filename or 'upload.csv').replace(chr(92), '/').split('/')[-1]
  suffix='.'+name.rsplit('.',1)[-1].lower() if '.' in name else ''
- if suffix not in {'.csv','.pdf'}:raise HTTPException(415,'Only CSV and PDF files are accepted')
+ if suffix not in {'.csv','.pdf','.xlsx'}:raise HTTPException(415,'Only CSV, XLSX, and PDF files are accepted')
  source=None
  if source_key:
   source=db.scalar(select(RegistrySource).where(RegistrySource.source_key==source_key.strip().lower(),RegistrySource.enabled.is_(True)))
