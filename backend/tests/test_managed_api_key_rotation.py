@@ -1,8 +1,6 @@
 import uuid
 
 from fastapi.testclient import TestClient
-from sqlalchemy import select
-
 from src.config import settings
 from src.database import Base, SessionLocal, engine
 from src.main import app
