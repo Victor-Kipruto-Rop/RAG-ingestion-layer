@@ -48,7 +48,7 @@ class RegistrySource(Base):
  authority_url:Mapped[str|None]=mapped_column(String(1000))
  licence_reference:Mapped[str|None]=mapped_column(String(500))
  freshness_sla_hours:Mapped[int|None]=mapped_column(Integer)
- precedence:int= mapped_column(Integer,default=100,nullable=False)
+ precedence:Mapped[int]=mapped_column(Integer,default=100,nullable=False)
  enabled:Mapped[bool]=mapped_column(Boolean,default=True,nullable=False)
  notes:Mapped[str|None]=mapped_column(Text)
  created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
