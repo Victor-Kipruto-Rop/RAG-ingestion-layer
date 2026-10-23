@@ -83,6 +83,25 @@ def upgrade():
         if "ix_api_key_security_events_key_id" not in indexes:
             op.create_index("ix_api_key_security_events_key_id", "api_key_security_events", ["key_id"])
 
+    # Supabase's browser roles must not be able to read or mutate API credentials.
+    # The trusted backend connection uses its server-side database role.
+    if bind.dialect.name == "postgresql":
+        op.execute("ALTER TABLE public.managed_api_keys ENABLE ROW LEVEL SECURITY")
+        op.execute("ALTER TABLE public.api_key_security_events ENABLE ROW LEVEL SECURITY")
+        op.execute("""
+            DO $
+            BEGIN
+              IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+                REVOKE ALL ON TABLE public.managed_api_keys FROM anon;
+                REVOKE ALL ON TABLE public.api_key_security_events FROM anon;
+              END IF;
+              IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+                REVOKE ALL ON TABLE public.managed_api_keys FROM authenticated;
+                REVOKE ALL ON TABLE public.api_key_security_events FROM authenticated;
+              END IF;
+            END $;
+        """)
+
 
 def downgrade():
     raise RuntimeError(
