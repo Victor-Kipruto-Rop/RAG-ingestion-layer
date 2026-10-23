@@ -77,7 +77,8 @@ def list_security_events(page:int=1,page_size:int=50,event_type:str|None=None,db
     where=" WHERE event_type=:event_type" if event_type else ""
     params={"offset":(page-1)*page_size,"limit":page_size}
     if event_type:params["event_type"]=event_type[:60]
-    total=db.execute(text("SELECT count(*) FROM api_key_security_events"+where),params).scalar() or 0
+    count_params={"event_type":params["event_type"]} if event_type else {}
+    total=db.execute(text("SELECT count(*) FROM api_key_security_events"+where),count_params).scalar() or 0
     rows=db.execute(text("SELECT id,api_key_id,key_prefix,event_type,expected_environment,key_environment,endpoint,request_id,source_ip,details,created_at FROM api_key_security_events"+where+" ORDER BY created_at DESC OFFSET :offset LIMIT :limit"),params).mappings().all()
     return {"items":[{"id":row["id"],"api_key_id":row["api_key_id"],"key_prefix":row["key_prefix"],
         "event_type":row["event_type"],"expected_environment":row["expected_environment"],
@@ -107,7 +108,7 @@ def rotate_key(key_id: str, db: Session = Depends(get_db),
                x_key_management_token: str | None = Header(default=None, alias="X-Key-Management-Token")):
     _management_auth(x_key_management_token)
     row = db.execute(text("SELECT * FROM api_keys WHERE id=:id FOR UPDATE"),{"id":key_id}).mappings().first()
-    if not row or row["status"] != "active":
+    if not row or row["status"] != "active" or (row["expires_at"] and row["expires_at"] <= datetime.now(timezone.utc)):
         raise HTTPException(404,"Active API key not found")
     scopes = row["scopes"] if isinstance(row["scopes"], list) else json.loads(row["scopes"])
     days = max(1, min(3650, (row["expires_at"] - datetime.now(timezone.utc)).days)) if row["expires_at"] else None
