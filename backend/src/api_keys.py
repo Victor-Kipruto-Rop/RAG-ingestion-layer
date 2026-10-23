@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select, func, case
+from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 from .config import settings
 from .database import get_db
