@@ -8,7 +8,7 @@ from .config import settings
 from .database import get_db
 from .models import Organization,OrganizationRecordVersion,IngestionJob,IngestionRowError,AuditLog,RegistrySource,WarehouseRawImport
 from .security import require_api_key
-from .storage import upload_bytes,StorageNotConfigured
+from .storage import upload_fileobj,StorageNotConfigured
 router=APIRouter();log=logging.getLogger(__name__)
 def org_out(o):
  return {'id':o.id,'legal_name':o.legal_name,'registration_number':o.registration_number,'tax_pin':o.tax_pin,'status':o.status,'registry_payload':o.registry_payload or {},'source':{'name':o.source_name,'file':o.source_file,'row':o.source_row,'record_id':o.source_record_id,'published_at':o.source_published_at.isoformat() if o.source_published_at else None},'data_quality_status':o.data_quality_status,'last_seen_at':o.last_seen_at.isoformat() if o.last_seen_at else None,'created_at':o.created_at.isoformat() if o.created_at else None,'updated_at':o.updated_at.isoformat() if o.updated_at else None}
@@ -70,18 +70,25 @@ async def upload(file:UploadFile=File(...),db:Session=Depends(get_db),correlatio
  if source_key:
   source=db.scalar(select(RegistrySource).where(RegistrySource.source_key==source_key.strip().lower(),RegistrySource.enabled.is_(True)))
   if not source:raise HTTPException(422,'Unknown or disabled registry source')
- data=await file.read(settings.max_upload_bytes+1)
- if len(data)>settings.max_upload_bytes:raise HTTPException(413,'File exceeds configured upload limit')
- if not data:raise HTTPException(400,'Uploaded file is empty')
- if suffix=='.pdf' and not data.startswith(b'%PDF-'):raise HTTPException(415,'File extension is PDF but the file signature is invalid')
- if suffix=='.csv' and b'\x00' in data[:4096]:raise HTTPException(415,'CSV contains binary data')
+ file.file.seek(0);digest=hashlib.sha256();size=0;prefix=b''
+ while True:
+  chunk=file.file.read(1024*1024)
+  if not chunk:break
+  if size==0:prefix=chunk[:4096]
+  size+=len(chunk)
+  if size>settings.max_upload_bytes:raise HTTPException(413,'File exceeds configured upload limit')
+  digest.update(chunk)
+ if size==0:raise HTTPException(400,'Uploaded file is empty')
+ if suffix=='.pdf' and not prefix.startswith(b'%PDF-'):raise HTTPException(415,'File extension is PDF but the file signature is invalid')
+ if suffix=='.csv' and b'\x00' in prefix:raise HTTPException(415,'CSV contains binary data')
+ file.file.seek(0)
  job=IngestionJob(file_name=name,content_type=file.content_type or 'application/octet-stream',status='QUEUED',source_id=source.id if source else None,source_name=source.source_key if source else 'uploaded_dataset',idempotency_key=idempotency_key)
  db.add(job);db.flush()
  key=f'registry-uploads/{job.id}/{uuid.uuid4().hex}-{name}'
  try:
-  upload_bytes(key,data,file.content_type or 'application/octet-stream')
+  upload_fileobj(key,file.file,file.content_type or 'application/octet-stream')
   job.object_key=key
-  db.add(WarehouseRawImport(ingestion_job_id=job.id,object_key=key,original_filename=name,content_type=file.content_type or 'application/octet-stream',byte_size=len(data),sha256_hex=hashlib.sha256(data).hexdigest(),source_id=source.id if source else None,source_name=source.source_key if source else 'uploaded_dataset',uploaded_by='internal-service',import_status='QUEUED',metadata_json={'correlation_id':correlation_id,'file_suffix':suffix}))
+  db.add(WarehouseRawImport(ingestion_job_id=job.id,object_key=key,original_filename=name,content_type=file.content_type or 'application/octet-stream',byte_size=size,sha256_hex=digest.hexdigest(),source_id=source.id if source else None,source_name=source.source_key if source else 'uploaded_dataset',uploaded_by='internal-service',import_status='QUEUED',metadata_json={'correlation_id':correlation_id,'file_suffix':suffix}))
   db.add(AuditLog(action='registry_ingestion_queued',actor='internal-service',file_name=name,details={'job_id':job.id,'source_key':source.source_key if source else None,'correlation_id':correlation_id}))
   db.commit();db.refresh(job)
   return {'job_id':job.id,'file_name':job.file_name,'status':job.status,'records_processed':0,'records_inserted':0,'records_updated':0,'records_skipped':0,'message':'Upload stored; a worker will process this job asynchronously.'}
