@@ -26,7 +26,19 @@ Apply in order to PostgreSQL/Supabase:
 
 Set `APP_ENV=production` only after migrations are applied. Production startup intentionally does not create tables automatically.
 
-## Warehouse layers\n\n- **Bronze:** `warehouse_raw_imports` records raw object metadata, checksum, source, size, and ingestion status; raw files are stored in private R2.\n- **Silver:** `warehouse_organizations` is a read-only view over canonical `internal_organizations` records, with normalization, provenance and data-quality state.\n- **Gold:** `warehouse_access_logs` stores lookup/API performance telemetry without API keys or raw credentials.\n\nConfigure `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `R2_BUCKET_NAME` in the deployment environment. Create the private bucket in Cloudflare R2 first; the repository cannot create a Cloudflare account resource without authorized Cloudflare access.\n\n## PesaGuard service connection
+## Warehouse layers\n\n- **Bronze:** `warehouse_raw_imports` records raw object metadata, checksum, source, size, and ingestion status; raw files are stored in private R2.\n- **Silver:** `warehouse_organizations` is a read-only view over canonical `internal_organizations` records, with normalization, provenance and data-quality state.\n- **Gold:** `warehouse_access_logs` stores lookup/API performance telemetry without API keys or raw credentials.\n\nConfigure `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `R2_BUCKET_NAME` in the deployment environment. Create the private bucket in Cloudflare R2 first; the repository cannot create a Cloudflare account resource without authorized Cloudflare access.\n\n
+## Production hardening
+
+The current implementation work is tracked in [the phased production hardening roadmap](docs/production-hardening-roadmap.md). Review [database migration safety](docs/database-migrations.md) before running Alembic against any existing database, and see [internal API security](docs/internal-api-security.md) for HMAC signing, replay protection, rate limits, cache behavior and metrics.
+
+- CSV ingestion uses a disk-backed spool and row iteration; PDF diagnostics remain bounded and manual-review-only.
+- Invalid row diagnostics are written to the restricted dead-letter table with sensitive row values masked.
+- HMAC signing is optional during caller migration. Do not enable REQUIRE_HMAC until PesaGuard callers send the documented signature headers and REDIS_URL is configured.
+- Distributed rate limiting and Redis cache-aside are active only when REDIS_URL is configured; the no-Redis fallback is per-process and is not a distributed security boundary.
+- Set METRICS_TOKEN to expose the protected Prometheus endpoint. Keep it private and scrape over a restricted network path.
+- The production frontend image needs VITE_API_BASE_URL set at build time to the deployed API URL; the default localhost URL is for local development only.
+
+## PesaGuard service connection
 
 Configure `REGISTRY_API_KEYS` on this service and the matching secret in the PesaGuard backend only. PesaGuard should call this service over HTTPS with `X-API-Key`. Never place this service key in React, a mobile application, or any browser-visible environment variable. Use a separate admin authentication mechanism for the dashboard.
 
