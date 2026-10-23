@@ -35,4 +35,4 @@ def normalize_record(row):
  pin=first('tax_pin','kra_pin','pin','taxpayer_pin')
  if not name:raise ValueError('Missing required legal name column or value')
  payload={str(k):clean_text(v) for k,v in lowered.items() if clean_text(v) is not None and not _is_personal_payload_field(k)}
- return {'legal_name':name,'normalized_legal_name':normalize_legal_name(name),'registration_number':reg,'normalized_registration_number':normalize_identifier(reg),'tax_pin':pin,'normalized_tax_pin':normalize_identifier(pin),'status':(first('status','company_status','entity_status') or 'ACTIVE').upper(),'registry_payload':payload}
+ return {'legal_name':name,'normalized_legal_name':normalize_legal_name(name),'registration_number':reg,'normalized_registration_number':normalize_identifier(reg),'tax_pin':pin,'normalized_tax_pin':normalize_identifier(pin),'status':(first('status','company_status','entity_status') or 'UNKNOWN').upper(),'registry_payload':payload}
