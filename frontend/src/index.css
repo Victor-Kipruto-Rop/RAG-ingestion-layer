@@ -348,3 +348,15 @@ button:focus-visible, input:focus-visible { outline: 3px solid #20b87555; outlin
  .settings-list > div { flex-direction: column; gap: 7px; }
  .settings-list span { max-width: 100%; text-align: left; }
 }
+
+
+/* Durable quality-review queue */
+.review-case-list { display: grid; gap: 12px; padding: 4px 0; }
+.review-case-row { display: grid; gap: 10px; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: #fcfefc; }
+.review-case-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.review-case-id { margin-left: auto; color: var(--muted); font-size: 10px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.review-case-row > strong { color: var(--forest); font-size: 13px; }
+.review-case-row > p { margin: 0; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.review-case-row > input { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 7px; padding: 10px 11px; color: var(--forest); background: #fff; font-size: 12px; }
+.review-case-actions { display: flex; gap: 7px; flex-wrap: wrap; }
+.review-case-actions .button-secondary { min-height: 32px; font-size: 11px; }
