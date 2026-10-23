@@ -16,7 +16,11 @@ Do not expose the management token to the dashboard browser. This repository cur
 
 ## Migration
 
-Review and apply `database/migrations/009_managed_api_keys.sql` to the intended database through the approved migration process. The application does not run this migration automatically. Do not test by modifying production data.
+Choose one migration path for a given database (do not apply both to the same database):
+- Preferred Alembic path: from `backend/`, run `python -m alembic upgrade head` after reviewing the target schema and approved migration window.
+- Existing SQL migration workflow: apply `database/migrations/009_managed_api_keys.sql` after migrations 001–008.
+
+The application does not run migrations automatically. Do not test by modifying production data. The new Alembic revision is a standalone root because the repository's existing SQL migration history has not been stamped into Alembic; do not stamp or combine histories on an existing database without schema reconciliation.
 
 ## Operator endpoints
 
