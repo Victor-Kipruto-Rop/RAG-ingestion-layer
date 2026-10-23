@@ -1,71 +1,89 @@
 # Production Hardening Roadmap
 
-This roadmap is the release checklist for taking PesaGuard Registry Datasource from prototype to production-grade infrastructure. Deliver changes as reviewable pull requests; keep production data and secrets unchanged unless an explicitly approved migration or deployment is underway.
+This is a status-based release checklist for PesaGuard Registry Datasource. It distinguishes repository implementation from deployment validation. A checked item means the corresponding capability is present in source; it does not imply production rollout or successful CI unless explicitly stated.
 
 ## Phase 1 — Baseline and CI stabilization
-- [ ] Re-run CI and resolve the first failing step from its logs; the earlier run's log artifacts were unavailable, so the original failure cause is not yet confirmed. CI steps are now explicitly named to make fresh failures actionable.
-- [x] Verify the streaming CSV parser and add a regression test that exercises a multi-thousand-row fixture through the file iterator.
-- [ ] Record test results from a fresh successful CI run and complete a read-only production health check. Render service configuration was inspected without mutation; its health-check path is currently unset.
-- [ ] Keep streaming work isolated until CI passes; do not merge or deploy as part of baseline verification.
+- [x] Add streaming CSV parser regression coverage for a multi-thousand-row fixture.
+- [x] Name CI steps for backend compilation/lint/tests, migration smoke test, frontend build, and container builds.
+- [ ] Obtain a fresh successful CI run. The latest observed run (workflow run 39948456818) failed in both jobs, but job logs were unavailable through the connector, so the first failing step is not confirmed.
+- [ ] Perform a read-only production health check and record evidence. No production health check is claimed by this PR.
+- [ ] Merge/deploy only after CI is green and the schema change is reviewed.
 
 ## Phase 2 — Database migrations and warehouse integrity
-- [ ] Add Alembic as the schema-change entry point.
-- [ ] Reconcile Alembic with existing SQL migration history before stamping any deployed database.
-- [ ] Test clean-database bootstrap and existing-schema upgrade paths.
-- [ ] Tune connection pools for the actual Render/Supabase connection mode.
-- [ ] Review unique identifier indexes and add supported text-search indexes only after duplicate/data checks.
+- [x] Keep additive SQL migrations under `database/migrations/`; Alembic is configured for the backend.
+- [x] Add the managed API-key and security-event schema in migration `009_managed_api_keys.sql`, with indexes and Supabase RLS enabled.
+- [ ] Reconcile Alembic revision history with the hand-maintained SQL migration history before stamping any existing database.
+- [ ] Validate clean bootstrap and existing-schema upgrade against disposable databases and the exact target schema.
+- [ ] Tune connection pools for the deployed Render/Supabase connection mode and review query plans/indexes using production-like data.
+- [ ] Apply migration 009 only after database backup, review, and explicit deployment approval.
 
 ## Phase 3 — Streaming ingestion and dead-letter isolation
-- [ ] Stream CSV records and bounded PDF data without whole-file RAM loading.
-- [ ] Add durable dead-letter records with source job, row number, safe error category and restricted diagnostics.
-- [ ] Ensure a bad row does not roll back valid rows; add transaction batching and idempotency tests.
-- [ ] Preserve bounded PDF/OCR behavior and manual-review status.
+- [x] Use a disk-backed CSV parser and bounded database batches with persisted row progress.
+- [x] Persist sanitized row-level failures in a dead-letter table; retain job and row references.
+- [x] Support idempotency keys, bounded retries, stale-job recovery, and row-level error inspection.
+- [x] Keep PDF processing bounded and report unsupported extraction as a manual/needs-processing state rather than fabricating extracted data.
+- [ ] Run a large-file benchmark and retry/rollback tests against disposable PostgreSQL, not production data.
 
 ## Phase 4 — Entity resolution
-- [ ] Normalize legal suffixes and names.
-- [ ] Generate fuzzy candidates with RapidFuzz or pg_trgm.
-- [ ] Never auto-merge on name similarity alone; preserve match evidence and review state.
-- [ ] Test conflicting identifiers and false-positive cases.
+- [x] Normalize legal names and identifiers and provide fuzzy candidate matching.
+- [x] Keep name similarity as a review aid; do not auto-merge organizations based on a fuzzy score.
+- [x] Return source and provenance information for review.
+- [ ] Expand tests for conflicting identifiers, common-name collisions, and multilingual/legal-suffix false positives.
+- [ ] Persist human adjudication decisions and evidence if entity-resolution decisions become part of a regulated workflow.
 
 ## Phase 5 — Security and compliance
-- [ ] Validate production environment settings at startup without printing secret values.
-- [ ] Add HMAC request signing, timestamp tolerance, nonce/replay protection and key rotation.
-- [ ] Redact PII and credentials from raw payloads, logs and error messages.
-- [ ] Test authentication, tenant boundaries and failure modes.
+- [x] Validate required production configuration at startup without printing secret values.
+- [x] Support HMAC signatures, timestamp tolerance, nonce/replay protection, and optional Redis-backed distributed replay protection.
+- [x] Hash managed API-key secrets, support expiry/rotation/revocation/scopes, and audit security events.
+- [x] Enforce server-configured environment boundaries; sandbox keys are rejected in production and misuse is recorded when the database is available.
+- [x] Fail closed when a managed-looking key is presented while managed-key support is disabled; it cannot fall back to the legacy shared-key allowlist.
+- [x] Keep the operator token in page memory only and never persist it in browser local storage.
+- [ ] Replace the single operator token with a real identity provider, role-based authorization, organization membership checks, and tenant-scoped key administration before offering customer self-service.
+- [ ] Complete a PII/data-retention review and a security review of production logs and raw imported payloads.
+- [ ] Migrate all legacy shared-key callers to managed keys before retiring `REGISTRY_API_KEYS`; legacy keys are not individually environment-scoped.
 
 ## Phase 6 — API resilience and cache policy
-- [ ] Add timeouts, bounded exponential backoff with jitter and circuit breakers for configured providers.
-- [ ] Add Redis token-bucket rate limiting with an explicit Redis-outage policy.
-- [ ] Add cache TTL/invalidation and freshness metadata.
-- [ ] Test provider outage, timeout, retry storm and stale-cache scenarios.
+- [x] Implement Redis token-bucket rate limiting with a defined production Redis-outage behavior.
+- [x] Add bounded retry/circuit-breaker helpers for transient provider calls.
+- [x] Implement cache TTLs and negative-cache TTLs for registry lookups.
+- [x] Expose source freshness state from actual import timestamps and configured freshness SLAs.
+- [ ] Add provider-specific outage/timeout/retry-storm tests once real provider adapters and credentials are approved.
+- [ ] Confirm Redis is configured on every production replica before treating rate limiting/replay prevention as distributed guarantees.
 
 ## Phase 7 — Observability
-- [ ] Emit structured JSON logs with request and job correlation IDs.
-- [ ] Expose Prometheus metrics for HTTP, DB, queue, ingestion throughput and cache.
-- [ ] Use histograms for p95/p99 latency; do not claim an SLA without load-test evidence.
-- [ ] Add health checks, alerts and operational runbooks.
+- [x] Emit structured JSON request logs with correlation IDs and response timings.
+- [x] Expose Prometheus counters/histograms and ingestion/queue gauges behind a metrics token.
+- [x] Expose live/readiness/health endpoints and warehouse access telemetry.
+- [ ] Configure production alert rules and on-call/runbook ownership in the monitoring platform.
+- [ ] Collect load-test evidence before publishing latency or availability SLOs.
 
 ## Phase 8 — Dashboard readiness
-- [ ] Add React error boundaries and truthful upload/processing states.
-- [ ] Add server pagination/filtering and virtualize large tables when measured volume warrants it.
-- [ ] Add frontend tests for error, empty, loading and large-result states.
+- [x] Add an application error boundary and honest loading/error/empty states.
+- [x] Add server-side organization pagination/search and operational pages for ingestion, data quality, sources, audit logs, and API keys.
+- [x] Avoid fake metrics and label unavailable integrations as not configured.
+- [ ] Add automated frontend tests for API failures, empty states, keyboard accessibility, and large result sets.
+- [ ] Add table virtualization only after measured record volumes justify it.
 
 ## Phase 9 — Containers and CI/CD
-- [ ] Use multi-stage non-root API, worker and frontend images.
-- [ ] Require pytest, focused Ruff checks, frontend tests/build, and container builds on PRs.
-- [ ] Add dependency/container scanning and secret scanning.
-- [ ] Deploy only after checks and migration review; document rollback.
+- [x] Build API, worker, and frontend containers in CI.
+- [x] Run backend tests, focused Ruff checks, Alembic smoke test, and frontend production build in CI.
+- [ ] Confirm each Dockerfile uses a non-root runtime and minimal production image; resolve any container hardening gaps found by review.
+- [ ] Add dependency, container-image, and secret scanning to CI.
+- [ ] Make successful CI a required branch-protection check and document deploy rollback steps.
+- [ ] Re-run the pipeline and resolve its actual failure before merge; current workflow evidence is a failed run with unavailable logs.
 
 ## Phase 10 — End-to-end sign-off
-- [ ] Test large files, malformed rows, retries, duplicate submissions, stale jobs and provider outages.
-- [ ] Test backup/restore and migration recovery strategy.
-- [ ] Verify production health and permissions without exposing secrets.
-- [ ] Run the final Windows Docker Compose workflow with fictional sample data.
-- [ ] Record unmet objectives and obtain explicit release approval.
+- [ ] Test large files, malformed rows, retry/resume, duplicate submissions, stale jobs, and Redis/provider outages in an isolated environment.
+- [ ] Test backup/restore and migration recovery.
+- [ ] Verify production health, service permissions, CORS, TLS, and secret configuration without revealing credentials.
+- [ ] Run the Windows Docker Compose workflow with fictional sample data and capture the results.
+- [ ] Complete approved BRS/KRA/commercial provider onboarding and integration tests. No live external registry connection is claimed until access is authorized and configured.
+- [ ] Record residual risks and obtain explicit release approval.
 
 ## Non-negotiable safety rules
 - Never paste secrets into chat or commit them.
 - Never run destructive SQL or process queued production jobs as a test.
 - Never stamp an existing database until its schema has been compared to the baseline.
 - Fuzzy name matches are review candidates, not proof of identity.
-- CI checks must pass; do not mask failures with continue-on-error.
+- Never mark CI green without an observed successful run.
+- Do not expose operator-only key administration as tenant self-service without a real identity and tenant authorization layer.
