@@ -2,18 +2,20 @@ import csv,io,logging,uuid
 from datetime import datetime,timezone
 from fastapi import APIRouter,Depends,File,HTTPException,Query,UploadFile,Header
 from fastapi.responses import StreamingResponse
-from rapidfuzz import fuzz
 from sqlalchemy import select,func,or_
 from sqlalchemy.orm import Session
 from .config import settings
 from .database import get_db
-from .models import Organization,IngestionJob,AuditLog
+from .models import Organization,OrganizationRecordVersion,IngestionJob,AuditLog
 from .security import require_api_key
 from .ingestion.parser_csv import iter_csv_records
 from .ingestion.normalizer import normalize_record,normalize_identifier,normalize_legal_name
 from .storage import upload_bytes,StorageNotConfigured
 router=APIRouter();log=logging.getLogger(__name__)
-def org_out(o):return {'id':o.id,'legal_name':o.legal_name,'registration_number':o.registration_number,'status':o.status,'registry_payload':o.registry_payload or {},'source_file':o.source_file,'source_row':o.source_row,'created_at':o.created_at.isoformat() if o.created_at else None,'updated_at':o.updated_at.isoformat() if o.updated_at else None}
+def org_out(o):
+ return {'id':o.id,'legal_name':o.legal_name,'registration_number':o.registration_number,'tax_pin':o.tax_pin,'status':o.status,'registry_payload':o.registry_payload or {},'source':{'name':o.source_name,'file':o.source_file,'row':o.source_row,'record_id':o.source_record_id,'published_at':o.source_published_at.isoformat() if o.source_published_at else None},'data_quality_status':o.data_quality_status,'last_seen_at':o.last_seen_at.isoformat() if o.last_seen_at else None,'created_at':o.created_at.isoformat() if o.created_at else None,'updated_at':o.updated_at.isoformat() if o.updated_at else None}
+def snapshot(org):
+ return {'legal_name':org.legal_name,'normalized_legal_name':org.normalized_legal_name,'registration_number':org.registration_number,'normalized_registration_number':org.normalized_registration_number,'tax_pin':org.tax_pin,'normalized_tax_pin':org.normalized_tax_pin,'status':org.status,'registry_payload':org.registry_payload or {},'data_quality_status':org.data_quality_status}
 @router.get('/api/v1/registry/lookup',dependencies=[Depends(require_api_key)])
 def lookup(reg_no:str|None=None,tax_pin:str|None=None,db:Session=Depends(get_db)):
  if not reg_no and not tax_pin:raise HTTPException(422,'Provide reg_no or tax_pin')
@@ -21,27 +23,36 @@ def lookup(reg_no:str|None=None,tax_pin:str|None=None,db:Session=Depends(get_db)
  col=Organization.normalized_registration_number if reg_no else Organization.normalized_tax_pin
  org=db.scalar(select(Organization).where(col==ident).limit(1))
  if not org:return {'status':'not_found','found':False,'organization':None,'source':'internal_registry'}
- return {'status':'record_found','found':True,'match_type':'exact_identifier','organization':org_out(org),'source':'internal_registry','last_imported_at':org.updated_at.isoformat() if org.updated_at else None,'verification_note':'A local record is not authoritative verification.'}
+ return {'status':'record_found','found':True,'match_type':'exact_identifier','organization':org_out(org),'source':'internal_registry','last_imported_at':org.updated_at.isoformat() if org.updated_at else None,'verification_note':'Imported registry data is evidence for review, not authoritative verification by itself.'}
 @router.get('/api/v1/registry/search',dependencies=[Depends(require_api_key)])
 def search(q:str=Query(min_length=2,max_length=200),limit:int=Query(default=20,ge=1,le=100),db:Session=Depends(get_db)):
- norm=normalize_legal_name(q) or '';rows=db.scalars(select(Organization).where(Organization.normalized_legal_name.ilike(f'%{norm}%')).limit(limit)).all()
- if not rows:
-  candidates=db.scalars(select(Organization).limit(500)).all();ranked=sorted(((fuzz.WRatio(norm,o.normalized_legal_name or ''),o) for o in candidates),key=lambda x:x[0],reverse=True);rows=[o for score,o in ranked[:limit] if score>=65]
- return {'items':[org_out(o) for o in rows],'count':len(rows),'query':q}
+ norm=normalize_legal_name(q) or ''
+ stmt=select(Organization).where(Organization.normalized_legal_name.ilike(f'%{norm}%'))
+ rows=db.scalars(stmt.order_by(Organization.normalized_legal_name).limit(limit)).all()
+ # Use the PostgreSQL trigram index for fuzzy matching; never scan a capped arbitrary
+ # subset of the warehouse and pretend it represents a global fuzzy search.
+ if not rows and db.get_bind().dialect.name=='postgresql':
+  rows=db.scalars(select(Organization).where(func.similarity(Organization.normalized_legal_name,norm)>=0.25).order_by(func.similarity(Organization.normalized_legal_name,norm).desc()).limit(limit)).all()
+ return {'items':[org_out(o) for o in rows],'count':len(rows),'query':q,'match_mode':'substring' if rows and any(norm in (o.normalized_legal_name or '') for o in rows) else ('postgres_trigram' if rows else 'no_match')}
 @router.get('/api/v1/organizations',dependencies=[Depends(require_api_key)])
 def list_orgs(page:int=Query(default=1,ge=1),page_size:int=Query(default=25,ge=1,le=100),q:str|None=None,db:Session=Depends(get_db)):
  stmt=select(Organization)
- if q:stmt=stmt.where(or_(Organization.normalized_legal_name.ilike(f'%{q.upper()}%'),Organization.normalized_registration_number.ilike(f'%{q.upper()}%')))
- total=db.scalar(select(func.count()).select_from(stmt.subquery())) or 0;rows=db.scalars(stmt.order_by(Organization.legal_name).offset((page-1)*page_size).limit(page_size)).all()
+ if q:
+  norm=normalize_legal_name(q) or ''
+  stmt=stmt.where(or_(Organization.normalized_legal_name.ilike(f'%{norm}%'),Organization.normalized_registration_number.ilike(f'%{normalize_identifier(q)}%')))
+ total=db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+ rows=db.scalars(stmt.order_by(Organization.legal_name).offset((page-1)*page_size).limit(page_size)).all()
  return {'items':[org_out(o) for o in rows],'total':total,'page':page,'page_size':page_size}
 @router.post('/api/v1/ingestion/uploads',dependencies=[Depends(require_api_key)])
 async def upload(file:UploadFile=File(...),db:Session=Depends(get_db),correlation_id:str|None=Header(default=None,alias='X-Correlation-ID')):
- name=(file.filename or 'upload.csv').replace('\\','/').split('/')[-1];suffix='.'+name.rsplit('.',1)[-1].lower() if '.' in name else ''
+ name=(file.filename or 'upload.csv').replace('\\','/').split('/')[-1]
+ suffix='.'+name.rsplit('.',1)[-1].lower() if '.' in name else ''
  if suffix not in {'.csv','.pdf'}:raise HTTPException(415,'Only CSV and PDF files are accepted')
  data=await file.read(settings.max_upload_bytes+1)
  if len(data)>settings.max_upload_bytes:raise HTTPException(413,'File exceeds configured upload limit')
  if not data:raise HTTPException(400,'Uploaded file is empty')
- job=IngestionJob(file_name=name,status='PROCESSING');db.add(job);db.flush();key=f'registry-uploads/{job.id}/{uuid.uuid4().hex}-{name}'
+ job=IngestionJob(file_name=name,status='PROCESSING');db.add(job);db.flush()
+ key=f'registry-uploads/{job.id}/{uuid.uuid4().hex}-{name}'
  try:
   try:upload_bytes(key,data,file.content_type or 'application/octet-stream');job.object_key=key
   except StorageNotConfigured:
@@ -51,23 +62,43 @@ async def upload(file:UploadFile=File(...),db:Session=Depends(get_db),correlatio
    log.exception('R2 upload failed correlation_id=%s',correlation_id)
    if settings.app_env.lower()=='production':raise HTTPException(502,'Unable to store original file') from exc
    job.error_summary='R2 upload failed in development mode'
-  if suffix=='.pdf':job.status='NEEDS_PDF_PROCESSING';job.error_summary='PDF stored if R2 is configured; PDF text extraction and record ingestion are not implemented in this release.'
+  if suffix=='.pdf':
+   job.status='NEEDS_PDF_PROCESSING'
+   job.error_summary='PDF stored if R2 is configured; text extraction and record ingestion are not implemented.'
   else:
-   inserted=skipped=processed=0
+   inserted=updated=skipped=processed=0
    for row_num,row in iter_csv_records(data,settings.max_records_per_file):
     processed+=1
     try:
-     rec=normalize_record(row);reg=rec.get('normalized_registration_number');existing=db.scalar(select(Organization).where(Organization.normalized_registration_number==reg).limit(1)) if reg else None
+     rec=normalize_record(row)
+     reg=rec.get('normalized_registration_number');pin=rec.get('normalized_tax_pin')
+     existing=None
+     if reg:existing=db.scalar(select(Organization).where(Organization.normalized_registration_number==reg).limit(1))
+     if existing is None and not reg and pin:existing=db.scalar(select(Organization).where(Organization.normalized_tax_pin==pin).limit(1))
      if existing:
+      old_snapshot=snapshot(existing)
       for k,v in rec.items():setattr(existing,k,v)
-      existing.source_file=name;existing.source_row=row_num
-     else:db.add(Organization(**rec,source_file=name,source_row=row_num));inserted+=1
-    except ValueError:skipped+=1
-   job.records_processed=processed;job.records_inserted=inserted;job.records_skipped=skipped;job.status='COMPLETED_WITH_ERRORS' if skipped else 'COMPLETED';job.completed_at=datetime.now(timezone.utc)
-  db.add(AuditLog(action='registry_ingestion',actor='internal-service',file_name=name,details={'job_id':job.id,'status':job.status,'correlation_id':correlation_id}));db.commit();db.refresh(job)
+      existing.source_file=name;existing.source_row=row_num;existing.source_name='uploaded_dataset'
+      existing.source_record_id=reg or pin;existing.last_seen_at=datetime.now(timezone.utc);existing.data_quality_status='IMPORTED_UNVERIFIED'
+      db.flush()
+      db.add(OrganizationRecordVersion(organization_id=existing.id,change_type='UPDATED',snapshot={'before':old_snapshot,'after':snapshot(existing)},source_name=existing.source_name,source_file=name,source_row=row_num))
+      updated+=1
+     else:
+      org=Organization(**rec,source_file=name,source_row=row_num,source_name='uploaded_dataset',source_record_id=reg or pin,last_seen_at=datetime.now(timezone.utc),data_quality_status='IMPORTED_UNVERIFIED')
+      db.add(org);db.flush()
+      db.add(OrganizationRecordVersion(organization_id=org.id,change_type='CREATED',snapshot={'after':snapshot(org)},source_name=org.source_name,source_file=name,source_row=row_num))
+      inserted+=1
+    except ValueError:
+     skipped+=1
+   job.records_processed=processed;job.records_inserted=inserted;job.records_updated=updated;job.records_skipped=skipped
+   job.status='COMPLETED_WITH_ERRORS' if skipped else 'COMPLETED';job.completed_at=datetime.now(timezone.utc)
+  db.add(AuditLog(action='registry_ingestion',actor='internal-service',file_name=name,details={'job_id':job.id,'status':job.status,'correlation_id':correlation_id,'records_processed':job.records_processed,'records_inserted':job.records_inserted,'records_updated':job.records_updated,'records_skipped':job.records_skipped}))
+  db.commit();db.refresh(job)
   return {'job_id':job.id,'file_name':job.file_name,'status':job.status,'records_processed':job.records_processed,'records_inserted':job.records_inserted,'records_updated':job.records_updated,'records_skipped':job.records_skipped,'error_summary':job.error_summary}
  except HTTPException:db.rollback();raise
- except Exception as exc:db.rollback();log.exception('Ingestion failed correlation_id=%s',correlation_id);raise HTTPException(500,'Ingestion failed; inspect server diagnostics') from exc
+ except Exception as exc:
+  db.rollback();log.exception('Ingestion failed correlation_id=%s',correlation_id)
+  raise HTTPException(500,'Ingestion failed; inspect server diagnostics') from exc
 @router.get('/api/v1/ingestion/jobs',dependencies=[Depends(require_api_key)])
 def jobs(page:int=Query(default=1,ge=1),page_size:int=Query(default=25,ge=1,le=100),db:Session=Depends(get_db)):
  rows=db.scalars(select(IngestionJob).order_by(IngestionJob.created_at.desc()).offset((page-1)*page_size).limit(page_size)).all()
@@ -78,7 +109,9 @@ def metrics(db:Session=Depends(get_db)):
 @router.get('/api/v1/exports/organizations.csv',dependencies=[Depends(require_api_key)])
 def export_csv(db:Session=Depends(get_db)):
  def stream():
-  buffer=io.StringIO();writer=csv.writer(buffer);writer.writerow(['legal_name','registration_number','status','source_file','source_row']);yield buffer.getvalue();buffer.seek(0);buffer.truncate(0)
+  buffer=io.StringIO();writer=csv.writer(buffer);writer.writerow(['legal_name','registration_number','tax_pin','status','source_name','source_file','source_row','data_quality_status']);yield buffer.getvalue();buffer.seek(0);buffer.truncate(0)
   for o in db.scalars(select(Organization).order_by(Organization.legal_name).yield_per(500)):
-   vals=[o.legal_name,o.registration_number or '',o.status,o.source_file or '',o.source_row or ''];safe=["'"+v if isinstance(v,str) and v.startswith(('=','+','-','@','\\t','\\r')) else v for v in vals];writer.writerow(safe);yield buffer.getvalue();buffer.seek(0);buffer.truncate(0)
+   vals=[o.legal_name,o.registration_number or '',o.tax_pin or '',o.status,o.source_name or '',o.source_file or '',o.source_row or '',o.data_quality_status]
+   safe=["'"+v if isinstance(v,str) and v.startswith(('=','+','-','@','\\t','\\r')) else v for v in vals]
+   writer.writerow(safe);yield buffer.getvalue();buffer.seek(0);buffer.truncate(0)
  return StreamingResponse(stream(),media_type='text/csv; charset=utf-8',headers={'Content-Disposition':'attachment; filename=pesaguard-registry-export.csv'})
