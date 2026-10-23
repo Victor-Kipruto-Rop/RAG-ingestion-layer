@@ -7,6 +7,8 @@ class Settings(BaseSettings):
  registry_api_keys:str=''
  cors_origins:str='http://localhost:5173'
  max_upload_bytes:int=52428800
+ max_direct_upload_bytes:int=5368709120
+ direct_upload_url_ttl_seconds:int=900
  max_records_per_file:int=1000000
  ingestion_batch_size:int=5000
  local_storage_path:str='./.registry-uploads'
