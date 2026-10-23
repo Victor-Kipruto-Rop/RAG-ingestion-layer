@@ -60,7 +60,7 @@ async def warehouse_access_telemetry(request,call_next):
     db.add(WarehouseAccessLog(request_id=request_id,caller_service=(request.headers.get('X-Caller-Service') or 'unknown')[:200],endpoint=path[:300],http_method=request.method[:12],response_status=response.status_code if response else 500,duration_ms=round(duration,3),outcome=outcome,query_type='organization_lookup' if path.endswith('query-organization') else 'telemetry'))
     db.commit()
   except Exception:
-   logging.exception('Unable to persist warehouse access telemetry request_id=%s',request_id)
+   log.exception('warehouse_access_telemetry_persist_failed',request_id=request_id)
 
 @app.middleware('http')
 async def request_observability(request:Request,call_next):
@@ -101,7 +101,7 @@ def ready():
   with engine.connect() as conn:conn.execute(text('SELECT 1'))
   return {'status':'ready','database':'healthy'}
  except Exception:
-  logging.exception('Database readiness check failed');raise HTTPException(503,detail={'status':'not_ready','database':'unavailable'})
+  log.exception('database_readiness_check_failed');raise HTTPException(503,detail={'status':'not_ready','database':'unavailable'})
 @app.get('/health',tags=['health'])
 def health():
  try:
