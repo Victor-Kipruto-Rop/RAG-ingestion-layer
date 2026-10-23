@@ -21,6 +21,13 @@ class Settings(BaseSettings):
  r2_secret_access_key:str=''
  r2_bucket_name:str=''
  r2_endpoint_url:str=''
+ redis_url:str=''
+ hmac_shared_secret:str=''
+ require_hmac:bool=False
+ hmac_clock_skew_seconds:int=300
+ hmac_nonce_ttl_seconds:int=600
+ registry_rate_limit_capacity:int=60
+ registry_rate_limit_refill_per_second:float=1.0
  db_pool_size:int=5
  db_max_overflow:int=5
  db_pool_timeout_seconds:int=30
