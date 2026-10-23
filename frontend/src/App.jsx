@@ -264,14 +264,25 @@ function DataSourcesPage({ request }) {
 
 function AuditLogsPage({ request }) {
   const [items, setItems] = useState([]);
+  const [offset, setOffset] = useState(0);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const load = async () => { setLoading(true); setError(''); try { const response = await request('/api/v1/audit/logs?limit=100'); const body = await response.json(); setItems(body.items || []); } catch(e) { setError(typeof e.message === 'string' ? e.message : 'Unable to load audit logs.'); } finally { setLoading(false); } };
-  useEffect(() => { load(); }, [request]);
-  return <div className="governance-workspace"><div className="page-heading"><div><div className="eyebrow-label">AUDIT & ACCOUNTABILITY</div><h1>Audit logs</h1><p>Inspect persisted ingestion and operator events. Sensitive raw credentials are not displayed.</p></div><button className="button-secondary" onClick={load} disabled={loading}><RefreshCw size={14} className={loading ? 'spin' : ''}/> Refresh</button></div>
-    {error && <div className="alert-banner error"><AlertTriangle size={16}/><span>{error}</span></div>}
-    <section className="panel"><div className="panel-heading"><div><h2>Recent audit events</h2><p>Latest 100 events returned by the backend.</p></div><span className="record-count">{items.length} events</span></div>
-      {!items.length ? <div className="keys-empty"><ScrollText size={22}/><strong>No audit events found</strong><span>Events appear when imports or operator key-management actions are recorded.</span></div> : <div className="table-scroll"><table className="data-table audit-table"><thead><tr><th>EVENT</th><th>ACTOR</th><th>FILE</th><th>DETAILS</th><th>TIME</th></tr></thead><tbody>{items.map(item => <tr key={item.id}><td><strong>{item.action}</strong></td><td>{item.actor}</td><td>{item.file_name || '—'}</td><td><code>{JSON.stringify(item.details || {}).slice(0,180)}</code></td><td>{dateLabel(item.created_at)}</td></tr>)}</tbody></table></div>}
+  const pageSize = 50;
+  const load = async (nextOffset = offset) => {
+    setLoading(true); setError('');
+    try {
+      const response = await request(`/api/v1/audit/logs?limit=${pageSize}&offset=${nextOffset}`);
+      const body = await response.json(); setItems(body.items || []); setTotal(Number(body.total || 0)); setOffset(nextOffset);
+    } catch(e) { setError(typeof e.message === 'string' ? e.message : 'Unable to load audit logs.'); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { load(0); }, [request]);
+  return <div className="governance-workspace"><div className="page-heading"><div><div className="eyebrow-label">AUDIT & ACCOUNTABILITY</div><h1>Audit logs</h1><p>Inspect persisted ingestion and operator events. Sensitive raw credentials are not displayed.</p></div><button className="button-secondary" onClick={() => load(offset)} disabled={loading}><RefreshCw size={14} className={loading ? 'spin' : ''}/> Refresh</button></div>
+    {error && <div className="alert-banner error" role="alert"><AlertTriangle size={16}/><span>{error}</span></div>}
+    <section className="panel"><div className="panel-heading"><div><h2>Audit events</h2><p>Showing {total ? offset + 1 : 0}–{Math.min(offset + items.length, total)} of {number(total)} events.</p></div><span className="record-count">{number(total)} events</span></div>
+      {!items.length && !loading ? <div className="keys-empty"><ScrollText size={22}/><strong>No audit events found</strong><span>Events appear when imports or operator key-management actions are recorded.</span></div> : <div className="table-scroll"><table className="data-table audit-table"><thead><tr><th>EVENT</th><th>ACTOR</th><th>FILE</th><th>DETAILS</th><th>TIME</th></tr></thead><tbody>{items.map(item => <tr key={item.id}><td><strong>{item.action}</strong></td><td>{item.actor}</td><td>{item.file_name || '—'}</td><td><code>{JSON.stringify(item.details || {}).slice(0,180)}</code></td><td>{dateLabel(item.created_at)}</td></tr>)}</tbody></table></div>}
+      <div className="table-pagination"><span>Page {Math.floor(offset / pageSize) + 1} of {Math.max(1, Math.ceil(total / pageSize))}</span><div><button className="button-secondary" onClick={() => load(Math.max(0, offset - pageSize))} disabled={loading || offset === 0}>Previous</button><button className="button-secondary" onClick={() => load(offset + pageSize)} disabled={loading || offset + items.length >= total || items.length === 0}>Next</button></div></div>
     </section>
   </div>;
 }
