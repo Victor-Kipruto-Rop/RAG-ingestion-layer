@@ -40,7 +40,10 @@ def iter_csv_file(file_obj, max_records: int):
     encoding = _detect_encoding(file_obj)
     sample_bytes = file_obj.read(8192)
     file_obj.seek(0)
-    sample = sample_bytes.decode(encoding)
+    try:
+        sample = sample_bytes.decode(encoding)
+    except UnicodeDecodeError as exc:
+        raise ValueError("CSV contains invalid text encoding; export as UTF-8 or Windows-1252") from exc
     try:
         dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
     except csv.Error:
