@@ -205,3 +205,19 @@ class ApiKey(Base):
  last_used_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
  revoked_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
  rotated_from_id:Mapped[str|None]=mapped_column(String(36),ForeignKey('api_keys.id'))
+
+
+class ApiKeySecurityEvent(Base):
+ __tablename__='api_key_security_events'
+ __table_args__=(Index('ix_api_key_security_events_created_at','created_at'),Index('ix_api_key_security_events_key_id','api_key_id'))
+ id:Mapped[str]=mapped_column(String(36),primary_key=True,default=lambda:str(uuid.uuid4()))
+ api_key_id:Mapped[str|None]=mapped_column(String(36),ForeignKey('api_keys.id',ondelete='SET NULL'),nullable=True)
+ key_prefix:Mapped[str|None]=mapped_column(String(40))
+ event_type:Mapped[str]=mapped_column(String(60),nullable=False)
+ expected_environment:Mapped[str|None]=mapped_column(String(16))
+ key_environment:Mapped[str|None]=mapped_column(String(16))
+ endpoint:Mapped[str]=mapped_column(String(300),nullable=False)
+ request_id:Mapped[str|None]=mapped_column(String(100))
+ source_ip:Mapped[str|None]=mapped_column(String(64))
+ details:Mapped[dict]=mapped_column(json_type,default=dict,nullable=False)
+ created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
