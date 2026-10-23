@@ -145,11 +145,23 @@ async def require_api_key(request:Request,x_api_key:str|None=Header(default=None
             # A misconfigured allowlist must not bypass environment isolation.
             if not settings.managed_api_keys_enabled:
                 raise HTTPException(503,'Managed API keys are disabled; this credential cannot fall back to legacy shared-key authentication.')
+            # Enforce the public environment prefix before DB lookup. Sandbox and production
+            # may use separate databases, so the other environment's key row may not exist
+            # here; clients should still receive an explicit environment-mismatch response.
+            parts=x_api_key.split('_',3)
+            prefix_environment=None
+            if len(parts)==4 and parts[0]=='pg' and parts[1] in {'sandbox','live'} and parts[2] and parts[3]:
+                prefix_environment='production' if parts[1]=='live' else 'sandbox'
+            expected_env=_effective_environment()
+            if prefix_environment and prefix_environment!=expected_env:
+                event_key={'key_prefix':'_'.join(parts[:3])}
+                _record_security_event(request,'environment_mismatch',event_key,prefix_environment,{'reason':'key_prefix_environment_mismatch','key_record_lookup':'not_required'})
+                raise HTTPException(403,detail={'code':'API_KEY_ENVIRONMENT_MISMATCH','message':f'This is a {prefix_environment} API key and can only be used with the {prefix_environment} datasource environment.','key_environment':prefix_environment,'request_environment':expected_env})
             managed=_managed_key_from_db(x_api_key)
             if not managed:
                 _record_security_event(request,'invalid_managed_key')
                 raise HTTPException(401,'Invalid, expired, or revoked API key')
-            expected_env=_effective_environment();key_env=managed['environment']
+            key_env=managed['environment']
             if key_env!=expected_env:
                 _record_security_event(request,'environment_mismatch',managed,key_env,{'reason':'key_used_in_wrong_environment'})
                 raise HTTPException(403,detail={'code':'API_KEY_ENVIRONMENT_MISMATCH','message':f'This is a {key_env} API key and can only be used with the {key_env} datasource environment.','key_environment':key_env,'request_environment':expected_env})
