@@ -160,11 +160,11 @@ def process_job(job_id):
      if job.attempts < settings.worker_max_attempts:
       job.status='QUEUED'
       if raw_import:raw_import.import_status='QUEUED'
-      job.next_attempt_at=now()+timedelta(seconds=max(1,settings.worker_retry_seconds)*(2**max(0,job.attempts-1)));job.error_summary=f'Attempt {job.attempts} failed; retry scheduled. {str(exc)[:500]}'
+      job.next_attempt_at=now()+timedelta(seconds=max(1,settings.worker_retry_seconds)*(2**max(0,job.attempts-1)));job.error_summary=f'Attempt {job.attempts} failed with {type(exc).__name__}; retry scheduled.'
      else:
       job.status='FAILED'
       if raw_import:raw_import.import_status='FAILED'
-      job.error_summary=f'Ingestion failed after {job.attempts} attempts: {str(exc)[:800]}';job.completed_at=now()
+      job.error_summary=f'Ingestion failed after {job.attempts} attempts ({type(exc).__name__}). Review sanitized row errors and server-side logs.';job.completed_at=now()
      retry_db.commit()
    log.error('job_processing_failed',job_id=job_id,error_type=type(exc).__name__)
 def recover_stale_jobs():
