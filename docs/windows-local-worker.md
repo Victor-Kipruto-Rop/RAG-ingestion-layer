@@ -73,14 +73,27 @@ Ports 8000 and 5173 bind to loopback only. The API and worker share the same env
 The Core API must call the datasource from its backend, never from browser code. Configure the Core API's server-side environment with the datasource base URL and the exact sandbox secret configured in `REGISTRY_API_KEYS`. Suggested variable names (use the actual names supported by the Core API repository):
 
 ```dotenv
-PESAGUARD_DATASOURCE_BASE_URL=http://host.docker.internal:8000
+PESAGUARD_DATASOURCE_BASE_URL=http://registry-api:8000
 PESAGUARD_DATASOURCE_API_KEY=<same-sandbox-secret-as-REGISTRY_API_KEYS>
 PESAGUARD_DATASOURCE_TIMEOUT_SECONDS=10
 ```
 
-Use `http://host.docker.internal:8000` when the Core API runs in another Docker Compose project on the same Windows machine. If the Core API service is added to this same Compose network, use `http://registry-api:8000`. If the Core API runs directly on Windows, use `http://localhost:8000`. For a deployed Core API, use the deployed datasource HTTPS URL and a secret stored in that backend's secret manager.
+This Compose stack creates the named Docker network `pesaguard-internal`. If the Core API is in a separate Compose project, attach its service to that existing network and declare the network as external in the Core API Compose file:
 
-The datasource expects `X-API-Key: <secret>` for protected API routes. Never add this key to `VITE_*` variables or React code. The suggested Core API variable names are integration guidance; this repository does not configure the separate Core API service.
+```yaml
+services:
+  pesaguard-core-api:
+    networks:
+      - default
+      - pesaguard-internal
+networks:
+  pesaguard-internal:
+    external: true
+```
+
+Start the datasource stack first so the named network exists, then restart the Core API container. Use `http://registry-api:8000` for container-to-container traffic on that network. If the Core API runs directly on Windows, use `http://localhost:8000`. For a deployed Core API, use the deployed datasource HTTPS URL and a secret stored in that backend's secret manager.
+
+The datasource expects `X-API-Key: <secret>` for protected API routes. Never add this key to `VITE_*` variables or React code. The suggested Core API variable names are integration guidance; this repository does not configure the separate Core API service or add its client code.
 
 ## 5. Verify worker processing
 
