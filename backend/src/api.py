@@ -297,3 +297,46 @@ def data_quality_review_queue(
             'updated_at':org.updated_at.isoformat() if org.updated_at else None
         })
     return {'items':items,'total':int(total),'page':page,'page_size':page_size,'reason_filter':reason,'stale_after_days':stale_after_days,'warning':'Review candidates only. Missing fields and stale records are not proof of fraud or invalid registration.'}
+
+
+from .providers.registry import default_provider_registry
+class ProviderCheckRequest(BaseModel):
+    registration_number:str|None=Field(default=None,min_length=1,max_length=120)
+    tax_pin:str|None=Field(default=None,min_length=1,max_length=80)
+
+@router.get('/api/v1/providers/status', dependencies=[Depends(require_api_key)])
+def provider_status():
+    return {'providers':default_provider_registry().statuses(),'note':'CONFIGURED means an adapter is registered; it does not mean a provider check succeeded.'}
+
+@router.post('/api/v1/providers/{provider_key}/check', dependencies=[Depends(require_api_key)])
+def provider_check(provider_key:str,payload:ProviderCheckRequest,request:Request,db:Session=Depends(get_db)):
+    has_registration=bool(payload.registration_number and payload.registration_number.strip())
+    has_pin=bool(payload.tax_pin and payload.tax_pin.strip())
+    if has_registration==has_pin:
+        raise HTTPException(422,'Provide exactly one of registration_number or tax_pin')
+    from .ingestion.normalizer import normalize_identifier
+    registration=normalize_identifier(payload.registration_number) if has_registration else None
+    tax_pin=normalize_identifier(payload.tax_pin) if has_pin else None
+    result=default_provider_registry().check(provider_key,registration_number=registration,tax_pin=tax_pin)
+    db.add(AuditLog(
+        action='external_provider_check_requested',
+        actor='internal-service',
+        details={
+            'provider_key':provider_key[:100],
+            'provider_status':result.status,
+            'reason_code':result.reason_code,
+            'request_id':getattr(request.state,'request_id',None),
+            'external_call_performed':result.status not in {'NOT_CONFIGURED'}
+        }
+    ))
+    db.commit()
+    return {
+        'provider':result.provider,
+        'status':result.status,
+        'checked_at':result.checked_at,
+        'evidence':result.evidence,
+        'reason_code':result.reason_code,
+        'message':result.message,
+        'authoritative_verification':False if result.status!='VERIFIED' else True,
+        'note':'Only configured adapters can perform checks. Provider responses must be evaluated under an approved verification policy.'
+    }
