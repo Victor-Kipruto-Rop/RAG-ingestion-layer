@@ -77,3 +77,24 @@ def download_spooled_file(key, max_memory_bytes=1024 * 1024):
     finally:
         if body is not None: body.close()
         spool.close()
+
+
+def presign_upload_url(key, content_type, expires_seconds):
+    if not configured():
+        raise StorageNotConfigured('Cloudflare R2 is not configured')
+    return client().generate_presigned_url('put_object', Params={'Bucket': settings.r2_bucket_name, 'Key': key, 'ContentType': content_type}, ExpiresIn=max(60, int(expires_seconds)))
+
+def head_object(key):
+    if not configured():
+        raise StorageNotConfigured('Cloudflare R2 is not configured')
+    return client().head_object(Bucket=settings.r2_bucket_name, Key=key)
+
+def read_object_prefix(key, max_bytes=4096):
+    if not configured():
+        raise StorageNotConfigured('Cloudflare R2 is not configured')
+    response = client().get_object(Bucket=settings.r2_bucket_name, Key=key, Range=f'bytes=0-{max(0, int(max_bytes)-1)}')
+    body = response['Body']
+    try:
+        return body.read(max_bytes)
+    finally:
+        body.close()
