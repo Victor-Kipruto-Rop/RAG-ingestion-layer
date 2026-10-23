@@ -73,7 +73,7 @@ The API returns found, a matching organization when present, source metadata, da
 - `POST /api/v1/ingestion/uploads`
 - `GET /api/v1/ingestion/jobs`
 - `GET /api/v1/ingestion/jobs/{job_id}/errors`
-- `GET /api/v1/metrics/summary`
+- `GET /api/v1/metrics/summary`\n- `GET /api/v1/reviews/queue` — review-only queue of imported records\n- `GET /api/v1/reviews/{organization_id}/decisions`\n- `POST /api/v1/reviews/{organization_id}/decisions` — append an auditable review decision (requires `reviews:write` on managed keys)
 - `GET /api/v1/exports/organizations.csv`
 
 ## Production requirements and current boundaries
