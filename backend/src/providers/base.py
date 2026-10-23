@@ -38,6 +38,24 @@ class ProviderResult:
     evidence: list[dict[str, Any]] = field(default_factory=list)
     retryable: bool = False
 
+    def __post_init__(self) -> None:
+        raw_status = self.status.value if isinstance(self.status, ProviderStatus) else str(self.status).strip().lower()
+        aliases = {
+            "match": ProviderStatus.VERIFIED,
+            "matched": ProviderStatus.VERIFIED,
+            "no_match": ProviderStatus.NOT_FOUND,
+            "not_found": ProviderStatus.NOT_FOUND,
+            "pending": ProviderStatus.MANUAL_REVIEW,
+            "manual_review": ProviderStatus.MANUAL_REVIEW,
+            "verified": ProviderStatus.VERIFIED,
+            "unavailable": ProviderStatus.UNAVAILABLE,
+            "error": ProviderStatus.ERROR,
+        }
+        normalized = aliases.get(raw_status, ProviderStatus.ERROR)
+        object.__setattr__(self, "status", normalized)
+        if self.matched is None and normalized in {ProviderStatus.VERIFIED, ProviderStatus.NOT_FOUND}:
+            object.__setattr__(self, "matched", normalized == ProviderStatus.VERIFIED)
+
     def to_dict(self) -> dict[str, Any]:
         checked_at = self.checked_at
         if checked_at is None:
