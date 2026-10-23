@@ -12,6 +12,7 @@ class Settings(BaseSettings):
  worker_poll_seconds:float=2.0
  worker_max_attempts:int=3
  worker_retry_seconds:int=30
+ worker_stale_after_seconds:int=900
  r2_account_id:str=''
  r2_access_key_id:str=''
  r2_secret_access_key:str=''
