@@ -1,6 +1,6 @@
 import csv,io,logging,uuid,hashlib
 from datetime import datetime,timezone
-from fastapi import APIRouter,Depends,File,HTTPException,Query,UploadFile,Header
+from fastapi import APIRouter,Depends,File,HTTPException,Query,UploadFile,Header,Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select,func,or_
 from sqlalchemy.orm import Session
@@ -70,7 +70,8 @@ def create_source(payload:dict,db:Session=Depends(get_db)):
  source=RegistrySource(source_key=key,display_name=name,jurisdiction=str(payload.get('jurisdiction') or 'KE')[:100],source_type=str(payload.get('source_type') or 'IMPORTED_DATASET')[:40],authority_url=payload.get('authority_url'),licence_reference=payload.get('licence_reference'),freshness_sla_hours=payload.get('freshness_sla_hours'),precedence=int(payload.get('precedence',100)),enabled=bool(payload.get('enabled',True)),notes=payload.get('notes'))
  db.add(source);db.commit();db.refresh(source);return source_out(source)
 @router.post('/api/v1/ingestion/uploads',dependencies=[Depends(require_api_key)],status_code=202)
-async def upload(file:UploadFile=File(...),db:Session=Depends(get_db),correlation_id:str|None=Header(default=None,alias='X-Correlation-ID'),idempotency_key:str|None=Header(default=None,alias='Idempotency-Key'),source_key:str|None=Header(default=None,alias='X-Registry-Source')):
+async def upload(request:Request,file:UploadFile=File(...),db:Session=Depends(get_db),correlation_id:str|None=Header(default=None,alias='X-Correlation-ID'),idempotency_key:str|None=Header(default=None,alias='Idempotency-Key'),source_key:str|None=Header(default=None,alias='X-Registry-Source')):
+ correlation_id=(correlation_id or getattr(request.state,'request_id',None) or str(uuid.uuid4()))[:100]
  name=(file.filename or 'upload.csv').replace(chr(92), '/').split('/')[-1]
  suffix='.'+name.rsplit('.',1)[-1].lower() if '.' in name else ''
  if suffix not in {'.csv','.pdf'}:raise HTTPException(415,'Only CSV and PDF files are accepted')
@@ -93,7 +94,7 @@ async def upload(file:UploadFile=File(...),db:Session=Depends(get_db),correlatio
  if suffix=='.pdf' and not prefix.startswith(b'%PDF-'):raise HTTPException(415,'File extension is PDF but the file signature is invalid')
  if suffix=='.csv' and b'\x00' in prefix:raise HTTPException(415,'CSV contains binary data')
  file.file.seek(0)
- job=IngestionJob(file_name=name,content_type=file.content_type or 'application/octet-stream',status='QUEUED',source_id=source.id if source else None,source_name=source.source_key if source else 'uploaded_dataset',idempotency_key=idempotency_key)
+ job=IngestionJob(file_name=name,correlation_id=correlation_id,content_type=file.content_type or 'application/octet-stream',status='QUEUED',source_id=source.id if source else None,source_name=source.source_key if source else 'uploaded_dataset',idempotency_key=idempotency_key)
  db.add(job);db.flush()
  key=f'registry-uploads/{job.id}/{uuid.uuid4().hex}-{name}'
  try:
@@ -102,7 +103,7 @@ async def upload(file:UploadFile=File(...),db:Session=Depends(get_db),correlatio
   db.add(WarehouseRawImport(ingestion_job_id=job.id,object_key=key,original_filename=name,content_type=file.content_type or 'application/octet-stream',byte_size=size,sha256_hex=digest.hexdigest(),source_id=source.id if source else None,source_name=source.source_key if source else 'uploaded_dataset',uploaded_by='internal-service',import_status='QUEUED',metadata_json={'correlation_id':correlation_id,'file_suffix':suffix}))
   db.add(AuditLog(action='registry_ingestion_queued',actor='internal-service',file_name=name,details={'job_id':job.id,'source_key':source.source_key if source else None,'correlation_id':correlation_id}))
   db.commit();db.refresh(job)
-  return {'job_id':job.id,'file_name':job.file_name,'status':job.status,'records_processed':0,'records_inserted':0,'records_updated':0,'records_skipped':0,'message':'Upload stored; a worker will process this job asynchronously.'}
+  return {'job_id':job.id,'file_name':job.file_name,'correlation_id':job.correlation_id,'status':job.status,'records_processed':0,'records_inserted':0,'records_updated':0,'records_skipped':0,'message':'Upload stored; a worker will process this job asynchronously.'}
  except StorageNotConfigured as exc:db.rollback();raise HTTPException(503,'Object storage is not configured') from exc
  except Exception as exc:
   db.rollback();log.exception('Unable to queue ingestion correlation_id=%s',correlation_id)
@@ -110,7 +111,7 @@ async def upload(file:UploadFile=File(...),db:Session=Depends(get_db),correlatio
 @router.get('/api/v1/ingestion/jobs',dependencies=[Depends(require_api_key)])
 def jobs(page:int=Query(default=1,ge=1),page_size:int=Query(default=25,ge=1,le=100),db:Session=Depends(get_db)):
  rows=db.scalars(select(IngestionJob).order_by(IngestionJob.created_at.desc()).offset((page-1)*page_size).limit(page_size)).all()
- return {'items':[{'id':j.id,'file_name':j.file_name,'status':j.status,'attempts':j.attempts,'source_name':j.source_name,'records_processed':j.records_processed,'records_inserted':j.records_inserted,'records_updated':j.records_updated,'records_skipped':j.records_skipped,'error_summary':j.error_summary,'created_at':j.created_at.isoformat() if j.created_at else None,'started_at':j.started_at.isoformat() if j.started_at else None,'completed_at':j.completed_at.isoformat() if j.completed_at else None} for j in rows]}
+ return {'items':[{'id':j.id,'file_name':j.file_name,'correlation_id':j.correlation_id,'status':j.status,'attempts':j.attempts,'source_name':j.source_name,'records_processed':j.records_processed,'records_inserted':j.records_inserted,'records_updated':j.records_updated,'records_skipped':j.records_skipped,'error_summary':j.error_summary,'created_at':j.created_at.isoformat() if j.created_at else None,'started_at':j.started_at.isoformat() if j.started_at else None,'completed_at':j.completed_at.isoformat() if j.completed_at else None} for j in rows]}
 @router.get('/api/v1/ingestion/jobs/{job_id}/errors',dependencies=[Depends(require_api_key)])
 def job_errors(job_id:str,page:int=Query(default=1,ge=1),page_size:int=Query(default=100,ge=1,le=500),db:Session=Depends(get_db)):
  if not db.get(IngestionJob,job_id):raise HTTPException(404,'Ingestion job not found')
