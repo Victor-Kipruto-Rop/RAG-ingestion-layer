@@ -16,10 +16,12 @@ This roadmap is the release checklist for taking PesaGuard Registry Datasource f
 - [ ] Review unique identifier indexes and add supported text-search indexes only after duplicate/data checks.
 
 ## Phase 3 — Streaming ingestion and dead-letter isolation
-- [ ] Stream CSV records and bounded PDF data without whole-file RAM loading.
-- [ ] Add durable dead-letter records with source job, row number, safe error category and restricted diagnostics.
-- [ ] Ensure a bad row does not roll back valid rows; add transaction batching and idempotency tests.
-- [ ] Preserve bounded PDF/OCR behavior and manual-review status.
+- [x] Stream CSV records through disk-backed spooling and bound PDF diagnostics.
+- [x] Persist sanitized dead-letter records with source job, row number, safe error category and restricted diagnostics.
+- [x] Commit CSV rows in batches and persist row progress for resumable processing.
+- [x] Preserve bounded PDF/OCR behavior and manual-review status.
+- [x] Add per-job inspection, retry from committed checkpoints, paginated DLQ inspection, and streamed spreadsheet-safe error CSV exports.
+- [ ] Add integration tests for transient storage/database failures, stale-job recovery, and direct-upload integrity against the actual target database/storage stack.
 
 ## Phase 4 — Entity resolution
 - [ ] Normalize legal suffixes and names.
