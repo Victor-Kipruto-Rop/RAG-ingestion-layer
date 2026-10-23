@@ -8,7 +8,7 @@ This roadmap tracks code delivered on feature branches. Production rollout remai
 - [x] Add key scopes, expiration, rotation, revocation and security events.
 - [x] Add operator-only management endpoints and audit events.
 - [ ] Configure a strong DATASOURCE_ADMIN_TOKEN and apply migration separately in each environment.
-- [ ] Add browser/API integration tests against a disposable database.
+- [x] Add unit tests for key prefixes, hash-only generation, environment selection and scope mapping.\n- [ ] Add browser/API integration tests against a disposable database.
 
 ## Phase 2 — Ingestion reliability and data quality
 - [x] Add quality summary metrics and review-only fuzzy match candidates.
