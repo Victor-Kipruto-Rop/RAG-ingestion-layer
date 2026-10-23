@@ -39,7 +39,7 @@ async def lifespan(app):
  validate_runtime_config()
  yield
 app=FastAPI(title=settings.app_name,version='1.0.0',description='Internal registry ingestion and lookup API',lifespan=lifespan)
-app.add_middleware(CORSMiddleware,allow_origins=settings.cors_origin_list,allow_credentials=False,allow_methods=['GET','POST','PATCH','OPTIONS'],allow_headers=['Content-Type','X-API-Key','X-Correlation-ID','Idempotency-Key','X-Registry-Source'])
+app.add_middleware(CORSMiddleware,allow_origins=settings.cors_origin_list,allow_credentials=False,allow_methods=['GET','POST','PATCH','OPTIONS'],allow_headers=['Content-Type','X-API-Key','X-Correlation-ID','Idempotency-Key','X-Registry-Source','X-Internal-Signature','X-Internal-Timestamp','X-Internal-Nonce','X-Metrics-Token','X-Caller-Service'])
 app.include_router(router)
 @app.middleware('http')
 async def warehouse_access_telemetry(request,call_next):
