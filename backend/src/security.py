@@ -140,6 +140,11 @@ async def require_api_key(request:Request,x_api_key:str|None=Header(default=None
     else:
         if not x_api_key: raise HTTPException(401,'Invalid or missing API key')
         managed_prefix=x_api_key.startswith('pg_sandbox_') or x_api_key.startswith('pg_live_')
+        # Never let environment-prefixed credentials fall back to the legacy shared-key list.
+        # Otherwise disabling managed keys could accidentally allow a sandbox credential in production.
+        if managed_prefix and not settings.managed_api_keys_enabled:
+            _record_security_event(request,'managed_keys_disabled')
+            raise HTTPException(401,'Environment-scoped API keys are disabled; this credential cannot use legacy-key authentication.')
         if managed_prefix and settings.managed_api_keys_enabled:
             managed=_managed_key_from_db(x_api_key)
             if not managed:
