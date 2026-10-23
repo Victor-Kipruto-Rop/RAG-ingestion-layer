@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime,timezone
-from sqlalchemy import DateTime,Integer,BigInteger,String,Text,UniqueConstraint,Index,ForeignKey,Boolean
+from sqlalchemy import DateTime,Integer,BigInteger,String,Text,UniqueConstraint,Index,ForeignKey,Boolean,CheckConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.types import JSON
 from sqlalchemy.orm import Mapped,mapped_column
@@ -182,3 +182,26 @@ class ApiKeyUsageEvent(Base):
  duration_ms:Mapped[float]=mapped_column(nullable=False,default=0)
  request_id:Mapped[str|None]=mapped_column(String(100))
  created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
+
+
+class ApiKey(Base):
+ __tablename__='api_keys'
+ __table_args__=(
+  Index('ix_api_keys_environment_status','environment','status'),
+  Index('ix_api_keys_created_at','created_at'),
+  CheckConstraint("environment IN ('sandbox','production')",name='ck_api_keys_environment'),
+  CheckConstraint("status IN ('active','revoked')",name='ck_api_keys_status'),
+ )
+ id:Mapped[str]=mapped_column(String(36),primary_key=True,default=lambda:str(uuid.uuid4()))
+ name:Mapped[str]=mapped_column(String(120),nullable=False)
+ key_prefix:Mapped[str]=mapped_column(String(40),unique=True,nullable=False)
+ secret_hash:Mapped[str]=mapped_column(String(64),unique=True,nullable=False)
+ environment:Mapped[str]=mapped_column(String(16),nullable=False)
+ scopes:Mapped[list]=mapped_column(json_type,default=lambda:['registry:read'],nullable=False)
+ status:Mapped[str]=mapped_column(String(16),default='active',nullable=False)
+ expires_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
+ created_by:Mapped[str]=mapped_column(String(200),nullable=False)
+ created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
+ last_used_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
+ revoked_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
+ rotated_from_id:Mapped[str|None]=mapped_column(String(36),ForeignKey('api_keys.id'))
