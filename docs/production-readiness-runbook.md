@@ -21,6 +21,7 @@
 
 ## Production connectivity validation (non-destructive)
 
+- For a manual GitHub Actions run, select `preflight` first. It checks database `SELECT 1` and private R2 bucket access without claiming jobs. `ingest` requires an explicit operator choice. Scheduled runs process bounded batches as configured.
 - Call `GET /health/live` and `GET /health/ready` on the deployed API.
 - Validate R2 connectivity with an approved, read-only object check using a known non-sensitive test object. Do not upload or delete production objects as an incidental test.
 - Run a read-only database query such as `SELECT 1` using the worker's runtime configuration.
