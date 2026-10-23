@@ -29,3 +29,14 @@ def test_blank_pdf_requires_ocr_and_manual_review_signal():
 def test_character_limit_must_be_positive():
     with pytest.raises(ValueError, match="positive"):
         extract_pdf_text(blank_pdf(), max_characters=0)
+
+def test_page_limit_must_be_positive():
+    with pytest.raises(ValueError, match="max_pages must be positive"):
+        extract_pdf_text(blank_pdf(), max_pages=0)
+
+
+def test_pdf_size_limit_is_enforced_before_parsing():
+    from src.ingestion.pdf_text import MAX_PDF_BYTES
+
+    with pytest.raises(ValueError, match="size limit"):
+        extract_pdf_text(b"%PDF-" + b"x" * MAX_PDF_BYTES)
