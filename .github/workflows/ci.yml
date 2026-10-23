@@ -3,7 +3,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, feat/modern-datasource-dashboard]
   workflow_dispatch:
 permissions:
   contents: read
@@ -24,7 +24,7 @@ jobs:
       - run: pip install -r backend/requirements.txt
       - run: pip install 'ruff>=0.11,<1.0'
       - run: python -m compileall -q backend/src
-      - run: ruff check --select F backend/src/api.py backend/src/cache.py backend/src/config.py backend/src/database.py backend/src/entity_resolution.py backend/src/main.py backend/src/resilience.py backend/src/security.py backend/src/storage.py backend/src/models.py backend/src/worker.py backend/src/ingestion/normalizer.py backend/src/ingestion/parser_csv.py backend/tests/test_parser_csv_streaming.py backend/tests/test_dlq_sanitization.py backend/tests/test_payload_pii_masking.py backend/tests/test_entity_resolution.py backend/tests/test_resilience.py backend/tests/test_security_hmac.py backend/tests/test_worker_recovery.py tests/test_backend.py
+      - run: ruff check --select F backend/src/api.py backend/src/cache.py backend/src/config.py backend/src/database.py backend/src/entity_resolution.py backend/src/main.py backend/src/resilience.py backend/src/security.py backend/src/storage.py backend/src/models.py backend/src/worker.py backend/src/ingestion/normalizer.py backend/src/ingestion/parser_csv.py backend/tests/test_parser_csv_streaming.py backend/tests/test_dlq_sanitization.py backend/tests/test_payload_pii_masking.py backend/tests/test_entity_resolution.py backend/tests/test_resilience.py backend/tests/test_security_hmac.py backend/tests/test_worker_recovery.py tests/test_backend.py $(find backend/src/api_keys.py backend/src/verification.py backend/src/ingestion/parser_xlsx.py backend/tests/test_managed_api_keys.py backend/tests/test_data_quality.py backend/tests/test_xlsx_parser.py backend/tests/test_ingestion_preview.py backend/tests/test_verification.py backend/tests/test_ingestion_retry.py -type f 2>/dev/null || true)
       - name: Smoke-test Alembic on disposable SQLite
         working-directory: backend
         run: DATABASE_URL=sqlite:///./ci_migrations.db python -m alembic -c alembic.ini upgrade head
