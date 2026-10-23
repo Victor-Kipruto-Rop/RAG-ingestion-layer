@@ -12,6 +12,7 @@ This is a status-based release checklist for PesaGuard Registry Datasource. It d
 ## Phase 2 — Database migrations and warehouse integrity
 - [x] Keep additive SQL migrations under `database/migrations/`; Alembic is configured for the backend.
 - [x] Add the managed API-key and security-event schema in migration `009_managed_api_keys.sql`, with indexes and Supabase RLS enabled.
+- [x] Reject a well-formed sandbox/production key prefix on the wrong deployment before database lookup, so separate environment databases still return `API_KEY_ENVIRONMENT_MISMATCH`; add a regression test for the missing-row case.
 - [ ] Reconcile Alembic revision history with the hand-maintained SQL migration history before stamping any existing database.
 - [ ] Validate clean bootstrap and existing-schema upgrade against disposable databases and the exact target schema.
 - [ ] Tune connection pools for the deployed Render/Supabase connection mode and review query plans/indexes using production-like data.
