@@ -13,7 +13,9 @@ This plan defines deliverables and release gates. It is intentionally honest abo
 
 ## Phase 2 — Ingestion reliability
 - [x] Add XLSX support with read-only row iteration, archive signature checks, and uncompressed-size/entry limits; CSV remains streaming and PDFs remain bounded/manual-review.
+- [x] Add a non-persistent CSV/XLSX preview endpoint with sample rows and size limits.
 - [x] Expose measured identifier-coverage and duplicate-review summary metrics, with definitions that explicitly distinguish coverage from legal verification.
+- [x] Add record-level completeness scoring with field-level evidence and flags; never label the score as legal verification.
 - Persist upload checksum, content signature, source attribution, progress, retry count, and worker lease.
 - [ ] Add preview/field mapping, row-level validation, duplicate submission handling, dead-letter export, and safe retry/resume.
 - Add malware scanning as a provider adapter with an explicit unavailable state; never claim a scan passed if no scanner ran.
@@ -39,7 +41,8 @@ This plan defines deliverables and release gates. It is intentionally honest abo
 - Release gate: examples run against sandbox and contain no production credentials.
 
 ## Phase 6 — Operations and reliability
-- Expand health/readiness checks, queue age/depth, worker heartbeat, storage/database/Redis status, structured logs, and Prometheus metrics.
+- [x] Expand health/readiness diagnostics for database, configured object storage, Redis, queue depth/age, and explicitly report that worker heartbeat is not yet instrumented.
+- [ ] Add a persisted worker heartbeat, alert thresholds, incident runbooks, backup/restore drills, SLO dashboards, and controlled retry/replay tooling.
 - Add alert thresholds, incident runbooks, backup/restore drills, SLO dashboards, and controlled retry/replay tooling.
 - Release gate: tested failure scenarios and a documented recovery procedure.
 
