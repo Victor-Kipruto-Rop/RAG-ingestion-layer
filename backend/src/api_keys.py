@@ -125,7 +125,7 @@ def rotate_api_key(key_id: str, claims: dict = Depends(require_user_claims), db:
     row.status = "revoked"; row.revoked_at = datetime.now(timezone.utc)
     _audit(db, org_id=row.organization_id, actor=str(claims["sub"]), action="api_key.rotated_revoked", key_id=old_id, details={"environment": env})
     db.commit()
-    return _create_key(db, claims, CreateApiKey(name=name, environment=env, scopes=scopes))
+    return _create_key(db, claims, CreateApiKey(name=name, environment=env, scopes=scopes, expires_in_days=90))
 
 @router.delete("/{key_id}", status_code=204)
 def revoke_api_key(key_id: str, claims: dict = Depends(require_user_claims), db: Session = Depends(get_db)):
