@@ -43,6 +43,8 @@ def require_user_claims(authorization: str | None = Header(default=None, alias="
         raise HTTPException(403, "Access token must identify a user and organization")
     expected_issuer = settings.api_key_auth_jwt_issuer
     expected_audience = settings.api_key_auth_jwt_audience
+    if settings.app_env.lower() == 'production' and (not expected_issuer or not expected_audience):
+        raise HTTPException(503, 'API key management requires configured JWT issuer and audience')
     if expected_issuer and claims.get("iss") != expected_issuer:
         raise HTTPException(401, "Invalid access token issuer")
     audience = claims.get("aud")
