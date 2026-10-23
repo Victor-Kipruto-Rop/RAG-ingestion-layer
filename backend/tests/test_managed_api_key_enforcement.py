@@ -71,3 +71,15 @@ def test_missing_scope_is_denied_and_recorded(monkeypatch):
     assert response.status_code == 403
     assert response.json()["detail"]["code"] == "API_KEY_SCOPE_DENIED"
     assert events and events[0]["type"] == "scope_denied"
+
+
+def test_environment_prefixed_key_never_falls_back_to_legacy_list_when_managed_keys_disabled(monkeypatch):
+    events = configure(monkeypatch, "production")
+    raw_key = "pg_sandbox_abc123_secret"
+    monkeypatch.setattr(settings, "managed_api_keys_enabled", False)
+    monkeypatch.setattr(settings, "registry_api_keys", raw_key)
+    response = TestClient(make_app()).get("/api/v1/registry/lookup?reg_no=TEST",
+                                          headers={"X-API-Key": raw_key})
+    assert response.status_code == 401
+    assert "cannot use legacy-key authentication" in response.json()["detail"]
+    assert events and events[0]["type"] == "managed_keys_disabled"
