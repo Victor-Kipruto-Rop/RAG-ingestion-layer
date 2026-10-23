@@ -38,3 +38,5 @@ def test_scope_mapping_for_sensitive_routes():
     assert _required_scope(request) == 'exports:read'
     request = SimpleNamespace(url=SimpleNamespace(path='/api/v1/quality/summary'), method='GET')
     assert _required_scope(request) == 'registry:read'
+    request = SimpleNamespace(url=SimpleNamespace(path='/api/v1/warehouse/query-organization'), method='GET')
+    assert _required_scope(request) == 'registry:read'
