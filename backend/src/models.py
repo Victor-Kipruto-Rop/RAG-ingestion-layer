@@ -136,3 +136,37 @@ class FailedImportDLQ(Base):
  traceback_text:Mapped[str]=mapped_column(Text,nullable=False)
  resolved_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
  created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
+
+
+class ManagedAPIKey(Base):
+ __tablename__='managed_api_keys'
+ __table_args__=(Index('ix_managed_api_keys_environment_status','environment','status'),)
+ id:Mapped[str]=mapped_column(String(36),primary_key=True,default=lambda:str(uuid.uuid4()))
+ name:Mapped[str]=mapped_column(String(120),nullable=False)
+ environment:Mapped[str]=mapped_column(String(20),nullable=False)
+ key_prefix:Mapped[str]=mapped_column(String(80),nullable=False,unique=True)
+ secret_hash:Mapped[str]=mapped_column(String(64),nullable=False,unique=True)
+ scopes:Mapped[list]=mapped_column(json_type,default=list,nullable=False)
+ status:Mapped[str]=mapped_column(String(20),default='active',nullable=False,index=True)
+ created_by:Mapped[str]=mapped_column(String(120),default='operator',nullable=False)
+ created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
+ last_used_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
+ expires_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
+ revoked_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
+ rotated_from_id:Mapped[str|None]=mapped_column(String(36),ForeignKey('managed_api_keys.id'))
+
+class APIKeySecurityEvent(Base):
+ __tablename__='api_key_security_events'
+ __table_args__=(Index('ix_api_key_security_events_created_at','created_at'),Index('ix_api_key_security_events_key_id','key_id'))
+ id:Mapped[str]=mapped_column(String(36),primary_key=True,default=lambda:str(uuid.uuid4()))
+ key_id:Mapped[str|None]=mapped_column(String(36),index=True)
+ key_prefix:Mapped[str|None]=mapped_column(String(80))
+ event_type:Mapped[str]=mapped_column(String(80),nullable=False)
+ expected_environment:Mapped[str|None]=mapped_column(String(20))
+ key_environment:Mapped[str|None]=mapped_column(String(20))
+ endpoint:Mapped[str|None]=mapped_column(String(300))
+ http_method:Mapped[str|None]=mapped_column(String(12))
+ request_id:Mapped[str|None]=mapped_column(String(100))
+ client_ip:Mapped[str|None]=mapped_column(String(80))
+ details:Mapped[dict]=mapped_column(json_type,default=dict,nullable=False)
+ created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
