@@ -31,6 +31,7 @@ This is a status-based release checklist for PesaGuard Registry Datasource. It d
 - [x] Add durable, paginated human review decisions with comments, bounded evidence, reviewer identity, request correlation, and audit events.
 - [x] Enforce the dedicated `quality:review` scope for writing decisions; read-only review access uses `registry:read`.
 - [x] Regression test that a review decision is persisted without modifying/merging the canonical organization record.
+- [x] Add a dashboard Match Reviews page for creating and viewing review decisions; it surfaces scope/API errors rather than simulating success.
 - [ ] Expand tests for conflicting identifiers, common-name collisions, and multilingual/legal-suffix false positives.
 
 ## Phase 5 — Security and compliance
