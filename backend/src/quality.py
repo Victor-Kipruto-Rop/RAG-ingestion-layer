@@ -35,7 +35,17 @@ def match_candidates(q:str=Query(min_length=2,max_length=200),limit:int=Query(de
 @router.get('/sources/freshness')
 def source_freshness(db:Session=Depends(get_db)):
  sources=db.scalars(select(RegistrySource).order_by(RegistrySource.precedence,RegistrySource.display_name)).all()
- return {'items':[{'source_key':s.source_key,'display_name':s.display_name,'enabled':s.enabled,'freshness_sla_hours':s.freshness_sla_hours,'last_import_at':None,'freshness_status':'unknown','note':'Last successful source import timestamps are not yet persisted per source.'} for s in sources],'generated_at':datetime.now(timezone.utc).isoformat()}
+ now=datetime.now(timezone.utc);items=[]
+ for source in sources:
+  job=db.scalar(select(IngestionJob).where(IngestionJob.source_id==source.id,IngestionJob.status.in_(['COMPLETED','COMPLETED_WITH_ERRORS'])).order_by(IngestionJob.completed_at.desc()).limit(1))
+  last=job.completed_at if job else None
+  if last is not None and last.tzinfo is None: last=last.replace(tzinfo=timezone.utc)
+  age_hours=(now-last).total_seconds()/3600 if last else None
+  if last is None: state='unknown'
+  elif source.freshness_sla_hours is not None and age_hours>source.freshness_sla_hours: state='stale'
+  else: state='fresh'
+  items.append({'source_key':source.source_key,'display_name':source.display_name,'enabled':source.enabled,'freshness_sla_hours':source.freshness_sla_hours,'last_import_at':last.isoformat() if last else None,'age_hours':round(age_hours,2) if age_hours is not None else None,'freshness_status':state})
+ return {'items':items,'generated_at':now.isoformat()}
 
 @router.get('/quality/rules')
 def quality_rules():
