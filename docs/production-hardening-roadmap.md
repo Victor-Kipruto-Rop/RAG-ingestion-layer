@@ -34,7 +34,7 @@ This document distinguishes code present in the repository from work that still 
 - [x] Quality summary, source freshness, validation-rule descriptions and fuzzy match candidates are exposed.
 - [x] Match candidates are explicitly review-only; name similarity never triggers automatic merges.
 - [x] Added a regression test for quality summary output and review-only fuzzy match candidates.
-- [ ] Add tests for conflicting identifiers, repeated imports, false positives and freshness boundaries.
+- [x] Added regression coverage for fresh, stale and never-imported source freshness states.\n- [ ] Add tests for conflicting identifiers, repeated imports and false positives.
 - [ ] Add a durable reviewer decision workflow before any future merge/identity-resolution automation.
 - [ ] Add lineage/change-history UI and verify source attribution end to end.
 
@@ -53,7 +53,7 @@ This document distinguishes code present in the repository from work that still 
 ## Phase 6 — API resilience and cache policy
 - [x] Lookup rate limiting, Redis-backed token bucket, cache TTLs and cache-aside behavior are implemented.
 - [x] Source freshness metadata is exposed.
-- [ ] Add integration tests for Redis outage, stale cache, invalidation after import, timeout and retry behavior.
+- [x] Added cache tests for hits/misses, malformed cache payloads, Redis outage fallback, writes and targeted invalidation.\n- [ ] Add integration tests for cache invalidation after import, timeout and retry behavior.
 - [ ] Define operational retry budgets and circuit breakers for each future external provider adapter; do not simulate providers as if they were connected.
 - [ ] Document the chosen fail-open/fail-closed policy for each optional dependency and validate it in staging.
 
