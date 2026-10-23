@@ -30,3 +30,8 @@ def test_file_iterator_accepts_seekable_binary_stream():
     assert list(iter_csv_file(stream, 10)) == [
         (2, {"legal_name": "Alpha Ltd", "status": "ACTIVE"})
     ]
+
+
+def test_tab_delimited_csv_is_detected():
+    rows = list(iter_csv_records(b"legal_name\\tstatus\\nAlpha Ltd\\tACTIVE\\n", 10))
+    assert rows == [(2, {"legal_name": "Alpha Ltd", "status": "ACTIVE"})]
