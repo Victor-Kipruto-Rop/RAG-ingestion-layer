@@ -57,7 +57,8 @@ This plan defines deliverables and release gates. It is intentionally honest abo
 - Release gate: cross-tenant isolation tests and access-control review. A caller-supplied tenant ID is never an authorization mechanism.
 
 ## Phase 8 — Commercial and customer operations
-- Add usage metering, quotas, plan entitlements, organization monitoring, bulk lookups, subscriptions, and scheduled reports.
+- [x] Add per-key request usage as a foundation for future quotas and plan entitlements.
+- Add organization-scoped usage metering, quotas, plan entitlements, bulk lookups, subscriptions, and scheduled reports once authenticated tenant ownership exists.
 - Enforce limits server-side; dashboard numbers are derived from persisted usage events.
 - Release gate: concurrency/idempotency tests, quota boundary tests, and customer-visible usage definitions.
 
