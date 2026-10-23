@@ -86,7 +86,6 @@ def test_large_direct_upload_requires_private_r2_configuration():
 
 def test_entity_match_review_is_audited_and_does_not_merge_records():
     import hashlib
-    from datetime import datetime, timezone
     from src.database import SessionLocal
     from src.models import Organization, ManagedAPIKey, EntityMatchReview
 
@@ -144,7 +143,7 @@ def test_entity_match_review_is_audited_and_does_not_merge_records():
         assert db.get(EntityMatchReview, payload["id"]) is not None
         db.delete(db.get(EntityMatchReview, payload["id"]))
         db.delete(db.get(ManagedAPIKey, managed_key.id))
-        db.delete(organization)
+        db.delete(db.get(Organization, organization_id))
         db.commit()
 
 
