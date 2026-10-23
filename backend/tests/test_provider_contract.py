@@ -45,3 +45,14 @@ def test_provider_result_serialization_normalizes_naive_timestamp():
     assert serialized["status"] == "not_found"
     assert serialized["checked_at"].endswith("+00:00")
     assert serialized["evidence"][0]["type"] == "response_reference"
+
+
+def test_legacy_provider_statuses_are_normalized_safely():
+    positive = ProviderResult(provider="legacy", status="match")
+    negative = ProviderResult(provider="legacy", status="no_match")
+    pending = ProviderResult(provider="legacy", status="pending")
+    unknown = ProviderResult(provider="legacy", status="some-unrecognized-status")
+    assert positive.status == ProviderStatus.VERIFIED and positive.matched is True
+    assert negative.status == ProviderStatus.NOT_FOUND and negative.matched is False
+    assert pending.status == ProviderStatus.MANUAL_REVIEW
+    assert unknown.status == ProviderStatus.ERROR
