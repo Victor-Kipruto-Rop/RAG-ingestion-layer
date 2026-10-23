@@ -1,14 +1,22 @@
 """Run with: python -m src.worker. PostgreSQL is recommended for multiple workers."""
-import argparse,logging,time
+import argparse,logging,time,traceback
 from datetime import datetime,timezone,timedelta
 from sqlalchemy import select
 from .config import settings
 from .database import SessionLocal
-from .models import IngestionJob,Organization,OrganizationRecordVersion,IngestionRowError,AuditLog,WarehouseRawImport
+from .models import IngestionJob,Organization,OrganizationRecordVersion,IngestionRowError,AuditLog,WarehouseRawImport,FailedImportDLQ
 from .storage import download_bytes
 from .ingestion.parser_csv import iter_csv_records_from_storage
 from .ingestion.normalizer import normalize_record
 log=logging.getLogger('registry.worker')
+
+_SENSITIVE_KEY_PARTS=('tax_pin','kra_pin','pin','phone','mobile','email','password','secret','token','account_number','identity_number','id_number')
+def _sanitize_dlq_row(row):
+ safe={}
+ for key,value in row.items():
+  normalized=str(key).strip().lower().replace('-','_')
+  safe[str(key)[:100]='[REDACTED]' if any(part in normalized for part in _SENSITIVE_KEY_PARTS) else (str(value)[:500] if value is not None else None)
+ return safe
 def now():return datetime.now(timezone.utc)
 def snap(o):
  return {'legal_name':o.legal_name,'normalized_legal_name':o.normalized_legal_name,'registration_number':o.registration_number,'normalized_registration_number':o.normalized_registration_number,'tax_pin':o.tax_pin,'normalized_tax_pin':o.normalized_tax_pin,'status':o.status,'registry_payload':o.registry_payload or {},'data_quality_status':o.data_quality_status}
@@ -69,7 +77,10 @@ def process_job(job_id):
       db.add(org);db.flush()
       db.add(OrganizationRecordVersion(organization_id=org.id,change_type='CREATED',snapshot={'after':snap(org)},source_name=org.source_name,source_file=job.file_name,source_row=row_num));inserted+=1
     except ValueError as exc:
-     skipped+=1;db.add(IngestionRowError(job_id=job.id,row_number=row_num,error_code='INVALID_ROW',message=str(exc)[:1000]))
+     skipped+=1
+     message=str(exc)[:1000]
+     db.add(IngestionRowError(job_id=job.id,row_number=row_num,error_code='INVALID_ROW',message=message))
+     db.add(FailedImportDLQ(job_id=job.id,row_number=row_num,error_code='INVALID_ROW',error_type=type(exc).__name__,message=message,sanitized_row=_sanitize_dlq_row(row),traceback_text=traceback.format_exc()[-12000:]))
     except Exception:
      raise
    job.records_processed=processed;job.records_inserted=inserted;job.records_updated=updated;job.records_skipped=skipped
