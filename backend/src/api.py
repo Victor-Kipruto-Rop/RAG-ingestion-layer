@@ -79,9 +79,9 @@ class DirectUploadRequest(BaseModel):
 def presign_direct_upload(payload:DirectUploadRequest,request:Request,db:Session=Depends(get_db),correlation_id:str|None=Header(default=None,alias='X-Correlation-ID'),idempotency_key:str|None=Header(default=None,alias='Idempotency-Key')):
  name=payload.file_name.replace(chr(92),'/').split('/')[-1]
  suffix='.'+name.rsplit('.',1)[-1].lower() if '.' in name else ''
- if suffix not in {'.csv','.pdf'}:raise HTTPException(415,'Only CSV and PDF files are accepted')
+ if suffix not in {'.csv','.pdf','.xlsx'}:raise HTTPException(415,'Only CSV, XLSX, and PDF files are accepted')
  if payload.size_bytes>settings.max_direct_upload_bytes:raise HTTPException(413,'File exceeds configured direct-upload limit')
- content_type='application/pdf' if suffix=='.pdf' else 'text/csv'
+ content_type='application/pdf' if suffix=='.pdf' else ('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' if suffix=='.xlsx' else 'text/csv')
  correlation_id=(correlation_id or getattr(request.state,'request_id',None) or str(uuid.uuid4()))[:100]
  if idempotency_key:
   prior=db.scalar(select(IngestionJob).where(IngestionJob.idempotency_key==idempotency_key))
@@ -125,6 +125,8 @@ def complete_direct_upload(job_id:str,db:Session=Depends(get_db)):
  suffix='.'+job.file_name.rsplit('.',1)[-1].lower() if '.' in job.file_name else ''
  if suffix=='.pdf' and not prefix.startswith(b'%PDF-'):
   job.status='FAILED';job.error_summary='PDF signature validation failed.';job.completed_at=datetime.now(timezone.utc);raw.import_status='FAILED';db.commit();raise HTTPException(415,'PDF file signature is invalid')
+ if suffix=='.xlsx' and not prefix.startswith(b'PK\\x03\\x04'):
+  job.status='FAILED';job.error_summary='XLSX archive signature validation failed.';job.completed_at=datetime.now(timezone.utc);raw.import_status='FAILED';db.commit();raise HTTPException(415,'XLSX file signature is invalid')
  if suffix=='.csv' and b'\\x00' in prefix:
   job.status='FAILED';job.error_summary='CSV binary signature validation failed.';job.completed_at=datetime.now(timezone.utc);raw.import_status='FAILED';db.commit();raise HTTPException(415,'CSV contains binary data')
  raw.byte_size=actual_size;raw.import_status='QUEUED'
@@ -138,7 +140,7 @@ async def upload(request:Request,file:UploadFile=File(...),db:Session=Depends(ge
  correlation_id=(correlation_id or getattr(request.state,'request_id',None) or str(uuid.uuid4()))[:100]
  name=(file.filename or 'upload.csv').replace(chr(92), '/').split('/')[-1]
  suffix='.'+name.rsplit('.',1)[-1].lower() if '.' in name else ''
- if suffix not in {'.csv','.pdf'}:raise HTTPException(415,'Only CSV and PDF files are accepted')
+ if suffix not in {'.csv','.pdf'}:raise HTTPException(415,'Only CSV, XLSX, and PDF files are accepted')
  if idempotency_key:
   prior=db.scalar(select(IngestionJob).where(IngestionJob.idempotency_key==idempotency_key))
   if prior:return {'job_id':prior.id,'status':prior.status,'idempotent_replay':True}
@@ -158,13 +160,14 @@ async def upload(request:Request,file:UploadFile=File(...),db:Session=Depends(ge
  if suffix=='.pdf' and not prefix.startswith(b'%PDF-'):raise HTTPException(415,'File extension is PDF but the file signature is invalid')
  if suffix=='.csv' and b'\x00' in prefix:raise HTTPException(415,'CSV contains binary data')
  file.file.seek(0)
- job=IngestionJob(file_name=name,correlation_id=correlation_id,content_type=file.content_type or 'application/octet-stream',status='QUEUED',source_id=source.id if source else None,source_name=source.source_key if source else 'uploaded_dataset',idempotency_key=idempotency_key)
+ content_type='application/pdf' if suffix=='.pdf' else ('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' if suffix=='.xlsx' else 'text/csv')
+ job=IngestionJob(file_name=name,correlation_id=correlation_id,content_type=content_type,status='QUEUED',source_id=source.id if source else None,source_name=source.source_key if source else 'uploaded_dataset',idempotency_key=idempotency_key)
  db.add(job);db.flush()
  key=f'registry-uploads/{job.id}/{uuid.uuid4().hex}-{name}'
  try:
-  upload_fileobj(key,file.file,file.content_type or 'application/octet-stream')
+  upload_fileobj(key,file.file,content_type)
   job.object_key=key
-  db.add(WarehouseRawImport(ingestion_job_id=job.id,object_key=key,original_filename=name,content_type=file.content_type or 'application/octet-stream',byte_size=size,sha256_hex=digest.hexdigest(),source_id=source.id if source else None,source_name=source.source_key if source else 'uploaded_dataset',uploaded_by='internal-service',import_status='QUEUED',metadata_json={'correlation_id':correlation_id,'file_suffix':suffix}))
+  db.add(WarehouseRawImport(ingestion_job_id=job.id,object_key=key,original_filename=name,content_type=content_type,byte_size=size,sha256_hex=digest.hexdigest(),source_id=source.id if source else None,source_name=source.source_key if source else 'uploaded_dataset',uploaded_by='internal-service',import_status='QUEUED',metadata_json={'correlation_id':correlation_id,'file_suffix':suffix}))
   db.add(AuditLog(action='registry_ingestion_queued',actor='internal-service',file_name=name,details={'job_id':job.id,'source_key':source.source_key if source else None,'correlation_id':correlation_id}))
   db.commit();db.refresh(job)
   return {'job_id':job.id,'file_name':job.file_name,'correlation_id':job.correlation_id,'status':job.status,'records_processed':0,'records_inserted':0,'records_updated':0,'records_skipped':0,'message':'Upload stored; a worker will process this job asynchronously.'}
