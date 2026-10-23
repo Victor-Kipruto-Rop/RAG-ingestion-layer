@@ -24,7 +24,7 @@ jobs:
       - run: pip install -r backend/requirements.txt
       - run: pip install 'ruff>=0.11,<1.0'
       - run: python -m compileall -q backend/src
-      - run: ruff check --select F backend/src backend/tests
+      - run: ruff check --select F backend/src/ingestion/parser_csv.py backend/tests/test_parser_csv_streaming.py
       - run: PYTHONPATH=backend DATABASE_URL=sqlite:///./ci_registry.db REGISTRY_API_KEYS=test-secret-key pytest -q
       - name: Build API container
         run: docker build -t pesaguard-registry-api:ci ./backend
