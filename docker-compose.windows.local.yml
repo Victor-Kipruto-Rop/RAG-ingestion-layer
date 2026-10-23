@@ -36,6 +36,7 @@ services:
   registry-worker:
     build:
       context: ./backend
+      dockerfile: Dockerfile.worker
     env_file:
       - .env
     environment:
@@ -52,6 +53,8 @@ services:
       WORKER_MAX_ATTEMPTS: "3"
       WORKER_RETRY_SECONDS: "30"
       WORKER_STALE_AFTER_SECONDS: "900"
+      PDF_OCR_ENABLED: "true"
+      PDF_OCR_MAX_PAGES: "25"
     command: ["python", "-m", "src.worker"]
     volumes:
       - registry_data:/app/data
