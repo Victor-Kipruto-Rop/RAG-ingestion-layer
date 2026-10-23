@@ -24,7 +24,7 @@ jobs:
       - run: pip install -r backend/requirements.txt
       - run: pip install 'ruff>=0.11,<1.0'
       - run: python -m compileall -q backend/src
-      - run: ruff check --select F backend/src/api.py backend/src/cache.py backend/src/config.py backend/src/database.py backend/src/entity_resolution.py backend/src/main.py backend/src/resilience.py backend/src/security.py backend/src/worker.py backend/src/ingestion/parser_csv.py backend/tests/test_parser_csv_streaming.py backend/tests/test_dlq_sanitization.py backend/tests/test_entity_resolution.py backend/tests/test_resilience.py backend/tests/test_security_hmac.py
+      - run: ruff check --select F backend/src/api.py backend/src/cache.py backend/src/config.py backend/src/database.py backend/src/entity_resolution.py backend/src/main.py backend/src/resilience.py backend/src/security.py backend/src/worker.py backend/src/ingestion/parser_csv.py backend/tests/test_parser_csv_streaming.py backend/tests/test_dlq_sanitization.py backend/tests/test_payload_pii_masking.py backend/tests/test_entity_resolution.py backend/tests/test_resilience.py backend/tests/test_security_hmac.py
       - name: Smoke-test Alembic on disposable SQLite
         working-directory: backend
         run: DATABASE_URL=sqlite:///./ci_migrations.db python -m alembic -c alembic.ini upgrade head
