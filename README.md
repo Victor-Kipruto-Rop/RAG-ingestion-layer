@@ -78,13 +78,13 @@ The API returns found, a matching organization when present, source metadata, da
 ## Production requirements and current boundaries
 
 - Configure PostgreSQL, private R2, TLS, backups, monitoring, and a separate dashboard/admin authentication layer before exposing the service.
-- Never send the PesaGuard service API key to the browser. The existing React dashboard API-key pattern is not production-safe; do not expose the dashboard to untrusted users until replaced with server-side session auth.
+- Never send the PesaGuard internal service API key to the browser. The API-key dashboard requires a trusted PesaGuard-issued user access token, verified by the datasource using the configured JWT secret, issuer and audience. Do not enable customer key management until that identity integration is configured and tenant/role authorization has been verified.
 - Use a separate worker deployment from the API. Keep API and worker on the same durable database and object store. Local storage is only for development and requires a shared volume between containers.
-- CSV rows are processed asynchronously, but each bounded CSV object is currently read into worker memory; use streaming parsing for very large files.
+- CSV parsing uses a row iterator and a disk-backed spool for storage downloads; still test representative large files and monitor worker memory before increasing configured size limits.
 - PDF extraction/OCR and actual government/commercial registry connectors are not activated.
 - Run CI and production integration tests before relying on this service for live decisions.
 
-See `docs/ARCHITECTURE.md` for the operating contract and scale roadmap.
+See `docs/ARCHITECTURE.md` for the operating contract and scale roadmap, [`docs/production-hardening-roadmap.md`](docs/production-hardening-roadmap.md) for phase status, [`docs/production-release-runbook.md`](docs/production-release-runbook.md) for release/incident procedures, and [`docs/database-migration-safety.md`](docs/database-migration-safety.md) before any schema change.
 
 
 ## Windows local worker test

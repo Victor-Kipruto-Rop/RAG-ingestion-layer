@@ -44,6 +44,9 @@ jobs:
         with:
           node-version: '22'
       - run: npm install --no-audit --no-fund
-      - run: npm run build
+      - name: Run frontend unit tests
+        run: npm test
+      - name: Build frontend assets
+        run: npm run build
       - name: Build production frontend container
         run: docker build -t pesaguard-registry-frontend:ci .
