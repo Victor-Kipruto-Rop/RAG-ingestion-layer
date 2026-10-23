@@ -112,6 +112,7 @@ def _managed_key_from_db(raw_key):
 
 def _required_scope(request):
     path=request.url.path;method=request.method.upper()
+    if path.startswith('/api/v1/quality/reviews') and method in {'POST','PATCH','DELETE'}: return 'quality:review'
     if path.startswith('/api/v1/ingestion/uploads'): return 'ingestion:write' if method in {'POST','PUT','PATCH'} else 'registry:read'
     if path.startswith('/api/v1/sources') and method in {'POST','PATCH','DELETE'}: return 'sources:write'
     if path.startswith('/api/v1/exports/'): return 'exports:read'
