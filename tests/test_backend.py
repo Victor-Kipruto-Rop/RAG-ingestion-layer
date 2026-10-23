@@ -117,6 +117,19 @@ def test_entity_match_review_is_audited_and_does_not_merge_records():
         organization_id = organization.id
         original_legal_name = organization.legal_name
 
+    denied = client.post(
+        "/api/v1/quality/reviews",
+        headers=HEADERS,
+        json={
+            "candidate_organization_id": organization_id,
+            "query_name": "Review Workflow Example Ltd",
+            "decision": "needs_more_evidence",
+            "comment": "This request should be denied without the review scope.",
+            "evidence": {},
+        },
+    )
+    assert denied.status_code == 403
+
     response = client.post(
         "/api/v1/quality/reviews",
         headers={"X-API-Key": secret},
