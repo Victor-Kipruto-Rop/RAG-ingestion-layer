@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime,timezone
-from sqlalchemy import DateTime,Integer,String,Text,UniqueConstraint,Index,ForeignKey,Boolean
+from sqlalchemy import DateTime,Integer,BigInteger,String,Text,UniqueConstraint,Index,ForeignKey,Boolean
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.types import JSON
 from sqlalchemy.orm import Mapped,mapped_column
@@ -99,7 +99,7 @@ class WarehouseRawImport(Base):
  object_key:Mapped[str]=mapped_column(String(1000),nullable=False)
  original_filename:Mapped[str]=mapped_column(String(500),nullable=False)
  content_type:Mapped[str|None]=mapped_column(String(200))
- byte_size:Mapped[int]=mapped_column(Integer,default=0,nullable=False)
+ byte_size:Mapped[int]=mapped_column(BigInteger,default=0,nullable=False)
  sha256_hex:Mapped[str|None]=mapped_column(String(64),index=True)
  source_id:Mapped[str|None]=mapped_column(String(36),ForeignKey('registry_sources.id'))
  source_name:Mapped[str|None]=mapped_column(String(200))
