@@ -55,8 +55,8 @@ def validate_runtime_config():
  if settings.app_env.lower()!='production':
   return
  missing=[]
- if not settings.api_key_list or 'change-this-local-only-key-before-use' in settings.api_key_list:
-  missing.append('REGISTRY_API_KEYS')
+ if (not settings.api_key_list or 'change-this-local-only-key-before-use' in settings.api_key_list) and not (settings.managed_api_keys_enabled and settings.datasource_admin_token):
+  missing.append('REGISTRY_API_KEYS or managed API-key administration configuration')
  if settings.database_url.startswith('sqlite'):
   missing.append('DATABASE_URL (PostgreSQL required in production)')
  if not all([settings.r2_account_id,settings.r2_access_key_id,settings.r2_secret_access_key,settings.r2_bucket_name]):
