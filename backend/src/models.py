@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime,timezone
-from sqlalchemy import DateTime,Integer,String,Text,UniqueConstraint,Index,ForeignKey,Boolean
+from sqlalchemy import DateTime,Integer,BigInteger,String,Text,UniqueConstraint,Index,ForeignKey,Boolean
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.types import JSON
 from sqlalchemy.orm import Mapped,mapped_column
@@ -57,6 +57,7 @@ class IngestionJob(Base):
  __tablename__='ingestion_jobs'
  id:Mapped[str]=mapped_column(String(36),primary_key=True,default=lambda:str(uuid.uuid4()))
  file_name:Mapped[str]=mapped_column(String(500),nullable=False)
+ correlation_id:Mapped[str|None]=mapped_column(String(100),index=True)
  object_key:Mapped[str|None]=mapped_column(String(1000))
  content_type:Mapped[str|None]=mapped_column(String(200))
  source_id:Mapped[str|None]=mapped_column(String(36),ForeignKey('registry_sources.id'))
@@ -68,6 +69,7 @@ class IngestionJob(Base):
  records_inserted:Mapped[int]=mapped_column(Integer,default=0,nullable=False)
  records_updated:Mapped[int]=mapped_column(Integer,default=0,nullable=False)
  records_skipped:Mapped[int]=mapped_column(Integer,default=0,nullable=False)
+ last_processed_row:Mapped[int]=mapped_column(Integer,default=1,nullable=False)
  error_summary:Mapped[str|None]=mapped_column(Text)
  created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
  started_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
@@ -97,7 +99,7 @@ class WarehouseRawImport(Base):
  object_key:Mapped[str]=mapped_column(String(1000),nullable=False)
  original_filename:Mapped[str]=mapped_column(String(500),nullable=False)
  content_type:Mapped[str|None]=mapped_column(String(200))
- byte_size:Mapped[int]=mapped_column(Integer,default=0,nullable=False)
+ byte_size:Mapped[int]=mapped_column(BigInteger,default=0,nullable=False)
  sha256_hex:Mapped[str|None]=mapped_column(String(64),index=True)
  source_id:Mapped[str|None]=mapped_column(String(36),ForeignKey('registry_sources.id'))
  source_name:Mapped[str|None]=mapped_column(String(200))
@@ -118,4 +120,19 @@ class WarehouseAccessLog(Base):
  outcome:Mapped[str]=mapped_column(String(40),default='UNKNOWN',nullable=False)
  query_type:Mapped[str|None]=mapped_column(String(40))
  result_count:Mapped[int|None]=mapped_column(Integer)
+ created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
+
+
+class FailedImportDLQ(Base):
+ __tablename__='failed_imports_dlq'
+ __table_args__=(UniqueConstraint('job_id','row_number','error_code',name='uq_failed_import_job_row_code'),Index('ix_failed_imports_dlq_created_at','created_at'))
+ id:Mapped[str]=mapped_column(String(36),primary_key=True,default=lambda:str(uuid.uuid4()))
+ job_id:Mapped[str]=mapped_column(String(36),ForeignKey('ingestion_jobs.id',ondelete='RESTRICT'),nullable=False,index=True)
+ row_number:Mapped[int]=mapped_column(Integer,nullable=False)
+ error_code:Mapped[str]=mapped_column(String(80),nullable=False)
+ error_type:Mapped[str]=mapped_column(String(200),nullable=False)
+ message:Mapped[str]=mapped_column(Text,nullable=False)
+ sanitized_row:Mapped[dict]=mapped_column(json_type,default=dict,nullable=False)
+ traceback_text:Mapped[str]=mapped_column(Text,nullable=False)
+ resolved_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
  created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)

@@ -3,7 +3,11 @@ os.environ.setdefault('REGISTRY_API_KEYS','test-secret-key')
 os.environ.setdefault('DATABASE_URL','sqlite:///./test_registry.db')
 from fastapi.testclient import TestClient
 from src.main import app
+from src.database import Base, engine
+Base.metadata.create_all(bind=engine)
 from src.ingestion.normalizer import normalize_legal_name,normalize_identifier,normalize_record
+from src import worker
+from src.config import settings
 from src.worker import process_job
 client=TestClient(app)
 HEADERS={'X-API-Key':'test-secret-key'}
@@ -21,13 +25,31 @@ def test_name_required():
  try:normalize_record({'Registration No':'123'})
  except ValueError as exc:assert 'legal name' in str(exc).lower()
  else:raise AssertionError('Expected missing legal name validation')
-def test_csv_ingestion_is_queued_then_processed_with_provenance():
+def test_csv_ingestion_is_queued_then_processed_with_provenance(monkeypatch):
  reg='TEST'+uuid.uuid4().hex[:12].upper()
  csv_data=f'Company Name,Registration No,Tax PIN\nFirst Example Limited,{reg},P000001\nUpdated Example Limited,{reg},P000001\n,INVALID-ROW,P000002\n'
- response=client.post('/api/v1/ingestion/uploads',headers={**HEADERS,'Idempotency-Key':'test-'+uuid.uuid4().hex},files={'file':('organizations.csv',csv_data,'text/csv')})
+ correlation_id='test-correlation-'+uuid.uuid4().hex
+ response=client.post('/api/v1/ingestion/uploads',headers={**HEADERS,'Idempotency-Key':'test-'+uuid.uuid4().hex,'X-Correlation-ID':correlation_id},files={'file':('organizations.csv',csv_data,'text/csv')})
  assert response.status_code==202,response.text
  job=response.json()
  assert job['status']=='QUEUED'
+ assert job['correlation_id']==correlation_id
+ old_batch_size=settings.ingestion_batch_size
+ original_normalize=worker.normalize_record
+ def fail_once_on_malformed_row(row):
+  if not row.get('Company Name'):
+   raise RuntimeError('simulated transient worker failure')
+  return original_normalize(row)
+ settings.ingestion_batch_size=2
+ monkeypatch.setattr(worker,'normalize_record',fail_once_on_malformed_row)
+ try:
+  process_job(job['job_id'])
+ finally:
+  settings.ingestion_batch_size=old_batch_size
+ monkeypatch.setattr(worker,'normalize_record',original_normalize)
+ jobs=client.get('/api/v1/ingestion/jobs',headers=HEADERS).json()['items']
+ partial=next(j for j in jobs if j['id']==job['job_id'])
+ assert partial['status']=='QUEUED'
  process_job(job['job_id'])
  jobs=client.get('/api/v1/ingestion/jobs',headers=HEADERS).json()['items']
  completed=next(j for j in jobs if j['id']==job['job_id'])
@@ -55,3 +77,8 @@ def test_source_catalogue_create_and_list():
 def test_upload_rejects_unknown_type():
  response=client.post('/api/v1/ingestion/uploads',headers=HEADERS,files={'file':('payload.exe',b'no','application/octet-stream')})
  assert response.status_code==415
+
+
+def test_large_direct_upload_requires_private_r2_configuration():
+ response=client.post('/api/v1/ingestion/uploads/presign',headers=HEADERS,json={'file_name':'large-dataset.csv','size_bytes':100*1024*1024})
+ assert response.status_code==503
