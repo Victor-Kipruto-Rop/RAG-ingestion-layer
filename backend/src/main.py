@@ -17,6 +17,8 @@ from . import models
 from .api import router
 from .key_management import router as key_management_router
 from .quality import router as quality_router
+from .review import router as review_router
+from .providers.api import router as provider_status_router
 from .models import WarehouseAccessLog
 structlog.configure(processors=[structlog.processors.TimeStamper(fmt='iso'),structlog.processors.add_log_level,structlog.processors.format_exc_info,structlog.processors.JSONRenderer()],logger_factory=structlog.stdlib.LoggerFactory())
 logging.basicConfig(level=logging.INFO,format='%(message)s')
@@ -45,6 +47,8 @@ app.add_middleware(CORSMiddleware,allow_origins=settings.cors_origin_list,allow_
 app.include_router(router)
 app.include_router(key_management_router)
 app.include_router(quality_router)
+app.include_router(review_router)
+app.include_router(provider_status_router)
 @app.middleware('http')
 async def warehouse_access_telemetry(request,call_next):
  path=request.url.path
