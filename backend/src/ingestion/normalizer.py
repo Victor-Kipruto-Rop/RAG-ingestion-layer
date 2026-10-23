@@ -19,7 +19,6 @@ CORPORATE_FLAG_FIELDS={'company_status','entity_status','compliance_status','com
 def is_personal_payload_field(key):
  normalized=re.sub(r'[^a-z0-9]+','_',str(key).strip().lower()).strip('_')
  if normalized in CORPORATE_FLAG_FIELDS:return False
- parts=set(normalized.split('_'))
  return any(re.search(rf'(?:^|_){re.escape(token)}(?:_|$)',normalized) for token in PERSONAL_PAYLOAD_TOKENS)
 
 def normalize_record(row):
