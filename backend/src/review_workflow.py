@@ -33,7 +33,7 @@ def decision_out(row):
 
 
 @router.get("/queue")
-def review_queue(limit: int = Query(default=50, ge=1, le=200), offset: int = Query(default=0, ge=0), db: Session = Depends(get_db)):
+def review_queue(limit: int = Query(default=50, ge=1, le=200), offset: int = Query(default=0, ge=0), q: str | None = Query(default=None, max_length=200), db: Session = Depends(get_db)):
     latest_decision = (
         select(OrganizationReviewDecision.decision)
         .where(OrganizationReviewDecision.organization_id == Organization.id)
@@ -41,12 +41,16 @@ def review_queue(limit: int = Query(default=50, ge=1, le=200), offset: int = Que
         .limit(1)
         .scalar_subquery()
     )
-    base = select(Organization, latest_decision.label("latest_decision")).where(
+    conditions = [
         or_(
             latest_decision.is_(None),
             latest_decision.in_(["needs_more_evidence", "reopened"]),
         )
-    )
+    ]
+    if q and q.strip():
+        pattern = f"%{q.strip()}%"
+        conditions.append(or_(Organization.legal_name.ilike(pattern), Organization.registration_number.ilike(pattern)))
+    base = select(Organization, latest_decision.label("latest_decision")).where(*conditions)
     total = db.scalar(select(func.count()).select_from(base.subquery())) or 0
     rows = db.execute(base.order_by(Organization.created_at.asc(), Organization.id.asc()).offset(offset).limit(limit)).all()
     return {
