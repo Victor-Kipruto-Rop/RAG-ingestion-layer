@@ -4,18 +4,18 @@ A standalone organization-data warehouse for PesaGuard. It imports authorized re
 
 This is a datasource, not the PesaGuard customer onboarding system and not an authority that independently certifies companies. Imported data is marked unverified unless a trusted verification workflow establishes otherwise.
 
-## Local development with Docker
+## Local development with Docker (Supabase + R2)
 
 1. Install and start Docker Desktop (Linux containers), then confirm `docker info` succeeds.
-2. Copy `example.env` to `.env` and replace `REGISTRY_API_KEYS` with a long random **local-only** key. Do not put production secrets in this file.
-3. Run `docker compose config --quiet` to validate the stack, then `docker compose up -d --build`.
-4. Compose starts the API, Redis, ingestion worker, and React dashboard. The API applies the local Alembic migrations before starting. API and worker share the same SQLite database and local upload volume. Production database and R2 settings are overridden for this stack.
-5. Open the dashboard at `http://localhost:5173`, API docs at `http://localhost:8000/docs`, liveness at `http://localhost:8000/health/live`, and readiness at `http://localhost:8000/health/ready`. Enter only the local API key in the dashboard.
-6. Follow [`docs/windows-local-worker.md`](docs/windows-local-worker.md) to upload the fictional CSV fixture and verify end-to-end worker processing.
-7. View service status and logs with `docker compose ps` and `docker compose logs -f registry-api registry-worker registry-frontend`. Stop with `docker compose down`; use `docker compose down -v` only when you intentionally want to delete local test data.
-8. For Windows, run `scripts/start-windows-local.ps1`, then run `scripts/test-local-stack.ps1` for an end-to-end API → worker smoke test; stop with `scripts/stop-windows-local.ps1`. Backend tests: `PYTHONPATH=backend pytest -q` from a Python environment with backend requirements installed.
+2. Copy `example.env` to `.env`. Configure `DATABASE_URL` with the Supabase sandbox PostgreSQL connection string, all four required R2 settings with a private sandbox bucket/token, and a long random sandbox-only `REGISTRY_API_KEYS` secret.
+3. Set `APP_ENV=development`, `DATASOURCE_ENVIRONMENT=sandbox`, and `CONFIRM_SANDBOX_TARGET=YES` only after verifying the Supabase project and R2 bucket are dedicated sandbox resources.
+4. Review and apply the SQL files under `database/migrations/` to the intended sandbox database. Docker deliberately does not run migrations automatically against Supabase.
+5. Run `docker compose config --quiet`, then `docker compose up -d --build`. Compose starts the API, local Redis, the local ingestion worker, and the React dashboard. API and worker use the same Supabase PostgreSQL database and Cloudflare R2 bucket; the worker runs locally in Docker.
+6. Open the dashboard at `http://localhost:5173`, API docs at `http://localhost:8000/docs`, liveness at `http://localhost:8000/health/live`, and readiness at `http://localhost:8000/health/ready`.
+7. Configure the PesaGuard Core API backend with the datasource URL and the matching sandbox secret on the server side only. See [`docs/windows-local-worker.md`](docs/windows-local-worker.md) for connection guidance.
+8. View status/logs with `docker compose ps` and `docker compose logs -f registry-api registry-worker registry-frontend`. Stop with `docker compose down`.
 
-Do not commit `.env`, API keys, database URLs, or R2 credentials.
+**Important:** the worker claims queued jobs from the configured database and writes job status, normalized records, and errors. Never point this local worker at production Supabase/R2 unless you explicitly intend it to process production data. Do not commit `.env`, API keys, database URLs, or R2 credentials. Backend tests: `PYTHONPATH=backend pytest -q`.
 
 ## Database migrations
 
@@ -28,6 +28,7 @@ Apply in order to PostgreSQL/Supabase:
 6. `database/migrations/006_failed_imports_dlq.sql`
 7. `database/migrations/007_ingestion_row_progress.sql`
 8. `database/migrations/008_job_correlation_id.sql`
+9. `database/migrations/009_managed_api_keys.sql` (only if using managed API keys)
 
 Set `APP_ENV=production` only after migrations are applied. Production startup intentionally does not create tables automatically.
 
@@ -88,12 +89,9 @@ The API returns found, a matching organization when present, source metadata, da
 See `docs/ARCHITECTURE.md` for the operating contract and scale roadmap.
 
 
-## Windows local worker test
+## Windows local worker
 
-For a safe Windows/Docker Desktop smoke test that uses a shared local SQLite database and local file storage (not production Supabase or R2), follow [`docs/windows-local-worker.md`](docs/windows-local-worker.md). It includes a fictional CSV fixture at [`samples/test-organizations.csv`](samples/test-organizations.csv) and uses [`docker-compose.yml`](docker-compose.yml) to run the API and worker together. Do not put production credentials in this local test configuration.
-
-
-A safe Windows local environment template is provided as [`example.env`](example.env). Never commit `.env`, API keys, database URLs, or R2 credentials.
+Follow [`docs/windows-local-worker.md`](docs/windows-local-worker.md) for the Supabase + R2 sandbox workflow. The fictional CSV fixture is at [`samples/test-organizations.csv`](samples/test-organizations.csv); `docker-compose.yml` runs the API and worker locally while persisting data to the configured external sandbox services. The startup script requires explicit sandbox confirmation. Never commit `.env`, API keys, database URLs, or R2 credentials.
 
 
 ## Managed sandbox and production API keys

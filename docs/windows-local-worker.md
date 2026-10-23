@@ -1,15 +1,19 @@
-# Windows local development and worker testing
+# Windows local Docker stack: Supabase + Cloudflare R2
 
-This setup runs the **API, React dashboard, and ingestion worker** on Windows with Docker Desktop. It is deliberately isolated from production: the API and worker share a local SQLite database, files use local storage, and the Compose configuration explicitly blanks the Cloudflare R2 credentials. It does not connect to Supabase or process production jobs.
+This setup runs the datasource API, Redis, React dashboard, and ingestion worker locally in Docker. The API and worker both read the same Supabase PostgreSQL connection string and Cloudflare R2 credentials from the root `.env` file. The worker runs on your computer; uploaded objects and registry/job data live in Supabase and R2.
+
+## Important safety rule
+
+**Use a dedicated sandbox Supabase project and a dedicated private sandbox R2 bucket. Do not point this worker at production by default.** The worker claims queued jobs from the configured database, so connecting it to a shared production database could cause it to process production jobs. It can also write normalized records, job statuses, row errors and audit events. A local Docker container does not make those writes local.
 
 ## Prerequisites
 
-- Windows 10/11
-- Git
-- Docker Desktop using Linux containers and a running Docker engine
-- Internet access the first time to download container images and install Python/frontend dependencies
+- Windows 10/11, Git, and Docker Desktop using Linux containers.
+- A Supabase sandbox project with the required datasource SQL migrations applied.
+- A private Cloudflare R2 sandbox bucket and an R2 API token with only the bucket permissions needed for this application.
+- The PesaGuard Core API configured server-side to call this datasource using a sandbox API key.
 
-Check in PowerShell:
+Check Docker first:
 
 ```powershell
 docker --version
@@ -17,101 +21,113 @@ docker compose version
 docker info
 ```
 
-If `docker info` fails, start Docker Desktop and wait until its engine is running.
+## 1. Configure the environment
 
-## Quick start
-
-From the repository root, run the guided startup helper. It creates `.env` from safe defaults if missing, opens Notepad, validates Compose, builds and starts the stack, waits for the API readiness endpoint and dashboard HTTP response, and prints logs if either service does not become ready:
-
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\scripts\start-windows-local.ps1
-```
-
-When Notepad opens, replace `REGISTRY_API_KEYS` with a long, random **local-only** value, save, close Notepad and rerun the command. Leave all R2 fields blank. Do not put production Supabase URLs, database passwords, or R2 keys in this local `.env`.
-
-You can also start manually:
+Copy the template and edit it:
 
 ```powershell
 Copy-Item example.env .env
 notepad .env
+```
+
+Set these values:
+
+- `DATABASE_URL`: Supabase PostgreSQL connection string. Use the Supabase Session Pooler for application connections where appropriate, keep `sslmode=require`, and URL-encode special characters in the password. This app connects to Supabase through PostgreSQL/SQLAlchemy; it does not use the anon key as a database password.
+- `REGISTRY_API_KEYS`: a long random sandbox-only datasource API key.
+- `DATASOURCE_ENVIRONMENT=sandbox`.
+- `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `R2_BUCKET_NAME`: credentials and private bucket for the sandbox. `R2_ENDPOINT_URL` can remain blank to use the standard account endpoint.
+- `REDIS_URL=redis://registry-redis:6379/0`. Inside Compose, use the service name, not `localhost`.
+- `VITE_API_BASE_URL=http://localhost:8000`.
+
+Do not paste Supabase passwords, R2 secrets, admin tokens, or production API keys into GitHub, frontend variables, screenshots, or support messages. The `.env` file is ignored by Git and must stay untracked.
+
+## 2. Apply database migrations deliberately
+
+The Compose stack **does not run migrations automatically**. This is intentional: the database URL points to a shared external service and automatic schema changes at container startup are unsafe.
+
+For a new sandbox database, review the migration files in `database/migrations/` and apply them in the documented order using the Supabase SQL Editor or your approved migration process. The README lists the ordered migration sequence. Before upgrading an existing database, take a backup and compare its current schema with the migration files. Do not blindly replay initial migrations against an existing project.
+
+At minimum, verify the schema includes the ingestion job columns used by the current code, including `correlation_id` and `last_processed_row`, and the managed API-key tables if you intend to use those routes. Do not run migrations against production without a reviewed change plan and explicit approval.
+
+## 3. Validate and start
+
+From the repository root:
+
+```powershell
 docker compose config --quiet
 docker compose up -d --build
 docker compose ps
 ```
 
-The execution-policy change applies only to the current PowerShell process. It does not change Windows' permanent policy.
+The stack runs:
+- API: `http://localhost:8000`
+- Swagger/OpenAPI: `http://localhost:8000/docs`
+- Dashboard: `http://localhost:5173`
+- Redis: private to the Compose network
+- Worker: local process in its own container
 
-## Local-only URLs
+Ports 8000 and 5173 bind to loopback only. The API and worker share the same environment values, Supabase database, Redis service and R2 bucket. The worker restarts automatically if it exits while Docker is running.
 
-- Dashboard: http://localhost:5173
-- API docs: http://localhost:8000/docs
-- API liveness: http://localhost:8000/health/live
-- API readiness: http://localhost:8000/health/ready
+## 4. Connect the PesaGuard Core API
 
-Both ports are bound to localhost and are not exposed to your LAN. The dashboard's API-key field is for local development only. Enter the local-only key from `.env`; never enter a production API key in a browser.
+The Core API must call the datasource from its backend, never from browser code. Configure the Core API's server-side environment with the datasource base URL and the exact sandbox secret configured in `REGISTRY_API_KEYS`. Suggested variable names (use the actual names supported by the Core API repository):
 
-## Test a CSV end to end
-
-1. Open the dashboard at http://localhost:5173.
-2. Enter the local-only `REGISTRY_API_KEYS` value and connect.
-3. Open **Upload center** and upload `samples/test-organizations.csv`.
-4. Open **Ingestion jobs** and refresh until the job reaches `COMPLETED`.
-5. Open **Organizations** and confirm the two fictional sample records appear.
-
-The same test can be run through Swagger at http://localhost:8000/docs: use the local key in the `X-API-Key` field, call `POST /api/v1/ingestion/uploads` with the sample CSV, and then check `GET /api/v1/ingestion/jobs`.
-
-These sample records are fictional and must not be treated as real companies or as evidence of registry verification.
-
-## Automated end-to-end smoke test
-
-After the containers are healthy, run this from PowerShell at the repository root:
-
-```powershell
-.\scripts\test-local-stack.ps1
+```dotenv
+PESAGUARD_DATASOURCE_BASE_URL=http://registry-api:8000
+PESAGUARD_DATASOURCE_API_KEY=<same-sandbox-secret-as-REGISTRY_API_KEYS>
+PESAGUARD_DATASOURCE_TIMEOUT_SECONDS=10
 ```
 
-The script checks API readiness and API-key authentication, uploads the fictional CSV fixture, then polls the API until the background worker finishes processing it. It fails with worker logs if the job fails or times out. It writes only to the local Docker volumes.
+This Compose stack creates the named Docker network `pesaguard-internal`. If the Core API is in a separate Compose project, attach its service to that existing network and declare the network as external in the Core API Compose file:
+
+```yaml
+services:
+  pesaguard-core-api:
+    networks:
+      - default
+      - pesaguard-internal
+networks:
+  pesaguard-internal:
+    external: true
+```
+
+Start the datasource stack first so the named network exists, then restart the Core API container. Use `http://registry-api:8000` for container-to-container traffic on that network. If the Core API runs directly on Windows, use `http://localhost:8000`. For a deployed Core API, use the deployed datasource HTTPS URL and a secret stored in that backend's secret manager.
+
+The datasource expects `X-API-Key: <secret>` for protected API routes. Never add this key to `VITE_*` variables or React code. The suggested Core API variable names are integration guidance; this repository does not configure the separate Core API service or add its client code.
+
+## 5. Verify worker processing
+
+1. Check readiness and logs:
+
+   ```powershell
+   Invoke-WebRequest http://localhost:8000/health/ready
+   docker compose logs --tail 100 registry-api
+   docker compose logs --tail 100 registry-worker
+   ```
+
+2. Use the dashboard or Swagger to upload only a fictional CSV fixture to the sandbox datasource.
+3. Check `GET /api/v1/ingestion/jobs` until the job reaches `COMPLETED`.
+4. Confirm the imported test organizations appear in the sandbox database, and that the source object exists in the sandbox R2 bucket.
+5. Check worker logs for failures. PDFs are diagnostic/manual-review only; text extraction does not independently verify an organization.
+
+An automated smoke test is available at `scripts/test-local-stack.ps1`. It writes records and queues jobs in whichever database and bucket are configured in `.env`; run it only after confirming these are sandbox resources.
 
 ## Logs and shutdown
 
 ```powershell
-docker compose logs --tail 100 registry-api
-docker compose logs --tail 100 registry-worker
-docker compose logs --tail 100 registry-frontend
+docker compose logs -f registry-api registry-worker registry-redis registry-frontend
 docker compose down
 ```
 
-You can also stop the stack with:
-
-```powershell
-.\scripts\stop-windows-local.ps1
-```
-
-Normal shutdown preserves the local database, uploads, and frontend dependency volume. To permanently delete all local test data and volumes, run:
-
-```powershell
-docker compose down -v
-```
-
-**Warning:** `down -v` deletes the local SQLite database and local uploads.
-
-## What works and what does not
-
-- API, dashboard, CSV upload, queue persistence, and worker processing are intended to work locally.
-- The API and worker share the same SQLite database and local file-storage volume.
-- The worker automatically restarts if it exits, as long as Docker Desktop is running.
-- PDF uploads are retained and marked `NEEDS_PDF_PROCESSING`. Bounded text extraction and optional OCR diagnostics exist, but every PDF remains unverified and requires manual review; extracted text does not automatically create organization records.
-- This local setup does not test Supabase, Cloudflare R2, external registry APIs, or production deployment behavior.
-- The dashboard currently accepts the API key in the browser. This is suitable only for a local developer preview, not for an internet-facing or shared production dashboard.
-- Docker Desktop and Windows must remain running for the worker to process jobs.
+Normal shutdown preserves the external Supabase and R2 data. It does not delete cloud resources or queued jobs. `docker compose down -v` only removes the local frontend dependency volume; it does not reset Supabase or delete R2 objects.
 
 ## Troubleshooting
 
-- **Docker daemon unavailable:** start Docker Desktop, wait for it to finish starting, then retry `docker info`.
-- **Port 8000 or 5173 is busy:** stop the other local service using that port, then rerun the Compose command.
-- **API readiness times out:** inspect `docker compose logs --tail 100 registry-api`.
-- **API key rejected:** check that `REGISTRY_API_KEYS` in `.env` exactly matches the value entered in the dashboard, then recreate the API container using `docker compose up -d --force-recreate registry-api`.
-- **Worker is not processing:** inspect worker logs, ensure the upload returned a job ID, and verify that the job is `QUEUED` rather than already completed or marked `NEEDS_PDF_PROCESSING`.
-- **Frontend has not started yet:** first install can take time while npm downloads packages; inspect frontend logs before restarting.
-- **Compose config fails:** confirm that `.env` exists and was copied from `example.env`, and run `docker compose config` to view the configuration error.
+- **Compose says DATABASE_URL is missing:** set a valid Supabase PostgreSQL URL in `.env`.
+- **Database connection fails:** check host, pooler/direct connection choice, password URL encoding, SSL mode, and Supabase network restrictions.
+- **API is unhealthy:** inspect `docker compose logs --tail 150 registry-api`; verify migrations are applied and schema matches the current code.
+- **R2 upload fails:** check account ID, bucket name, endpoint, token permissions, and that the bucket is private.
+- **Worker has no jobs:** confirm the upload created a job in the same Supabase database used by the worker.
+- **Worker starts processing unexpected jobs:** stop it immediately with `docker compose stop registry-worker` and confirm the configured database is a sandbox project.
+- **Core API cannot reach localhost:** use `host.docker.internal` from a separate Windows Docker container, or `registry-api` only when both services share a Compose network.
+

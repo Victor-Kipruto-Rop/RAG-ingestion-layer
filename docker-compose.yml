@@ -1,4 +1,5 @@
-# Safe local-only development stack. Production DB/storage credentials are overridden below.
+# Local API and ingestion workers using a Supabase PostgreSQL database and Cloudflare R2.
+# All credentials are read from the untracked root .env file. Never commit .env.
 services:
   registry-redis:
     image: redis:7-alpine
@@ -9,6 +10,8 @@ services:
       timeout: 3s
       retries: 20
     restart: unless-stopped
+    networks:
+      - pesaguard-internal
 
   registry-api:
     build:
@@ -17,38 +20,37 @@ services:
     env_file:
       - .env
     environment:
-      APP_ENV: development
-      DATABASE_URL: sqlite:////app/data/registry.db
+      APP_ENV: ${APP_ENV:-development}
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env to your Supabase PostgreSQL connection string}
+      REDIS_URL: ${REDIS_URL:-redis://registry-redis:6379/0}
       LOCAL_STORAGE_PATH: /app/.registry-uploads
-      CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
-      DATASOURCE_ENVIRONMENT: sandbox
-      DATASOURCE_ADMIN_TOKEN: ""
-      REDIS_URL: redis://registry-redis:6379/0
-      HMAC_SHARED_SECRET: ""
-      REQUIRE_HMAC: "false"
-      METRICS_TOKEN: ""
-      R2_ACCOUNT_ID: ""
-      R2_ACCESS_KEY_ID: ""
-      R2_SECRET_ACCESS_KEY: ""
-      R2_BUCKET_NAME: ""
-      R2_ENDPOINT_URL: ""
-    command: ["sh", "-c", "python -m alembic -c alembic.ini upgrade head && exec uvicorn src.main:app --host 0.0.0.0 --port 8000"]
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      DATASOURCE_ENVIRONMENT: ${DATASOURCE_ENVIRONMENT:-sandbox}
+      CONFIRM_SANDBOX_TARGET: ${CONFIRM_SANDBOX_TARGET:-NO}
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:?Set R2_ACCOUNT_ID in .env}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:?Set R2_ACCESS_KEY_ID in .env}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:?Set R2_SECRET_ACCESS_KEY in .env}
+      R2_BUCKET_NAME: ${R2_BUCKET_NAME:?Set R2_BUCKET_NAME to a private sandbox bucket}
+    # Do not run migrations automatically against a shared Supabase database.
+    # Apply reviewed database/migrations SQL files explicitly before starting.
+    command: ["sh", "-c", "test \"$CONFIRM_SANDBOX_TARGET\" = YES && test \"$DATASOURCE_ENVIRONMENT\" = sandbox && test \"$APP_ENV\" = development || { echo 'Refusing startup: set APP_ENV=development, DATASOURCE_ENVIRONMENT=sandbox, and CONFIRM_SANDBOX_TARGET=YES after verifying the Supabase project and R2 bucket are sandbox resources.'; exit 1; }; exec uvicorn src.main:app --host 0.0.0.0 --port 8000"]
     ports:
-      - "127.0.0.1:8000:8000"
-    volumes:
-      - registry_data:/app/data
-      - registry_uploads:/app/.registry-uploads
+      - "127.0.0.1:${API_PORT:-8000}:8000"
     depends_on:
       registry-redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=5)"]
       interval: 10s
-      timeout: 5s
+      timeout: 6s
       retries: 12
-      start_period: 15s
+      start_period: 20s
     init: true
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - pesaguard-internal
 
   registry-worker:
     build:
@@ -57,28 +59,23 @@ services:
     env_file:
       - .env
     environment:
-      APP_ENV: development
-      DATABASE_URL: sqlite:////app/data/registry.db
+      APP_ENV: ${APP_ENV:-development}
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in .env to your Supabase PostgreSQL connection string}
+      REDIS_URL: ${REDIS_URL:-redis://registry-redis:6379/0}
       LOCAL_STORAGE_PATH: /app/.registry-uploads
-      REDIS_URL: redis://registry-redis:6379/0
-      HMAC_SHARED_SECRET: ""
-      REQUIRE_HMAC: "false"
-      R2_ACCOUNT_ID: ""
-      R2_ACCESS_KEY_ID: ""
-      R2_SECRET_ACCESS_KEY: ""
-      R2_BUCKET_NAME: ""
-      R2_ENDPOINT_URL: ""
-      WORKER_POLL_SECONDS: "2"
-      WORKER_MAX_JOBS_PER_RUN: "10"
-      WORKER_MAX_ATTEMPTS: "3"
-      WORKER_RETRY_SECONDS: "30"
-      WORKER_STALE_AFTER_SECONDS: "900"
-      PDF_OCR_ENABLED: "true"
-      PDF_OCR_MAX_PAGES: "25"
-    command: ["python", "-m", "src.worker"]
-    volumes:
-      - registry_data:/app/data
-      - registry_uploads:/app/.registry-uploads
+      CONFIRM_SANDBOX_TARGET: ${CONFIRM_SANDBOX_TARGET:-NO}
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:?Set R2_ACCOUNT_ID in .env}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:?Set R2_ACCESS_KEY_ID in .env}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:?Set R2_SECRET_ACCESS_KEY in .env}
+      R2_BUCKET_NAME: ${R2_BUCKET_NAME:?Set R2_BUCKET_NAME to a private sandbox bucket}
+      WORKER_POLL_SECONDS: ${WORKER_POLL_SECONDS:-2}
+      WORKER_MAX_JOBS_PER_RUN: ${WORKER_MAX_JOBS_PER_RUN:-10}
+      WORKER_MAX_ATTEMPTS: ${WORKER_MAX_ATTEMPTS:-3}
+      WORKER_RETRY_SECONDS: ${WORKER_RETRY_SECONDS:-30}
+      WORKER_STALE_AFTER_SECONDS: ${WORKER_STALE_AFTER_SECONDS:-900}
+      PDF_OCR_ENABLED: ${PDF_OCR_ENABLED:-false}
+      PDF_OCR_MAX_PAGES: ${PDF_OCR_MAX_PAGES:-25}
+    command: ["sh", "-c", "test \"$CONFIRM_SANDBOX_TARGET\" = YES && test \"$DATASOURCE_ENVIRONMENT\" = sandbox && test \"$APP_ENV\" = development || { echo 'Refusing worker startup: sandbox target confirmation is missing.'; exit 1; }; exec python -m src.worker"]
     depends_on:
       registry-api:
         condition: service_healthy
@@ -92,6 +89,10 @@ services:
       start_period: 10s
     init: true
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - pesaguard-internal
 
   registry-frontend:
     image: node:22-alpine
@@ -101,9 +102,9 @@ services:
       - frontend_node_modules:/app/node_modules
     command: ["sh", "-c", "npm install --no-package-lock --no-audit --no-fund && npm run dev -- --host 0.0.0.0"]
     environment:
-      VITE_API_BASE_URL: http://localhost:8000
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
     ports:
-      - "127.0.0.1:5173:5173"
+      - "127.0.0.1:${FRONTEND_PORT:-5173}:5173"
     depends_on:
       registry-api:
         condition: service_healthy
@@ -112,11 +113,15 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
-      start_period: 20s
+      start_period: 25s
     init: true
     restart: unless-stopped
+    networks:
+      - pesaguard-internal
+
+networks:
+  pesaguard-internal:
+    name: pesaguard-internal
 
 volumes:
-  registry_data:
-  registry_uploads:
   frontend_node_modules:
