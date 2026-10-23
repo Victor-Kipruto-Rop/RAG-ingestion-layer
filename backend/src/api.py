@@ -144,7 +144,7 @@ async def preview_upload(file:UploadFile=File(...)):
  if len(data)>5*1024*1024:raise HTTPException(413,'Preview is limited to 5 MiB; submit the full file to create an ingestion job')
  if not data:raise HTTPException(400,'Uploaded file is empty')
  if suffix=='.xlsx':
-  if not data.startswith(b'PK\\x03\\x04'):raise HTTPException(415,'XLSX file signature is invalid')
+  if not data.startswith(b'PK\x03\x04'):raise HTTPException(415,'XLSX file signature is invalid')
   from itertools import islice
   from .ingestion.parser_xlsx import iter_xlsx_records
   try:
@@ -154,13 +154,13 @@ async def preview_upload(file:UploadFile=File(...)):
   except ValueError as exc:raise HTTPException(422,str(exc)) from exc
   columns=list(sample[0][1].keys()) if sample else []
  else:
-  if b'\\x00' in data[:4096]:raise HTTPException(415,'CSV contains binary data')
+  if b'\x00' in data[:4096]:raise HTTPException(415,'CSV contains binary data')
   try:text_data=data.decode('utf-8-sig')
   except UnicodeDecodeError:
    try:text_data=data.decode('cp1252')
    except UnicodeDecodeError as exc:raise HTTPException(415,'CSV encoding is unsupported') from exc
   try:
-   dialect=csv.Sniffer().sniff(text_data[:8192],delimiters=',;\\t|')
+   dialect=csv.Sniffer().sniff(text_data[:8192],delimiters=',;\t|')
   except csv.Error:dialect=csv.excel
   reader=csv.DictReader(io.StringIO(text_data,newline=''),dialect=dialect)
   columns=[str(h or '').strip() for h in (reader.fieldnames or [])]
