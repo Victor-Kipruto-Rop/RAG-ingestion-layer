@@ -133,6 +133,8 @@ def record_review_decision(
         raise HTTPException(404, "Review case was not found")
     if case.status in {"resolved", "dismissed"}:
         raise HTTPException(409, "This review case is closed; create a new case to record a new review")
+    if payload.decision in {"same_entity", "different_entities"} and not case.related_organization_id:
+        raise HTTPException(422, "Entity comparison decisions require both primary and related organization IDs")
     notes = payload.notes.strip()
     if not notes:
         raise HTTPException(422, "Decision notes cannot be blank")
