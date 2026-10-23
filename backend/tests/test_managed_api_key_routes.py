@@ -82,7 +82,7 @@ def test_sandbox_key_is_rejected_in_production_and_event_is_recorded(monkeypatch
     with SessionLocal() as db:
         event = db.scalar(
             select(APIKeySecurityEvent).where(
-                APIKeySecurityEvent.key_id == item["id"],
+                APIKeySecurityEvent.key_prefix == item["key_prefix"],
                 APIKeySecurityEvent.event_type == "environment_mismatch",
             ).order_by(APIKeySecurityEvent.created_at.desc())
         )
@@ -198,3 +198,33 @@ def test_production_key_is_rejected_in_sandbox(monkeypatch):
         if row:
             db.delete(row)
         db.commit()
+
+
+def test_wrong_environment_prefix_is_rejected_even_when_key_is_not_in_this_database(monkeypatch):
+    """Sandbox and production use separate databases, so mismatch must be detected from prefix."""
+    monkeypatch.setattr(settings, "datasource_environment", "production")
+    fabricated_but_well_formed_sandbox_key = "pg_sandbox_deadbeef_absolutely-not-a-valid-secret"
+    response = client.get(
+        "/api/v1/registry/search",
+        params={"q": "example"},
+        headers={"X-API-Key": fabricated_but_well_formed_sandbox_key},
+    )
+    assert response.status_code == 403
+    detail = response.json()["detail"]
+    assert detail["code"] == "API_KEY_ENVIRONMENT_MISMATCH"
+    assert detail["key_environment"] == "sandbox"
+    assert detail["request_environment"] == "production"
+
+    with SessionLocal() as db:
+        event = db.scalar(
+            select(APIKeySecurityEvent)
+            .where(
+                APIKeySecurityEvent.key_prefix == "pg_sandbox_deadbeef",
+                APIKeySecurityEvent.event_type == "environment_mismatch",
+            )
+            .order_by(APIKeySecurityEvent.created_at.desc())
+        )
+        assert event is not None
+        assert event.key_id is None
+        assert event.expected_environment == "production"
+        assert event.key_environment == "sandbox"
