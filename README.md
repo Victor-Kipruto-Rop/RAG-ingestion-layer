@@ -34,7 +34,7 @@ Set `APP_ENV=production` only after migrations are applied. Production startup i
 
 The current implementation work is tracked in [the phased production hardening roadmap](docs/production-hardening-roadmap.md). Review [database migration safety](docs/database-migrations.md) before running Alembic against any existing database, and see [internal API security](docs/internal-api-security.md) and [large-file ingestion](docs/large-file-ingestion.md) for HMAC signing, replay protection, rate limits, cache behavior and metrics.
 
-- CSV ingestion uses a disk-backed spool, bounded database batches, and persisted row progress for safe retry/resume; PDF diagnostics remain bounded and manual-review-only.
+- CSV and XLSX ingestion use disk-backed spools, bounded row iteration, bounded database batches, and persisted row progress for safe retry/resume. XLSX reads the first worksheet in read-only mode; PDF diagnostics remain bounded and manual-review-only.
 - Invalid row diagnostics are written to the restricted dead-letter table with sensitive row values masked.
 - HMAC signing is optional during caller migration. Do not enable REQUIRE_HMAC until PesaGuard callers send the documented signature headers and REDIS_URL is configured.
 - Distributed rate limiting and Redis cache-aside are active only when REDIS_URL is configured; the no-Redis fallback is per-process and is not a distributed security boundary.
@@ -54,7 +54,7 @@ The API returns found, a matching organization when present, source metadata, da
 
 ## Ingestion flow
 
-- `POST /api/v1/ingestion/uploads` validates the file size/type, stores the original in R2 (or local development storage), creates a durable queued job, and returns HTTP 202.
+- `POST /api/v1/ingestion/uploads` validates the file size/type and signature, stores the original in R2 (or local development storage), creates a durable queued job, and returns HTTP 202. CSV and XLSX are parsed asynchronously; PDF uploads are retained for bounded extraction diagnostics and manual review, not auto-certified.
 - Run one or more `registry-worker` processes to process queued CSVs. PostgreSQL row locks with `SKIP LOCKED` allow multiple workers to claim separate jobs.
 - Jobs use `Idempotency-Key` to safely replay a request when supplied; retries are bounded by `WORKER_MAX_ATTEMPTS`, use exponential delay from `WORKER_RETRY_SECONDS`, and stale processing jobs are recovered after `WORKER_STALE_AFTER_SECONDS`.
 - Row failures are persisted and can be queried through `GET /api/v1/ingestion/jobs/{job_id}/errors`.
