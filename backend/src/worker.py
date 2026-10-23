@@ -47,7 +47,7 @@ def process_job(job_id):
  with SessionLocal() as db:
   job=db.get(IngestionJob,job_id)
   if not job:return
-  log.info('ingestion_job_started',job_id=job_id)
+  log.info('ingestion_job_started',job_id=job_id,request_id=job.correlation_id)
   try:
    if not job.object_key:raise RuntimeError('Ingestion source object is missing')
    suffix='.'+job.file_name.rsplit('.',1)[-1].lower() if '.' in job.file_name else ''
@@ -146,7 +146,7 @@ def process_job(job_id):
    db.add(AuditLog(action='registry_ingestion_completed',actor='ingestion-worker',file_name=job.file_name,details={'job_id':job.id,'processed':processed,'inserted':inserted,'updated':updated,'skipped':skipped}))
    db.commit()
    invalidate_lookup_keys(changed_lookup_keys)
-   log.info('ingestion_job_completed',job_id=job_id,status=job.status,processed=processed,inserted=inserted,updated=updated,skipped=skipped)
+   log.info('ingestion_job_completed',job_id=job_id,request_id=job.correlation_id,status=job.status,processed=processed,inserted=inserted,updated=updated,skipped=skipped)
   except Exception as exc:
    db.rollback()
    with SessionLocal() as retry_db:
