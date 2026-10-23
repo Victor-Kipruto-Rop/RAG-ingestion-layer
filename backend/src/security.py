@@ -167,8 +167,11 @@ async def require_api_key(request:Request,x_api_key:str|None=Header(default=None
                 _record_security_event(request,'environment_mismatch',managed,key_env,{'reason':'key_used_in_wrong_environment'})
                 raise HTTPException(403,detail={'code':'API_KEY_ENVIRONMENT_MISMATCH','message':f'This is a {key_env} API key and can only be used with the {key_env} datasource environment.','key_environment':key_env,'request_environment':expected_env})
             scope=_required_scope(request)
-            if scope and scope not in managed['scopes']:
-                _record_security_event(request,'scope_denied',managed,key_env,{'required_scope':scope})
+            # Fail closed: every endpoint protected by this dependency must have an
+            # explicit scope mapping. A newly added route must not inherit access
+            # simply because it was omitted from the scope map.
+            if scope is None or scope not in managed['scopes']:
+                _record_security_event(request,'scope_denied',managed,key_env,{'required_scope':scope,'reason':'unmapped_route' if scope is None else 'missing_scope'})
                 raise HTTPException(403,detail={'code':'API_KEY_SCOPE_DENIED','message':'This API key does not have permission for this operation.','required_scope':scope})
             identity='managed-api-key:'+managed['id'];request.state.api_key_scopes=managed['scopes'];request.state.api_key_id=managed['id']
         else:
