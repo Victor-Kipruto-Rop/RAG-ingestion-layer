@@ -10,6 +10,7 @@ class Settings(BaseSettings):
  cors_origins:str='http://localhost:5173'
  max_upload_bytes:int=52428800
  max_direct_upload_bytes:int=5368709120
+ max_xlsx_upload_bytes:int=104857600
  direct_upload_url_ttl_seconds:int=3600
  max_records_per_file:int=1000000
  ingestion_batch_size:int=5000
