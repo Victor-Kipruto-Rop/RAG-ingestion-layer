@@ -63,6 +63,16 @@ The same test can be run through Swagger at http://localhost:8000/docs: use the 
 
 These sample records are fictional and must not be treated as real companies or as evidence of registry verification.
 
+## Automated end-to-end smoke test
+
+After the containers are healthy, run this from PowerShell at the repository root:
+
+```powershell
+.\scripts\test-local-stack.ps1
+```
+
+The script checks API readiness and API-key authentication, uploads the fictional CSV fixture, then polls the API until the background worker finishes processing it. It fails with worker logs if the job fails or times out. It writes only to the local Docker volumes.
+
 ## Logs and shutdown
 
 ```powershell
