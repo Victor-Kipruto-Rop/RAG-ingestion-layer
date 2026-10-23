@@ -126,7 +126,9 @@ def _managed_key(raw_key: str, request: Request):
               "message":f"This API key is for {row['environment']} only. Use a {expected_environment} key for this environment."})
         scopes = row["scopes"] if isinstance(row["scopes"], list) else json.loads(row["scopes"])
         path = request.url.path
-        if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+        if path == "/api/v1/ingestion/preview":
+            needed = "registry:read"
+        elif request.method in {"POST", "PUT", "PATCH", "DELETE"}:
             needed = "sources:write" if path.startswith("/api/v1/sources") else "registry:write"
         elif path.startswith("/api/v1/exports/"):
             needed = "exports:read"
