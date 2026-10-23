@@ -6,7 +6,7 @@ from .config import settings
 from .database import SessionLocal
 from .models import IngestionJob,Organization,OrganizationRecordVersion,IngestionRowError,AuditLog,WarehouseRawImport
 from .storage import download_bytes
-from .ingestion.parser_csv import iter_csv_records
+from .ingestion.parser_csv import iter_csv_records_from_storage
 from .ingestion.normalizer import normalize_record
 log=logging.getLogger('registry.worker')
 def now():return datetime.now(timezone.utc)
@@ -50,9 +50,8 @@ def process_job(job_id):
     db.add(AuditLog(action='registry_pdf_extraction_diagnostics',actor='ingestion-worker',file_name=job.file_name,details={'job_id':job.id,'page_count':diagnostics.page_count,'extracted_characters':diagnostics.extracted_characters,'needs_ocr':diagnostics.needs_ocr,'ocr_attempted':diagnostics.ocr_attempted,'ocr_available':diagnostics.ocr_available,'ocr_pages_processed':diagnostics.ocr_pages_processed,'manual_review_required':True}))
     db.commit();return
    if raw_import:raw_import.import_status='PROCESSING';db.flush()
-   data=download_bytes(job.object_key)
    processed=inserted=updated=skipped=0
-   for row_num,row in iter_csv_records(data,settings.max_records_per_file):
+   for row_num,row in iter_csv_records_from_storage(job.object_key,settings.max_records_per_file):
     processed+=1
     try:
      rec=normalize_record(row);reg=rec.get('normalized_registration_number');pin=rec.get('normalized_tax_pin')
