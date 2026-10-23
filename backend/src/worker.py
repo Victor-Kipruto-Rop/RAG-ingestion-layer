@@ -15,7 +15,7 @@ def _sanitize_dlq_row(row):
  safe={}
  for key,value in row.items():
   normalized=str(key).strip().lower().replace('-','_')
-  safe[str(key)[:100]='[REDACTED]' if any(part in normalized for part in _SENSITIVE_KEY_PARTS) else (str(value)[:500] if value is not None else None)
+  safe[str(key)[:100]]='[REDACTED]' if any(part in normalized for part in _SENSITIVE_KEY_PARTS) else (str(value)[:500] if value is not None else None)
  return safe
 def now():return datetime.now(timezone.utc)
 def snap(o):
