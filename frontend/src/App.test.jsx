@@ -66,6 +66,33 @@ describe('API key management page', () => {
     }));
   });
 
+  it('shows the empty state when there are no managed keys or security events', async () => {
+    render(<APIKeysPage />);
+    fireEvent.change(screen.getByLabelText('Operator bearer token'), {
+      target: { value: 'operator-test-token' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /unlock key management/i }));
+    await screen.findByText('No managed keys loaded');
+    expect(screen.getByText('No security events loaded')).toBeTruthy();
+  });
+
+  it('provides manual-copy guidance when clipboard access fails', async () => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: vi.fn().mockRejectedValue(new Error('permission denied')) },
+    });
+    render(<APIKeysPage />);
+    fireEvent.change(screen.getByLabelText('Operator bearer token'), {
+      target: { value: 'operator-test-token' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /unlock key management/i }));
+    await screen.findByText('Operator access verified.');
+    fireEvent.click(screen.getByRole('button', { name: /generate sandbox key/i }));
+    await screen.findByLabelText('New API key secret');
+    fireEvent.click(screen.getByRole('button', { name: /copy secret/i }));
+    await screen.findByText(/clipboard access was blocked/i);
+  });
+
   it('shows a useful error when operator authentication fails', async () => {
     api.mockRejectedValueOnce(new Error('Valid operator bearer token required'));
     render(<APIKeysPage />);
