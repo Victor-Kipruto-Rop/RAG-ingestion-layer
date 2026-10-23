@@ -15,6 +15,14 @@ def _is_personal_payload_field(key):
  parts=set(normalized.split('_'))
  return any(token in parts or token in normalized for token in _PERSONAL_FIELD_TOKENS)
 
+PERSONAL_PAYLOAD_TOKENS={'director','shareholder','owner','individual','person','first_name','middle_name','last_name','email','phone','mobile','national_id','passport','date_of_birth','dob','residential','personal','contact_person','id_number','identity_number'}
+CORPORATE_FLAG_FIELDS={'company_status','entity_status','compliance_status','compliance_flag','corporate_risk_flag','risk_flag','sanctions_status','watchlist_status','company_compliance_flag'}
+def is_personal_payload_field(key):
+ normalized=re.sub(r'[^a-z0-9]+','_',str(key).strip().lower()).strip('_')
+ if normalized in CORPORATE_FLAG_FIELDS:return False
+ parts=set(normalized.split('_'))
+ return any(token in parts or token in normalized for token in PERSONAL_PAYLOAD_TOKENS)
+
 def normalize_record(row):
  lowered={re.sub(r'[^a-z0-9]+','_',str(k).strip().lower()).strip('_'):v for k,v in row.items()}
  def first(*keys):
