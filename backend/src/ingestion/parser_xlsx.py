@@ -46,21 +46,20 @@ def iter_xlsx_file(file_obj, max_records: int):
         headers = [str(value).strip() if value is not None else "" for value in header_row]
         if not any(headers):
             raise ValueError("XLSX has no usable header row")
-        seen = set()
         for row_number, values in enumerate(rows, start=2):
             if row_number - 1 > max_records:
                 raise ValueError(f"XLSX exceeds configured limit of {max_records} records")
             record = {}
+            used = set()
             for index, value in enumerate(values[:len(headers)]):
                 header = headers[index]
                 if not header:
                     continue
                 key = header
-                if key in seen:
+                if key in used:
                     key = f"{header}_{index + 1}"
+                used.add(key)
                 record[key] = "" if value is None else str(value).strip()
-            seen.clear()
-            seen.update(record.keys())
             if any(value for value in record.values()):
                 yield row_number, record
     finally:
