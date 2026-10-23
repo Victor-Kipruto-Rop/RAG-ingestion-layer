@@ -8,7 +8,6 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends
 
-from .base import ProviderNotConfigured
 from ..security import require_api_key
 
 router = APIRouter(prefix="/api/v1/providers", tags=["registry providers"], dependencies=[Depends(require_api_key)])
