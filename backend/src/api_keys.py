@@ -5,7 +5,7 @@ import base64, hashlib, hmac, json, secrets, time, uuid
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 from .config import settings
 from .database import get_db
@@ -39,6 +39,8 @@ def require_user_claims(authorization: str | None = Header(default=None, alias="
         raise HTTPException(401, "Invalid access token signature")
     if not isinstance(claims.get("exp"), (int, float)) or claims["exp"] <= time.time():
         raise HTTPException(401, "Access token has expired")
+    if isinstance(claims.get("nbf"), (int, float)) and claims["nbf"] > time.time():
+        raise HTTPException(401, "Access token is not valid yet")
     if not claims.get("sub") or not claims.get("org_id"):
         raise HTTPException(403, "Access token must identify a user and organization")
     expected_issuer = settings.api_key_auth_jwt_issuer
@@ -78,6 +80,11 @@ def _create_key(db: Session, claims: dict, payload: CreateApiKey):
     env = payload.environment.lower().strip()
     if env not in {"sandbox", "production"}:
         raise HTTPException(422, "environment must be sandbox or production")
+    active_count = db.scalar(select(func.count()).select_from(ApiKey).where(
+        ApiKey.organization_id == str(claims["org_id"]), ApiKey.status == "active"
+    )) or 0
+    if active_count >= 25:
+        raise HTTPException(409, "This organization has reached the limit of 25 active API keys. Revoke an unused key first.")
     roles = _roles(claims)
     if env == "production" and not payload.expires_in_days:
         raise HTTPException(422, "Production API keys must have an expiry date (maximum 365 days)")
