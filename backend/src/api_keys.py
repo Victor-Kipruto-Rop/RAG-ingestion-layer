@@ -25,7 +25,7 @@ class CreateAPIKeyRequest(BaseModel):
     name: str = Field(min_length=2, max_length=120)
     environment: Environment
     scopes: list[str] = Field(default_factory=lambda: ["registry:read"], min_length=1, max_length=2)
-    expires_in_days: int | None = Field(default=90, ge=1, le=365)
+    expires_in_days: int = Field(default=90, ge=1, le=365)
 
 
 def _authorize(token: str | None):
@@ -61,6 +61,8 @@ def create_key(
     db: Session = Depends(get_db),
 ):
     _authorize(x_key_management_token)
+    if len(payload.name.strip()) < 2:
+        raise HTTPException(422, "Key name must contain at least two non-space characters")
     scopes = sorted(set(payload.scopes))
     if not scopes or not set(scopes).issubset(ALLOWED_SCOPES):
         raise HTTPException(422, {"code": "INVALID_SCOPES", "message": "Allowed scopes: registry:read, ingestion:write"})
