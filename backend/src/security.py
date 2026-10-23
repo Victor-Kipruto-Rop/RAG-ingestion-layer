@@ -131,7 +131,7 @@ async def require_api_key(request:Request,x_api_key:str|None=Header(default=None
         if abs(time.time()-timestamp)>max(30,settings.hmac_clock_skew_seconds): raise HTTPException(401,'Internal signature timestamp expired')
         if not x_internal_nonce or len(x_internal_nonce)>200: raise HTTPException(401,'Invalid internal signature nonce')
         body=await request.body();body_hash=hashlib.sha256(body).hexdigest()
-        canonical='\\n'.join([str(timestamp),x_internal_nonce,request.method.upper(),request.url.path,request.url.query,body_hash])
+        canonical='\n'.join([str(timestamp),x_internal_nonce,request.method.upper(),request.url.path,request.url.query,body_hash])
         expected=hmac.new(secret.encode(),canonical.encode(),hashlib.sha256).hexdigest()
         if not hmac.compare_digest(expected,x_internal_signature.lower()): raise HTTPException(401,'Invalid internal signature')
         if not await _check_nonce(x_internal_nonce,max(60,settings.hmac_nonce_ttl_seconds)): raise HTTPException(401,'Internal request replay detected')
