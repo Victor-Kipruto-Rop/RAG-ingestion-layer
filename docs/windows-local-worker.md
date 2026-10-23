@@ -35,9 +35,9 @@ You can also start manually:
 ```powershell
 Copy-Item example.env .env
 notepad .env
-docker compose -f docker-compose.windows.local.yml config --quiet
-docker compose -f docker-compose.windows.local.yml up -d --build
-docker compose -f docker-compose.windows.local.yml ps
+docker compose config --quiet
+docker compose up -d --build
+docker compose ps
 ```
 
 The execution-policy change applies only to the current PowerShell process. It does not change Windows' permanent policy.
@@ -66,10 +66,10 @@ These sample records are fictional and must not be treated as real companies or 
 ## Logs and shutdown
 
 ```powershell
-docker compose -f docker-compose.windows.local.yml logs --tail 100 registry-api
-docker compose -f docker-compose.windows.local.yml logs --tail 100 registry-worker
-docker compose -f docker-compose.windows.local.yml logs --tail 100 registry-frontend
-docker compose -f docker-compose.windows.local.yml down
+docker compose logs --tail 100 registry-api
+docker compose logs --tail 100 registry-worker
+docker compose logs --tail 100 registry-frontend
+docker compose down
 ```
 
 You can also stop the stack with:
@@ -81,7 +81,7 @@ You can also stop the stack with:
 Normal shutdown preserves the local database, uploads, and frontend dependency volume. To permanently delete all local test data and volumes, run:
 
 ```powershell
-docker compose -f docker-compose.windows.local.yml down -v
+docker compose down -v
 ```
 
 **Warning:** `down -v` deletes the local SQLite database and local uploads.
@@ -100,8 +100,8 @@ docker compose -f docker-compose.windows.local.yml down -v
 
 - **Docker daemon unavailable:** start Docker Desktop, wait for it to finish starting, then retry `docker info`.
 - **Port 8000 or 5173 is busy:** stop the other local service using that port, then rerun the Compose command.
-- **API readiness times out:** inspect `docker compose -f docker-compose.windows.local.yml logs --tail 100 registry-api`.
-- **API key rejected:** check that `REGISTRY_API_KEYS` in `.env` exactly matches the value entered in the dashboard, then recreate the API container using `docker compose -f docker-compose.windows.local.yml up -d --force-recreate registry-api`.
+- **API readiness times out:** inspect `docker compose logs --tail 100 registry-api`.
+- **API key rejected:** check that `REGISTRY_API_KEYS` in `.env` exactly matches the value entered in the dashboard, then recreate the API container using `docker compose up -d --force-recreate registry-api`.
 - **Worker is not processing:** inspect worker logs, ensure the upload returned a job ID, and verify that the job is `QUEUED` rather than already completed or marked `NEEDS_PDF_PROCESSING`.
 - **Frontend has not started yet:** first install can take time while npm downloads packages; inspect frontend logs before restarting.
-- **Compose config fails:** confirm that `.env` exists and was copied from `example.env`, and run `docker compose -f docker-compose.windows.local.yml config` to view the configuration error.
+- **Compose config fails:** confirm that `.env` exists and was copied from `example.env`, and run `docker compose config` to view the configuration error.
