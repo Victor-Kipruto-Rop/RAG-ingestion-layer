@@ -25,3 +25,11 @@ def test_environment_mismatch_error_message_contract():
     assert "sandbox environment" in detail["message"].lower()
     assert detail["key_environment"] == "sandbox"
     assert detail["requested_environment"] == "production"
+
+
+def test_sandbox_key_prefix_is_detectable_without_shared_registry():
+    from src.security import environment_mismatch_detail
+    response = environment_mismatch_detail("sandbox", "production")
+    assert response["code"] == "API_KEY_ENVIRONMENT_MISMATCH"
+    assert response["key_environment"] == "sandbox"
+    assert response["requested_environment"] == "production"
