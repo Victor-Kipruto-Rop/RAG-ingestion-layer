@@ -57,6 +57,7 @@ class IngestionJob(Base):
  __tablename__='ingestion_jobs'
  id:Mapped[str]=mapped_column(String(36),primary_key=True,default=lambda:str(uuid.uuid4()))
  file_name:Mapped[str]=mapped_column(String(500),nullable=False)
+ correlation_id:Mapped[str|None]=mapped_column(String(100),index=True)
  object_key:Mapped[str|None]=mapped_column(String(1000))
  content_type:Mapped[str|None]=mapped_column(String(200))
  source_id:Mapped[str|None]=mapped_column(String(36),ForeignKey('registry_sources.id'))
