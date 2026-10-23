@@ -187,9 +187,36 @@ def job_errors(job_id:str,page:int=Query(default=1,ge=1),page_size:int=Query(def
  total=db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
  rows=db.scalars(stmt.order_by(IngestionRowError.row_number).offset((page-1)*page_size).limit(page_size)).all()
  return {'job_id':job_id,'total':total,'page':page,'page_size':page_size,'items':[{'row_number':r.row_number,'error_code':r.error_code,'message':r.message,'created_at':r.created_at.isoformat() if r.created_at else None} for r in rows]}
+def _quality_summary(db: Session):
+ total = db.scalar(select(func.count()).select_from(Organization)) or 0
+ missing_identifiers = db.scalar(select(func.count()).select_from(Organization).where(
+  Organization.normalized_registration_number.is_(None), Organization.normalized_tax_pin.is_(None))) or 0
+ duplicate_candidates = db.scalar(select(func.count()).select_from(Organization).where(
+  Organization.data_quality_status == 'POSSIBLE_DUPLICATE_REVIEW')) or 0
+ pct = lambda count: round((count / total) * 100, 2) if total else 0.0
+ identified = max(0, total - missing_identifiers)
+ return {
+  'total_records': total,
+  'identified_records': identified,
+  'missing_identifier_records': missing_identifiers,
+  'possible_duplicate_records': duplicate_candidates,
+  'valid_percentage': pct(identified),
+  'missing_percentage': pct(missing_identifiers),
+  'duplicate_percentage': pct(duplicate_candidates),
+  'definitions': {
+   'valid_percentage': 'Share of records with at least one normalized registration number or tax PIN; this is identifier coverage, not legal verification.',
+   'missing_percentage': 'Share of records missing both normalized registration number and tax PIN.',
+   'duplicate_percentage': 'Share of records already flagged POSSIBLE_DUPLICATE_REVIEW by ingestion; not a complete duplicate scan.'
+  }
+ }
+
+@router.get('/api/v1/quality/summary',dependencies=[Depends(require_api_key)])
+def quality_summary(db:Session=Depends(get_db)):
+ return _quality_summary(db)
+
 @router.get('/api/v1/metrics/summary',dependencies=[Depends(require_api_key)])
 def metrics(db:Session=Depends(get_db)):
- return {'total_organizations':db.scalar(select(func.count()).select_from(Organization)) or 0,'total_jobs':db.scalar(select(func.count()).select_from(IngestionJob)) or 0,'queued_jobs':db.scalar(select(func.count()).select_from(IngestionJob).where(IngestionJob.status=='QUEUED')) or 0,'processing_jobs':db.scalar(select(func.count()).select_from(IngestionJob).where(IngestionJob.status=='PROCESSING')) or 0,'completed_jobs':db.scalar(select(func.count()).select_from(IngestionJob).where(IngestionJob.status.in_(['COMPLETED','COMPLETED_WITH_ERRORS']))) or 0,'failed_jobs':db.scalar(select(func.count()).select_from(IngestionJob).where(IngestionJob.status=='FAILED')) or 0}
+ return {'total_organizations':db.scalar(select(func.count()).select_from(Organization)) or 0,'total_jobs':db.scalar(select(func.count()).select_from(IngestionJob)) or 0,'queued_jobs':db.scalar(select(func.count()).select_from(IngestionJob).where(IngestionJob.status=='QUEUED')) or 0,'processing_jobs':db.scalar(select(func.count()).select_from(IngestionJob).where(IngestionJob.status=='PROCESSING')) or 0,'completed_jobs':db.scalar(select(func.count()).select_from(IngestionJob).where(IngestionJob.status.in_(['COMPLETED','COMPLETED_WITH_ERRORS']))) or 0,'failed_jobs':db.scalar(select(func.count()).select_from(IngestionJob).where(IngestionJob.status=='FAILED')) or 0,'data_quality':_quality_summary(db)}
 @router.get('/api/v1/exports/organizations.csv',dependencies=[Depends(require_api_key)])
 def export_csv(db:Session=Depends(get_db)):
  def stream():
