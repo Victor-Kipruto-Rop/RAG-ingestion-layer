@@ -119,3 +119,18 @@ class WarehouseAccessLog(Base):
  query_type:Mapped[str|None]=mapped_column(String(40))
  result_count:Mapped[int|None]=mapped_column(Integer)
  created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
+
+
+class FailedImportDLQ(Base):
+ __tablename__='failed_imports_dlq'
+ __table_args__=(UniqueConstraint('job_id','row_number','error_code',name='uq_failed_import_job_row_code'),Index('ix_failed_imports_dlq_created_at','created_at'))
+ id:Mapped[str]=mapped_column(String(36),primary_key=True,default=lambda:str(uuid.uuid4()))
+ job_id:Mapped[str]=mapped_column(String(36),ForeignKey('ingestion_jobs.id',ondelete='RESTRICT'),nullable=False,index=True)
+ row_number:Mapped[int]=mapped_column(Integer,nullable=False)
+ error_code:Mapped[str]=mapped_column(String(80),nullable=False)
+ error_type:Mapped[str]=mapped_column(String(200),nullable=False)
+ message:Mapped[str]=mapped_column(Text,nullable=False)
+ sanitized_row:Mapped[dict]=mapped_column(json_type,default=dict,nullable=False)
+ traceback_text:Mapped[str]=mapped_column(Text,nullable=False)
+ resolved_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
+ created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
