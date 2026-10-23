@@ -28,8 +28,10 @@ This is a status-based release checklist for PesaGuard Registry Datasource. It d
 - [x] Normalize legal names and identifiers and provide fuzzy candidate matching.
 - [x] Keep name similarity as a review aid; do not auto-merge organizations based on a fuzzy score.
 - [x] Return source and provenance information for review.
+- [x] Add durable, paginated human review decisions with comments, bounded evidence, reviewer identity, request correlation, and audit events.
+- [x] Enforce the dedicated `quality:review` scope for writing decisions; read-only review access uses `registry:read`.
+- [x] Regression test that a review decision is persisted without modifying/merging the canonical organization record.
 - [ ] Expand tests for conflicting identifiers, common-name collisions, and multilingual/legal-suffix false positives.
-- [ ] Persist human adjudication decisions and evidence if entity-resolution decisions become part of a regulated workflow.
 
 ## Phase 5 — Security and compliance
 - [x] Validate required production configuration at startup without printing secret values.
@@ -47,6 +49,7 @@ This is a status-based release checklist for PesaGuard Registry Datasource. It d
 - [x] Add bounded retry/circuit-breaker helpers for transient provider calls.
 - [x] Implement cache TTLs and negative-cache TTLs for registry lookups.
 - [x] Expose source freshness state from actual import timestamps and configured freshness SLAs.
+- [x] Add explicit BRS/KRA adapter contracts that return `NOT_CONFIGURED` until authorized credentials and contracts exist; they do not simulate live verification.
 - [ ] Add provider-specific outage/timeout/retry-storm tests once real provider adapters and credentials are approved.
 - [ ] Confirm Redis is configured on every production replica before treating rate limiting/replay prevention as distributed guarantees.
 
@@ -78,6 +81,7 @@ This is a status-based release checklist for PesaGuard Registry Datasource. It d
 - [ ] Test backup/restore and migration recovery.
 - [ ] Verify production health, service permissions, CORS, TLS, and secret configuration without revealing credentials.
 - [ ] Run the Windows Docker Compose workflow with fictional sample data and capture the results.
+- [x] Add a provider-adapter boundary that explicitly reports unconfigured status instead of fabricating an external verification result.
 - [ ] Complete approved BRS/KRA/commercial provider onboarding and integration tests. No live external registry connection is claimed until access is authorized and configured.
 - [ ] Record residual risks and obtain explicit release approval.
 
