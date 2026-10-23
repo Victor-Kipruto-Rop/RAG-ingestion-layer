@@ -45,7 +45,8 @@ app=FastAPI(title=settings.app_name,version='1.0.0',description='Internal regist
 app.add_middleware(CORSMiddleware,allow_origins=settings.cors_origin_list,allow_credentials=False,allow_methods=['GET','POST','PATCH','DELETE','OPTIONS'],allow_headers=['Content-Type','Authorization','X-API-Key','X-Correlation-ID','Idempotency-Key','X-Registry-Source','X-Internal-Signature','X-Internal-Timestamp','X-Internal-Nonce'])
 app.include_router(router)
 app.include_router(key_management_router)
-app.include_router(quality_router)\napp.include_router(review_workflow_router)
+app.include_router(quality_router)
+app.include_router(review_workflow_router)
 @app.middleware('http')
 async def warehouse_access_telemetry(request,call_next):
  path=request.url.path
