@@ -1,38 +1,122 @@
+# Safe local-only development stack. Production DB/storage credentials are overridden below.
 services:
-  registry-api:
-    build: ./backend
-    env_file: .env
-    ports:
-      - "8000:8000"
-    volumes:
-      - registry_uploads:/app/.registry-uploads
+  registry-redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=3)"]
-      interval: 30s
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  registry-api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      APP_ENV: development
+      DATABASE_URL: sqlite:////app/data/registry.db
+      LOCAL_STORAGE_PATH: /app/.registry-uploads
+      CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
+      DATASOURCE_ENVIRONMENT: sandbox
+      DATASOURCE_ADMIN_TOKEN: ""
+      REDIS_URL: redis://registry-redis:6379/0
+      HMAC_SHARED_SECRET: ""
+      REQUIRE_HMAC: "false"
+      METRICS_TOKEN: ""
+      R2_ACCOUNT_ID: ""
+      R2_ACCESS_KEY_ID: ""
+      R2_SECRET_ACCESS_KEY: ""
+      R2_BUCKET_NAME: ""
+      R2_ENDPOINT_URL: ""
+    command: ["sh", "-c", "python -m alembic -c alembic.ini upgrade head && exec uvicorn src.main:app --host 0.0.0.0 --port 8000"]
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - registry_data:/app/data
+      - registry_uploads:/app/.registry-uploads
+    depends_on:
+      registry-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)"]
+      interval: 10s
       timeout: 5s
-      retries: 3
+      retries: 12
+      start_period: 15s
+    init: true
+    restart: unless-stopped
+
   registry-worker:
-    build: ./backend
-    env_file: .env
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.worker
+    env_file:
+      - .env
+    environment:
+      APP_ENV: development
+      DATABASE_URL: sqlite:////app/data/registry.db
+      LOCAL_STORAGE_PATH: /app/.registry-uploads
+      REDIS_URL: redis://registry-redis:6379/0
+      HMAC_SHARED_SECRET: ""
+      REQUIRE_HMAC: "false"
+      R2_ACCOUNT_ID: ""
+      R2_ACCESS_KEY_ID: ""
+      R2_SECRET_ACCESS_KEY: ""
+      R2_BUCKET_NAME: ""
+      R2_ENDPOINT_URL: ""
+      WORKER_POLL_SECONDS: "2"
+      WORKER_MAX_JOBS_PER_RUN: "10"
+      WORKER_MAX_ATTEMPTS: "3"
+      WORKER_RETRY_SECONDS: "30"
+      WORKER_STALE_AFTER_SECONDS: "900"
+      PDF_OCR_ENABLED: "true"
+      PDF_OCR_MAX_PAGES: "25"
     command: ["python", "-m", "src.worker"]
     volumes:
+      - registry_data:/app/data
       - registry_uploads:/app/.registry-uploads
     depends_on:
       registry-api:
         condition: service_healthy
+      registry-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os; os.kill(1, 0)"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    init: true
     restart: unless-stopped
+
   registry-frontend:
     image: node:22-alpine
     working_dir: /app
     volumes:
       - ./frontend:/app
-      - /app/node_modules
-    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
-    ports:
-      - "5173:5173"
+      - frontend_node_modules:/app/node_modules
+    command: ["sh", "-c", "npm install --no-audit --no-fund && npm run dev -- --host 0.0.0.0"]
     environment:
       VITE_API_BASE_URL: http://localhost:8000
+    ports:
+      - "127.0.0.1:5173:5173"
     depends_on:
-      - registry-api
+      registry-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5173').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    init: true
+    restart: unless-stopped
+
 volumes:
+  registry_data:
   registry_uploads:
+  frontend_node_modules:
