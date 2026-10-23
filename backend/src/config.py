@@ -8,6 +8,10 @@ class Settings(BaseSettings):
  cors_origins:str='http://localhost:5173'
  max_upload_bytes:int=52428800
  max_records_per_file:int=1000000
+ local_storage_path:str='./.registry-uploads'
+ worker_poll_seconds:float=2.0
+ worker_max_attempts:int=3
+ worker_retry_seconds:int=30
  r2_account_id:str=''
  r2_access_key_id:str=''
  r2_secret_access_key:str=''
