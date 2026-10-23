@@ -26,6 +26,9 @@ Apply in order to PostgreSQL/Supabase:
 6. `database/migrations/006_failed_imports_dlq.sql`
 7. `database/migrations/007_ingestion_row_progress.sql`
 8. `database/migrations/008_job_correlation_id.sql`
+9. `database/migrations/009_api_key_lifecycle.sql`
+10. `database/migrations/010_verification_orchestration.sql`
+11. `database/migrations/011_api_key_usage_events.sql`
 
 Set `APP_ENV=production` only after migrations are applied. Production startup intentionally does not create tables automatically.
 
@@ -34,7 +37,7 @@ Set `APP_ENV=production` only after migrations are applied. Production startup i
 
 The current implementation work is tracked in [the phased production hardening roadmap](docs/production-hardening-roadmap.md). Review [database migration safety](docs/database-migrations.md) before running Alembic against any existing database, and see [internal API security](docs/internal-api-security.md) and [large-file ingestion](docs/large-file-ingestion.md) for HMAC signing, replay protection, rate limits, cache behavior and metrics.
 
-- CSV ingestion uses a disk-backed spool, bounded database batches, and persisted row progress for safe retry/resume; PDF diagnostics remain bounded and manual-review-only.
+- CSV ingestion uses a disk-backed spool, bounded database batches, and persisted row progress for safe retry/resume; XLSX uses a read-only parser with archive expansion limits; PDF diagnostics remain bounded and manual-review-only.
 - Invalid row diagnostics are written to the restricted dead-letter table with sensitive row values masked.
 - HMAC signing is optional during caller migration. Do not enable REQUIRE_HMAC until PesaGuard callers send the documented signature headers and REDIS_URL is configured.
 - Distributed rate limiting and Redis cache-aside are active only when REDIS_URL is configured; the no-Redis fallback is per-process and is not a distributed security boundary.
@@ -54,7 +57,11 @@ The API returns found, a matching organization when present, source metadata, da
 
 ## Ingestion flow
 
-- `POST /api/v1/ingestion/uploads` validates the file size/type, stores the original in R2 (or local development storage), creates a durable queued job, and returns HTTP 202.
+- `GET /api/v1/audit/logs` (paginated ingestion audit events)
+- `GET /api/v1/quality/summary` (identifier coverage and duplicate-review indicators; not authoritative verification)
+- `GET /api/v1/verification/providers` and `POST/GET /api/v1/verification/cases`
+- `POST /api/v1/ingestion/preview` returns a non-persistent sample of CSV/XLSX files up to 5 MiB; it does not create an ingestion job.
+- `POST /api/v1/ingestion/uploads` validates file size/type and signatures, stores the original in R2 (or local development storage), creates a durable queued job, and returns HTTP 202. CSV is streamed; XLSX uses read-only parsing with compressed/uncompressed size and archive-entry limits.
 - Run one or more `registry-worker` processes to process queued CSVs. PostgreSQL row locks with `SKIP LOCKED` allow multiple workers to claim separate jobs.
 - Jobs use `Idempotency-Key` to safely replay a request when supplied; retries are bounded by `WORKER_MAX_ATTEMPTS`, use exponential delay from `WORKER_RETRY_SECONDS`, and stale processing jobs are recovered after `WORKER_STALE_AFTER_SECONDS`.
 - Row failures are persisted and can be queried through `GET /api/v1/ingestion/jobs/{job_id}/errors`.
@@ -67,9 +74,11 @@ The API returns found, a matching organization when present, source metadata, da
 - `GET /api/v1/registry/lookup?reg_no=...` or `?tax_pin=...`
 - `GET /api/v1/registry/search?q=...`
 - `GET /api/v1/organizations?page=1&page_size=25`
+- `GET /api/v1/organizations/{organization_id}/quality`
 - `GET/POST /api/v1/sources`
 - `POST /api/v1/ingestion/uploads`
 - `GET /api/v1/ingestion/jobs`
+- `POST /api/v1/ingestion/jobs/{job_id}/retry` (failed CSV/XLSX jobs only; preserves committed row progress)
 - `GET /api/v1/ingestion/jobs/{job_id}/errors`
 - `GET /api/v1/metrics/summary`
 - `GET /api/v1/exports/organizations.csv`
@@ -92,3 +101,26 @@ For a safe Windows/Docker Desktop smoke test that uses a shared local SQLite dat
 
 
 A safe Windows local environment template is provided as [`example.env`](example.env). Never commit `.env`, API keys, database URLs, or R2 credentials.
+
+
+## Phased implementation
+
+See [implementation phases](docs/implementation-phases.md) for the delivery roadmap and release gates. Use the [API quickstart](docs/api-quickstart.md) for lookup, preview, ingestion, and error-handling examples. The managed API-key lifecycle is documented in [API key lifecycle](docs/api-key-lifecycle.md).
+
+### Managed API keys (initial implementation)
+
+- Configure `PESAGUARD_DATASOURCE_ENVIRONMENT=sandbox` on a sandbox deployment or `production` on production. The server setting is authoritative; request headers cannot switch environments.
+- Apply migration `009_api_key_lifecycle.sql` to a non-production PostgreSQL database first.
+- Configure `API_KEY_MANAGEMENT_TOKEN` as a high-entropy server-side deployment secret. Do not expose it to browser code.
+- The operator routes are `POST/GET /api/v1/admin/api-keys`, `GET /api/v1/admin/api-keys/events`, `GET /api/v1/admin/api-keys/{id}/usage`, `POST /api/v1/admin/api-keys/{id}/revoke`, and `POST /api/v1/admin/api-keys/{id}/rotate`; they require `X-Key-Management-Token`.
+- Managed key secrets are returned only once. The database stores only a SHA-256 digest and a public prefix. Managed keys are checked against the server deployment environment and scopes.
+- Legacy `REGISTRY_API_KEYS` remain available during caller migration. Do not revoke them until each trusted service caller has been migrated and verified.
+- The current application has no verified customer login/organization-owner identity in this service. These management routes are operator-only; do not expose them as a customer self-service UI until authenticated tenant roles are integrated.
+
+
+## Verification provider readiness
+
+The verification case API persists a traceable case and provider-check records, but BRS, KRA, and Peleza are explicitly reported as `not_configured` until approved provider access, endpoint specifications, credentials, and provider-specific adapters are supplied. Creating a case does not call an external provider and does not mark the organization verified. See [implementation phases](docs/implementation-phases.md).
+
+
+Managed-key usage analytics are available from the operator-only `GET /api/v1/admin/api-keys/{id}/usage?days=30` endpoint after migration 011 is applied. Usage telemetry stores key IDs/prefixes, endpoint, method, status, duration, and request correlation only; it never stores the raw API secret or request headers.

@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime,timezone
-from sqlalchemy import DateTime,Integer,BigInteger,String,Text,UniqueConstraint,Index,ForeignKey,Boolean
+from sqlalchemy import DateTime,Integer,BigInteger,String,Text,UniqueConstraint,Index,ForeignKey,Boolean,CheckConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.types import JSON
 from sqlalchemy.orm import Mapped,mapped_column
@@ -135,4 +135,89 @@ class FailedImportDLQ(Base):
  sanitized_row:Mapped[dict]=mapped_column(json_type,default=dict,nullable=False)
  traceback_text:Mapped[str]=mapped_column(Text,nullable=False)
  resolved_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
+ created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
+
+
+class VerificationCase(Base):
+ __tablename__='verification_cases'
+ __table_args__=(Index('ix_verification_cases_status_created','status','created_at'),Index('ix_verification_cases_registration','registration_number'),Index('ix_verification_cases_correlation','correlation_id'))
+ id:Mapped[str]=mapped_column(String(36),primary_key=True,default=lambda:str(uuid.uuid4()))
+ subject_type:Mapped[str]=mapped_column(String(40),default='organization',nullable=False)
+ legal_name:Mapped[str|None]=mapped_column(String(500))
+ registration_number:Mapped[str|None]=mapped_column(String(120))
+ tax_pin:Mapped[str|None]=mapped_column(String(80))
+ status:Mapped[str]=mapped_column(String(40),default='not_configured',nullable=False,index=True)
+ correlation_id:Mapped[str|None]=mapped_column(String(100))
+ requested_by:Mapped[str]=mapped_column(String(200),default='internal-service',nullable=False)
+ result_summary:Mapped[dict]=mapped_column(json_type,default=dict,nullable=False)
+ created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
+ updated_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,onupdate=now_utc,nullable=False)
+
+class VerificationProviderCheck(Base):
+ __tablename__='verification_provider_checks'
+ __table_args__=(Index('ix_verification_provider_checks_case','case_id','created_at'),)
+ id:Mapped[str]=mapped_column(String(36),primary_key=True,default=lambda:str(uuid.uuid4()))
+ case_id:Mapped[str]=mapped_column(String(36),ForeignKey('verification_cases.id',ondelete='CASCADE'),nullable=False,index=True)
+ provider_key:Mapped[str]=mapped_column(String(80),nullable=False)
+ status:Mapped[str]=mapped_column(String(40),default='not_configured',nullable=False)
+ provider_reference:Mapped[str|None]=mapped_column(String(200))
+ response_code:Mapped[str|None]=mapped_column(String(100))
+ safe_result:Mapped[dict]=mapped_column(json_type,default=dict,nullable=False)
+ error_category:Mapped[str|None]=mapped_column(String(100))
+ started_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
+ completed_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
+ created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
+
+
+class ApiKeyUsageEvent(Base):
+ __tablename__='api_key_usage_events'
+ __table_args__=(Index('ix_api_key_usage_events_key_created','api_key_id','created_at'),Index('ix_api_key_usage_events_created','created_at'))
+ id:Mapped[str]=mapped_column(String(36),primary_key=True,default=lambda:str(uuid.uuid4()))
+ api_key_id:Mapped[str|None]=mapped_column(String(36),ForeignKey('api_keys.id',ondelete='SET NULL'),nullable=True)
+ key_prefix:Mapped[str|None]=mapped_column(String(40))
+ environment:Mapped[str|None]=mapped_column(String(16))
+ endpoint:Mapped[str]=mapped_column(String(300),nullable=False)
+ http_method:Mapped[str]=mapped_column(String(12),nullable=False)
+ response_status:Mapped[int]=mapped_column(Integer,nullable=False)
+ duration_ms:Mapped[float]=mapped_column(nullable=False,default=0)
+ request_id:Mapped[str|None]=mapped_column(String(100))
+ created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
+
+
+class ApiKey(Base):
+ __tablename__='api_keys'
+ __table_args__=(
+  Index('ix_api_keys_environment_status','environment','status'),
+  Index('ix_api_keys_created_at','created_at'),
+  CheckConstraint("environment IN ('sandbox','production')",name='ck_api_keys_environment'),
+  CheckConstraint("status IN ('active','revoked')",name='ck_api_keys_status'),
+ )
+ id:Mapped[str]=mapped_column(String(36),primary_key=True,default=lambda:str(uuid.uuid4()))
+ name:Mapped[str]=mapped_column(String(120),nullable=False)
+ key_prefix:Mapped[str]=mapped_column(String(40),unique=True,nullable=False)
+ secret_hash:Mapped[str]=mapped_column(String(64),unique=True,nullable=False)
+ environment:Mapped[str]=mapped_column(String(16),nullable=False)
+ scopes:Mapped[list]=mapped_column(json_type,default=lambda:['registry:read'],nullable=False)
+ status:Mapped[str]=mapped_column(String(16),default='active',nullable=False)
+ expires_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
+ created_by:Mapped[str]=mapped_column(String(200),nullable=False)
+ created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
+ last_used_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
+ revoked_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
+ rotated_from_id:Mapped[str|None]=mapped_column(String(36),ForeignKey('api_keys.id'))
+
+
+class ApiKeySecurityEvent(Base):
+ __tablename__='api_key_security_events'
+ __table_args__=(Index('ix_api_key_security_events_created_at','created_at'),Index('ix_api_key_security_events_key_id','api_key_id'))
+ id:Mapped[str]=mapped_column(String(36),primary_key=True,default=lambda:str(uuid.uuid4()))
+ api_key_id:Mapped[str|None]=mapped_column(String(36),ForeignKey('api_keys.id',ondelete='SET NULL'),nullable=True)
+ key_prefix:Mapped[str|None]=mapped_column(String(40))
+ event_type:Mapped[str]=mapped_column(String(60),nullable=False)
+ expected_environment:Mapped[str|None]=mapped_column(String(16))
+ key_environment:Mapped[str|None]=mapped_column(String(16))
+ endpoint:Mapped[str]=mapped_column(String(300),nullable=False)
+ request_id:Mapped[str|None]=mapped_column(String(100))
+ source_ip:Mapped[str|None]=mapped_column(String(64))
+ details:Mapped[dict]=mapped_column(json_type,default=dict,nullable=False)
  created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)

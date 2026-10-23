@@ -85,7 +85,12 @@ def process_job(job_id):
    changed_lookup_keys=set()
    batch_count=0
    last_row_number=job.last_processed_row or 1
-   for row_num,row in iter_csv_records_from_storage(job.object_key,settings.max_records_per_file):
+   if suffix=='.xlsx':
+    from .ingestion.parser_xlsx import iter_xlsx_records_from_storage
+    record_iter=iter_xlsx_records_from_storage(job.object_key,settings.max_records_per_file)
+   else:
+    record_iter=iter_csv_records_from_storage(job.object_key,settings.max_records_per_file)
+   for row_num,row in record_iter:
     if row_num <= last_row_number:
      continue
     processed+=1

@@ -3,10 +3,15 @@ import hashlib
 import hmac
 import threading
 import time
+import uuid
+from datetime import datetime, timezone
 from functools import lru_cache
 from fastapi import Header, HTTPException, Request
 from redis import Redis
+from sqlalchemy import select
 from .config import settings
+from .database import SessionLocal
+from .models import ApiKey, ApiKeySecurityEvent
 
 @lru_cache(maxsize=1)
 def _redis_client():
@@ -86,6 +91,56 @@ async def _take_token(identity, request):
             raise HTTPException(429, 'Registry lookup rate limit exceeded', headers={'Retry-After': '1'})
         _local_buckets[key] = (tokens - 1, now)
 
+def _managed_key(raw_key: str, request: Request):
+    # Recognizable managed-key prefixes never fall back to legacy shared-key auth.
+    if raw_key.startswith('pg_sandbox_'):
+        prefix = 'pg_sandbox_' + raw_key[len('pg_sandbox_'):len('pg_sandbox_') + 8]
+    elif raw_key.startswith('pg_live_'):
+        prefix = 'pg_live_' + raw_key[len('pg_live_'):len('pg_live_') + 8]
+    else:
+        return None
+    digest = hashlib.sha256(raw_key.encode()).hexdigest()
+    with SessionLocal() as db:
+        row = db.scalar(select(ApiKey).where(ApiKey.key_prefix == prefix))
+        if not row or not hmac.compare_digest(row.secret_hash, digest):
+            raise HTTPException(401, 'Invalid or missing API key')
+        expires_at = row.expires_at
+        if expires_at and expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if row.status != 'active' or (expires_at and expires_at <= datetime.now(timezone.utc)):
+            raise HTTPException(401, 'API key is revoked or expired')
+        expected_environment = settings.pesaguard_datasource_environment
+        if row.environment != expected_environment:
+            request_id = getattr(request.state, 'request_id', None) or request.headers.get('X-Correlation-ID')
+            db.add(ApiKeySecurityEvent(
+                api_key_id=row.id, key_prefix=prefix, event_type='environment_mismatch',
+                expected_environment=expected_environment, key_environment=row.environment,
+                endpoint=request.url.path[:300], request_id=request_id,
+                source_ip=request.client.host if request.client else None,
+                details={'method': request.method},
+            ))
+            db.commit()
+            raise HTTPException(403, detail={'code':'API_KEY_ENVIRONMENT_MISMATCH',
+              'message':f'This API key is for {row.environment} only. Use a {expected_environment} key for this environment.'})
+        scopes = row.scopes if isinstance(row.scopes, list) else []
+        path = request.url.path
+        if path == '/api/v1/ingestion/preview':
+            needed = 'registry:read'
+        elif request.method in {'POST', 'PUT', 'PATCH', 'DELETE'}:
+            needed = 'sources:write' if path.startswith('/api/v1/sources') else 'registry:write'
+        elif path.startswith('/api/v1/exports/'):
+            needed = 'exports:read'
+        else:
+            needed = 'registry:read'
+        if needed not in scopes:
+            raise HTTPException(403, detail={'code':'API_KEY_SCOPE_INSUFFICIENT','message':f'This key requires the {needed} scope.'})
+        row.last_used_at = datetime.now(timezone.utc)
+        db.commit()
+        request.state.api_key_id = row.id
+        request.state.api_key_prefix = prefix
+        request.state.api_key_environment = row.environment
+        return 'managed-api-key:' + row.id
+
 async def require_api_key(
     request: Request,
     x_api_key: str | None = Header(default=None, alias='X-API-Key'),
@@ -117,12 +172,17 @@ async def require_api_key(
     else:
         if settings.require_hmac:
             raise HTTPException(401, 'Signed internal request required')
-        keys = settings.api_key_list
-        if not keys:
-            raise HTTPException(503, 'Service authentication is not configured')
-        if not x_api_key or not any(hmac.compare_digest(x_api_key, key) for key in keys):
+        if not x_api_key:
             raise HTTPException(401, 'Invalid or missing API key')
-        identity = 'api-key:' + hashlib.sha256(x_api_key.encode()).hexdigest()
+        if x_api_key.startswith(("pg_sandbox_", "pg_live_")):
+            identity = _managed_key(x_api_key, request)
+        else:
+            keys = settings.api_key_list
+            if not keys:
+                raise HTTPException(503, 'Service authentication is not configured')
+            if not any(hmac.compare_digest(x_api_key, key) for key in keys):
+                raise HTTPException(401, 'Invalid or missing API key')
+            identity = 'api-key:' + hashlib.sha256(x_api_key.encode()).hexdigest()
     if request.url.path in {'/api/v1/registry/lookup', '/api/v1/registry/search'}:
         await _take_token(identity, request)
     return identity

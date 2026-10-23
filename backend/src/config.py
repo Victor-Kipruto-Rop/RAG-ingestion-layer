@@ -5,9 +5,12 @@ class Settings(BaseSettings):
  app_env:str='development'
  database_url:str='sqlite:///./registry.db'
  registry_api_keys:str=''
+ api_key_management_token:str=''
+ pesaguard_datasource_environment:str='sandbox'
  cors_origins:str='http://localhost:5173'
  max_upload_bytes:int=52428800
  max_direct_upload_bytes:int=5368709120
+ max_xlsx_upload_bytes:int=104857600
  direct_upload_url_ttl_seconds:int=3600
  max_records_per_file:int=1000000
  ingestion_batch_size:int=5000
@@ -47,9 +50,10 @@ class Settings(BaseSettings):
 def get_settings(): return Settings()
 settings=get_settings()
 
-
 def validate_runtime_config():
  if settings.app_env.lower()!='production':
+  if settings.pesaguard_datasource_environment not in {'sandbox','production'}:
+   raise RuntimeError('PESAGUARD_DATASOURCE_ENVIRONMENT must be sandbox or production')
   return
  missing=[]
  if not settings.api_key_list or 'change-this-local-only-key-before-use' in settings.api_key_list:
@@ -62,5 +66,11 @@ def validate_runtime_config():
   missing.append('HMAC_SHARED_SECRET')
  if settings.require_hmac and not settings.redis_url:
   missing.append('REDIS_URL (required for distributed HMAC replay protection)')
+ if settings.pesaguard_datasource_environment not in {'sandbox','production'}:
+  missing.append('PESAGUARD_DATASOURCE_ENVIRONMENT (must be sandbox or production)')
+ if settings.pesaguard_datasource_environment != 'production':
+  missing.append('PESAGUARD_DATASOURCE_ENVIRONMENT=production (required when APP_ENV=production)')
+ if settings.api_key_management_token and len(settings.api_key_management_token) < 32:
+  missing.append('API_KEY_MANAGEMENT_TOKEN (must be at least 32 characters when configured)')
  if missing:
   raise RuntimeError('Invalid production configuration: '+', '.join(missing))

@@ -138,13 +138,13 @@ function QualityPanel({ summary }) {
   const duplicate = summary?.data_quality?.duplicate_percentage;
   const hasQuality = [valid, missing, duplicate].some(v => v !== undefined && v !== null);
   const rows = hasQuality ? [
-    ['Valid records', Number(valid || 0), 'quality-valid'],
-    ['Missing required fields', Number(missing || 0), 'quality-missing'],
+    ['Identifier coverage', Number(valid || 0), 'quality-valid'],
+    ['Missing registry identifiers', Number(missing || 0), 'quality-missing'],
     ['Duplicate candidates', Number(duplicate || 0), 'quality-duplicate'],
   ] : null;
   return <div className="quality-panel">
-    <div className="card-heading"><div><h2>Data quality</h2><p>Registry validation overview</p></div><div className="heading-icon"><SlidersHorizontal size={17} /></div></div>
-    {rows ? rows.map(([label, pct, cls]) => <div className="quality-row" key={label}><div className="quality-label"><span>{label}</span><strong>{pct.toFixed(1)}%</strong></div><div className="quality-track"><span className={cls} style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} /></div></div>) : <div className="quality-unavailable"><ShieldCheck size={24} /><strong>Quality metrics not available yet</strong><span>The API does not currently expose aggregate quality percentages. Values are intentionally not estimated.</span></div>}
+    <div className="card-heading"><div><h2>Data quality</h2><p>Identifier coverage and duplicate-review indicators</p></div><div className="heading-icon"><SlidersHorizontal size={17} /></div></div>
+    {rows ? rows.map(([label, pct, cls]) => <div className="quality-row" key={label}><div className="quality-label"><span>{label}</span><strong>{pct.toFixed(1)}%</strong></div><div className="quality-track"><span className={cls} style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} /></div></div>) : <div className="quality-unavailable"><ShieldCheck size={24} /><strong>Quality metrics not available yet</strong><span>The API does not expose quality indicators yet. Values are intentionally not estimated.</span></div>}
     <div className="quality-foot"><span className="tiny-dot" />{hasQuality ? 'Metrics returned by API' : 'Waiting for quality metrics endpoint'}</div>
   </div>;
 }
@@ -184,6 +184,7 @@ export default function App() {
   const [jobs, setJobs] = useState([]);
   const [search, setSearch] = useState('');
   const [file, setFile] = useState(null);
+  const [preview, setPreview] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -238,6 +239,17 @@ export default function App() {
     finally { setLoading(false); }
   };
 
+  const previewUpload = async () => {
+    if (!file) return;
+    setLoading(true); setError(''); setPreview(null); setMessage('');
+    try {
+      const form = new FormData(); form.append('file', file);
+      const response = await request('/api/v1/ingestion/preview', { method: 'POST', body: form });
+      setPreview(await response.json());
+    } catch (e) { setError(e.message || 'Unable to preview this file.'); }
+    finally { setLoading(false); }
+  };
+
   const metrics = summary || {};
   const navToUpload = () => setPage('Upload center');
   const knownPage = ['Overview', 'Registry Records', 'Ingestion Jobs', 'Upload center'].includes(page);
@@ -270,7 +282,7 @@ export default function App() {
 
         {page === 'Ingestion Jobs' && <section className="panel full-panel"><div className="panel-heading"><div><h2>Ingestion jobs</h2><p>Inspect persisted import outcomes and processing counts.</p></div><button className="button-secondary" onClick={refresh} disabled={loading}><RefreshCw size={15} className={loading ? 'spin' : ''} /> Refresh</button></div><JobsTable jobs={jobs} search={search} /></section>}
         {page === 'Registry Records' && <section className="panel full-panel"><div className="panel-heading"><div><h2>Registry records</h2><p>Search imported organizations and inspect source information.</p></div><span className="record-count">{number(orgTotal)} records</span></div><OrganizationsTable rows={orgs} total={orgTotal} page={orgPage} pageSize={100} onPageChange={setOrgPage} /></section>}
-        {page === 'Upload center' && <section className="panel upload-panel"><div className="panel-heading"><div><h2>Upload dataset</h2><p>Submit registry files for asynchronous ingestion.</p></div><div className="heading-icon"><Upload size={18} /></div></div><form onSubmit={upload} className="upload-form"><label className="dropzone"><input type="file" accept=".csv,.pdf" onChange={e => setFile(e.target.files?.[0] || null)} /><span className="dropzone-icon"><Upload size={25} /></span><strong>{file ? file.name : 'Choose a dataset to upload'}</strong><span>{file ? `${(file.size / 1048576).toFixed(2)} MB · ready to submit` : 'Drag a file here or browse from your device'}</span><small>CSV and PDF · backend size limits apply</small></label><div className="upload-actions"><p>Only upload datasets you are authorized to process. PDF files may be stored even where structured extraction is not yet enabled.</p><button className="button-primary" disabled={!file || loading}>{loading ? 'Submitting…' : <><Upload size={16} /> Queue import</>}</button></div></form></section>}
+        {page === 'Upload center' && <section className="panel upload-panel"><div className="panel-heading"><div><h2>Upload dataset</h2><p>Submit registry files for asynchronous ingestion.</p></div><div className="heading-icon"><Upload size={18} /></div></div><form onSubmit={upload} className="upload-form"><label className="dropzone"><input type="file" accept=".csv,.xlsx,.pdf" onChange={e => setFile(e.target.files?.[0] || null)} /><span className="dropzone-icon"><Upload size={25} /></span><strong>{file ? file.name : 'Choose a dataset to upload'}</strong><span>{file ? `${(file.size / 1048576).toFixed(2)} MB · ready to submit` : 'Drag a file here or browse from your device'}</span><small>CSV, XLSX and PDF · backend size limits apply</small></label><div className="upload-actions"><p>Only upload datasets you are authorized to process. PDF files may be stored even where structured extraction is not yet enabled.</p><div className="upload-button-row"><button type="button" className="button-secondary" disabled={!file || loading || file.size > 5 * 1024 * 1024} onClick={previewUpload}>Preview sample</button><button className="button-primary" disabled={!file || loading}>{loading ? 'Working…' : <><Upload size={16} /> Queue import</>}</button></div></div></form>{preview && <div className="preview-panel"><div className="panel-heading"><div><h3>File preview</h3><p>{preview.sample_count} sample rows · no data has been saved</p></div><button className="button-link" onClick={() => setPreview(null)}>Close</button></div><div className="table-scroll"><table className="data-table"><thead><tr><th>Row</th>{preview.columns.map(column => <th key={column}>{column}</th>)}</tr></thead><tbody>{preview.sample_rows.map(row => <tr key={row.row_number}><td>{row.row_number}</td>{preview.columns.map(column => <td key={column}>{row.values[column] ?? '—'}</td>)}</tr>)}</tbody></table></div><p className="preview-note">Preview is limited to 5 MiB and is not an ingestion or verification result.</p></div>}</section>}
         {!knownPage && <section className="coming-soon panel"><div className="coming-icon"><Database size={25} /></div><span className="eyebrow-label">DATASOURCE MODULE</span><h2>{page}</h2><p>This navigation entry is reserved for the {page.toLowerCase()} workspace. Its production data view has not been connected yet, so this screen does not display fabricated records.</p><button className="button-secondary" onClick={() => setPage('Overview')}>Return to overview</button></section>}
         <footer className="page-footer"><span>© PesaGuard Datasource</span><span><span className={connected ? 'footer-status-dot' : 'footer-status-dot muted'} />{connected ? 'Connected to datasource API' : 'Local preview · not connected'}</span></footer>
       </div>
