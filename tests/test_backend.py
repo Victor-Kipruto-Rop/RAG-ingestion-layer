@@ -142,7 +142,8 @@ def test_entity_match_review_is_audited_and_does_not_merge_records():
         unchanged = db.get(Organization, organization_id)
         assert unchanged.legal_name == original_legal_name
         assert db.get(EntityMatchReview, payload["id"]) is not None
-        db.delete(managed_key)
+        db.delete(db.get(EntityMatchReview, payload["id"]))
+        db.delete(db.get(ManagedAPIKey, managed_key.id))
         db.delete(organization)
         db.commit()
 
