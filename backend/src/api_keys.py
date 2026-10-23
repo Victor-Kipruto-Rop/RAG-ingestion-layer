@@ -71,6 +71,8 @@ def _create_key(db: Session, claims: dict, payload: CreateApiKey):
     roles = claims.get("roles", [])
     if isinstance(roles, str):
         roles = [roles]
+    if env == "production" and not payload.expires_in_days:
+        raise HTTPException(422, "Production API keys must have an expiry date (maximum 365 days)")
     if env == "production" and not (claims.get("organization_verified") is True and ({"owner", "admin"} & set(roles))):
         raise HTTPException(403, "Production keys require a verified organization and an owner/admin role")
     allowed_scopes = {"registry:read", "ingestion:write", "sources:read"}
