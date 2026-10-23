@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS managed_api_keys (
   rotated_from_id varchar(36) NULL REFERENCES managed_api_keys(id)
 );
 CREATE INDEX IF NOT EXISTS ix_managed_api_keys_environment_status ON managed_api_keys(environment,status);
+CREATE INDEX IF NOT EXISTS ix_managed_api_keys_status ON managed_api_keys(status);
+
 CREATE TABLE IF NOT EXISTS api_key_security_events (
   id varchar(36) PRIMARY KEY,
   key_id varchar(36) NULL,
@@ -35,7 +37,7 @@ CREATE INDEX IF NOT EXISTS ix_api_key_security_events_key_id ON api_key_security
 -- These tables contain credential digests and security metadata; expose only to the trusted backend role.
 ALTER TABLE public.managed_api_keys ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.api_key_security_events ENABLE ROW LEVEL SECURITY;
-DO $
+DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
     EXECUTE 'REVOKE ALL ON TABLE public.managed_api_keys FROM anon';
@@ -45,4 +47,4 @@ BEGIN
     EXECUTE 'REVOKE ALL ON TABLE public.managed_api_keys FROM authenticated';
     EXECUTE 'REVOKE ALL ON TABLE public.api_key_security_events FROM authenticated';
   END IF;
-END $;
+END $$;
