@@ -26,6 +26,7 @@ Apply in order to PostgreSQL/Supabase:
 6. `database/migrations/006_failed_imports_dlq.sql`
 7. `database/migrations/007_ingestion_row_progress.sql`
 8. `database/migrations/008_job_correlation_id.sql`
+9. `database/migrations/009_api_key_lifecycle.sql`
 
 Set `APP_ENV=production` only after migrations are applied. Production startup intentionally does not create tables automatically.
 
@@ -92,3 +93,18 @@ For a safe Windows/Docker Desktop smoke test that uses a shared local SQLite dat
 
 
 A safe Windows local environment template is provided as [`example.env`](example.env). Never commit `.env`, API keys, database URLs, or R2 credentials.
+
+
+## Phased implementation
+
+See [implementation phases](docs/implementation-phases.md) for the delivery roadmap and release gates. The managed API-key lifecycle is documented in [API key lifecycle](docs/api-key-lifecycle.md).
+
+### Managed API keys (initial implementation)
+
+- Configure `PESAGUARD_DATASOURCE_ENVIRONMENT=sandbox` on a sandbox deployment or `production` on production. The server setting is authoritative; request headers cannot switch environments.
+- Apply migration `009_api_key_lifecycle.sql` to a non-production PostgreSQL database first.
+- Configure `API_KEY_MANAGEMENT_TOKEN` as a high-entropy server-side deployment secret. Do not expose it to browser code.
+- The operator routes are `POST/GET /api/v1/admin/api-keys`, `POST /api/v1/admin/api-keys/{id}/revoke`, and `POST /api/v1/admin/api-keys/{id}/rotate`; they require `X-Key-Management-Token`.
+- Managed key secrets are returned only once. The database stores only a SHA-256 digest and a public prefix. Managed keys are checked against the server deployment environment and scopes.
+- Legacy `REGISTRY_API_KEYS` remain available during caller migration. Do not revoke them until each trusted service caller has been migrated and verified.
+- The current application has no verified customer login/organization-owner identity in this service. These management routes are operator-only; do not expose them as a customer self-service UI until authenticated tenant roles are integrated.
