@@ -37,6 +37,7 @@ This plan defines deliverables and release gates. It is intentionally honest abo
 - Release gate: contract tests, timeout/retry tests, secrets redaction, and explicit provider readiness.
 
 ## Phase 5 — Developer experience
+- [x] Publish an API quickstart with lookup, preview, ingestion, and error-handling examples.
 - Publish OpenAPI examples and language-specific integration snippets.
 - Add API usage metrics, request/correlation lookup, idempotency guidance, webhook endpoints, signed deliveries, retry policy, and delivery history.
 - Add version/deprecation policy and sandbox fixtures.
