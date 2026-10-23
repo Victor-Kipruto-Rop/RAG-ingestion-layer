@@ -38,9 +38,44 @@ Write-Host "Building and starting local API, worker, and dashboard..."
 docker compose -f docker-compose.windows.local.yml up -d --build
 if ($LASTEXITCODE -ne 0) { throw "Local stack failed to start. Inspect Docker Compose logs." }
 
+Write-Host "Waiting for API readiness..."
+$apiReady = $false
+for ($i = 0; $i -lt 60; $i++) {
+    try {
+        $response = Invoke-WebRequest -Uri "http://127.0.0.1:8000/health/ready" -TimeoutSec 3 -UseBasicParsing
+        if ($response.StatusCode -eq 200) { $apiReady = $true; break }
+    } catch {
+        Start-Sleep -Seconds 2
+    }
+}
+if (-not $apiReady) {
+    docker compose -f docker-compose.windows.local.yml ps
+    docker compose -f docker-compose.windows.local.yml logs --tail 80 registry-api
+    throw "API did not become ready within 120 seconds. Review the API logs above."
+}
+
+Write-Host "Waiting for dashboard HTTP response..."
+$frontendReady = $false
+for ($i = 0; $i -lt 60; $i++) {
+    try {
+        $response = Invoke-WebRequest -Uri "http://127.0.0.1:5173" -TimeoutSec 3 -UseBasicParsing
+        if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 400) { $frontendReady = $true; break }
+    } catch {
+        Start-Sleep -Seconds 2
+    }
+}
+if (-not $frontendReady) {
+    docker compose -f docker-compose.windows.local.yml ps
+    docker compose -f docker-compose.windows.local.yml logs --tail 80 registry-frontend
+    throw "Dashboard did not respond within 120 seconds. Review the frontend logs above."
+}
+
 docker compose -f docker-compose.windows.local.yml ps
 Write-Host ""
+Write-Host "Local stack passed HTTP readiness checks." -ForegroundColor Green
 Write-Host "Dashboard: http://localhost:5173" -ForegroundColor Green
 Write-Host "API docs:  http://localhost:8000/docs" -ForegroundColor Green
+Write-Host "Liveness:  http://localhost:8000/health/live"
+Write-Host "Readiness: http://localhost:8000/health/ready"
 Write-Host "Use only the local API key from .env in the local dashboard. Never use a production key here."
 Start-Process "http://localhost:5173"

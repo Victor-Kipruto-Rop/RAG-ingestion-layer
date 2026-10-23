@@ -7,7 +7,7 @@ This setup runs the **API, React dashboard, and ingestion worker** on Windows wi
 - Windows 10/11
 - Git
 - Docker Desktop using Linux containers and a running Docker engine
-- Internet access the first time to download container images and install frontend dependencies
+- Internet access the first time to download container images and install Python/frontend dependencies
 
 Check in PowerShell:
 
@@ -21,33 +21,28 @@ If `docker info` fails, start Docker Desktop and wait until its engine is runnin
 
 ## Quick start
 
-From the repository root, copy the safe sample environment file and edit the local API key:
-
-```powershell
-Copy-Item example.env .env
-notepad .env
-```
-
-Change `REGISTRY_API_KEYS` from the placeholder to a long, random **local-only** value. Leave all R2 fields blank. Do not put production Supabase URLs, database passwords, or R2 keys in this local `.env`.
-
-Then start the stack:
-
-```powershell
-docker compose -f docker-compose.windows.local.yml config --quiet
-docker compose -f docker-compose.windows.local.yml up -d --build
-docker compose -f docker-compose.windows.local.yml ps
-```
-
-Or run the guided startup helper (it creates `.env` if missing and opens Notepad for you):
+From the repository root, run the guided startup helper. It creates `.env` from safe defaults if missing, opens Notepad, validates Compose, builds and starts the stack, waits for the API readiness endpoint and dashboard HTTP response, and prints logs if either service does not become ready:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\scripts\start-windows-local.ps1
 ```
 
+When Notepad opens, replace `REGISTRY_API_KEYS` with a long, random **local-only** value, save, close Notepad and rerun the command. Leave all R2 fields blank. Do not put production Supabase URLs, database passwords, or R2 keys in this local `.env`.
+
+You can also start manually:
+
+```powershell
+Copy-Item example.env .env
+notepad .env
+docker compose -f docker-compose.windows.local.yml config --quiet
+docker compose -f docker-compose.windows.local.yml up -d --build
+docker compose -f docker-compose.windows.local.yml ps
+```
+
 The execution-policy change applies only to the current PowerShell process. It does not change Windows' permanent policy.
 
-Open these local-only URLs:
+## Local-only URLs
 
 - Dashboard: http://localhost:5173
 - API docs: http://localhost:8000/docs
@@ -96,7 +91,7 @@ docker compose -f docker-compose.windows.local.yml down -v
 - API, dashboard, CSV upload, queue persistence, and worker processing are intended to work locally.
 - The API and worker share the same SQLite database and local file-storage volume.
 - The worker automatically restarts if it exits, as long as Docker Desktop is running.
-- PDF uploads are retained and marked `NEEDS_PDF_PROCESSING`; OCR/extraction is not implemented.
+- PDF uploads are retained and marked `NEEDS_PDF_PROCESSING`. Bounded text extraction and optional OCR diagnostics exist, but every PDF remains unverified and requires manual review; extracted text does not automatically create organization records.
 - This local setup does not test Supabase, Cloudflare R2, external registry APIs, or production deployment behavior.
 - The dashboard currently accepts the API key in the browser. This is suitable only for a local developer preview, not for an internet-facing or shared production dashboard.
 - Docker Desktop and Windows must remain running for the worker to process jobs.
@@ -105,8 +100,8 @@ docker compose -f docker-compose.windows.local.yml down -v
 
 - **Docker daemon unavailable:** start Docker Desktop, wait for it to finish starting, then retry `docker info`.
 - **Port 8000 or 5173 is busy:** stop the other local service using that port, then rerun the Compose command.
+- **API readiness times out:** inspect `docker compose -f docker-compose.windows.local.yml logs --tail 100 registry-api`.
 - **API key rejected:** check that `REGISTRY_API_KEYS` in `.env` exactly matches the value entered in the dashboard, then recreate the API container using `docker compose -f docker-compose.windows.local.yml up -d --force-recreate registry-api`.
-- **Worker is not processing:** inspect the worker logs, ensure the upload returned a job ID, and verify that the job is `QUEUED` rather than already completed or marked `NEEDS_PDF_PROCESSING`.
+- **Worker is not processing:** inspect worker logs, ensure the upload returned a job ID, and verify that the job is `QUEUED` rather than already completed or marked `NEEDS_PDF_PROCESSING`.
 - **Frontend has not started yet:** first install can take time while npm downloads packages; inspect frontend logs before restarting.
 - **Compose config fails:** confirm that `.env` exists and was copied from `example.env`, and run `docker compose -f docker-compose.windows.local.yml config` to view the configuration error.
-
