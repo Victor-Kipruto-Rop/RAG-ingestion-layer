@@ -92,6 +92,7 @@ def process_job(job_id):
     batch_count+=1
     last_row_number=row_num
     try:
+     if row.get('__csv_parse_error__'):raise ValueError(row['__csv_parse_error__'])
      rec=normalize_record(row);reg=rec.get('normalized_registration_number');pin=rec.get('normalized_tax_pin')
      if reg:changed_lookup_keys.add(f'registry:lookup:reg:{reg}')
      if pin:changed_lookup_keys.add(f'registry:lookup:pin:{pin}')
