@@ -423,6 +423,11 @@ if __name__ == '__main__':
 
 # Session-authenticated dashboard endpoints. The internal service API key stays server-side.
 
+def _require_admin_for_developer_routes(request: Request):
+    # The function resolves require_admin at request time after module initialization.
+    return require_admin(request)
+
+
 class DeveloperProductionReviewRequest(BaseModel):
     status: str = Field(pattern=r"^(approved|rejected)$")
     reviewer_note: str = Field(min_length=5, max_length=1000)
@@ -436,14 +441,13 @@ class DeveloperWorkspaceVerificationRequest(BaseModel):
 
 @router.get("/developer/production-access/requests")
 def admin_list_developer_production_requests(
-    claims: dict = Depends(lambda request: require_admin(request)),
+    claims: dict = Depends(_require_admin_for_developer_routes),
     db: Session = Depends(get_db),
 ):
     rows = db.scalars(select(DeveloperProductionAccessRequest).order_by(DeveloperProductionAccessRequest.created_at.desc()).limit(500)).all()
     items = []
     for row in rows:
         workspace = db.get(DeveloperWorkspace, row.workspace_id)
-        account = db.get(AdminAccount, claims.get("sub")) if claims.get("sub") else None
         items.append({
             "id": row.id, "workspace_id": row.workspace_id, "workspace_name": workspace.name if workspace else None,
             "workspace_verified": bool(workspace and workspace.verified),
