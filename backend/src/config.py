@@ -110,7 +110,7 @@ def validate_runtime_config():
   raise RuntimeError('Invalid configuration: DEVELOPER_PUBLIC_BASE_URL and DEVELOPER_PRODUCTION_BASE_URL must be absolute URLs')
  if settings.developer_public_base_url.rstrip('/') == settings.developer_production_base_url.rstrip('/'):
   raise RuntimeError('Invalid configuration: sandbox and production API base URLs must be different')
- if settings.app_env.lower() == 'production':
+ if settings.app_env.lower() in {'staging', 'production'}:
   if sandbox_url.scheme != 'https' or production_url.scheme != 'https':
    raise RuntimeError('Invalid configuration: developer sandbox and production base URLs must use HTTPS in production')
   if sandbox_url.hostname.lower() == production_url.hostname.lower():
@@ -121,9 +121,9 @@ def validate_runtime_config():
   raise RuntimeError('Invalid configuration: AUTH_OTP_TTL_SECONDS must be 60-1800 and AUTH_OTP_MAX_ATTEMPTS must be 1-10')
  if settings.smtp_use_ssl and settings.smtp_use_starttls:
   raise RuntimeError('Invalid configuration: SMTP_USE_SSL and SMTP_USE_STARTTLS cannot both be enabled')
- if settings.app_env.lower() == 'production' and settings.admin_signup_email_list and not settings.auth_email_delivery_configured:
+ if settings.app_env.lower() in {'staging', 'production'} and settings.admin_signup_email_list and not settings.auth_email_delivery_configured:
   raise RuntimeError('Invalid configuration: RESEND_API_KEY + RESEND_FROM_EMAIL (preferred) or SMTP settings, and AUTH_OTP_PEPPER >= 32 characters are required for operator sign-up')
- if settings.app_env.lower() == 'production' and settings.admin_signup_email_list and len(settings.auth_otp_pepper) < 32:
+ if settings.app_env.lower() in {'staging', 'production'} and settings.admin_signup_email_list and len(settings.auth_otp_pepper) < 32:
   raise RuntimeError('Invalid configuration: AUTH_OTP_PEPPER must contain at least 32 characters')
  if settings.developer_access_token_secret and len(settings.developer_access_token_secret.encode()) < 32:
   raise RuntimeError('Invalid configuration: DEVELOPER_ACCESS_TOKEN_SECRET must be at least 32 characters')
@@ -131,7 +131,7 @@ def validate_runtime_config():
   raise RuntimeError('Invalid configuration: DEVELOPER_ACCESS_TOKEN_TTL_SECONDS must be 300-3600')
  if settings.developer_session_ttl_seconds < 3600 or settings.developer_session_ttl_seconds > 7776000:
   raise RuntimeError('Invalid configuration: DEVELOPER_SESSION_TTL_SECONDS must be 3600-7776000')
- if settings.app_env.lower() == 'production' and settings.developer_access_token_secret and not settings.developer_webhook_encryption_key:
+ if settings.app_env.lower() in {'staging', 'production'} and settings.developer_access_token_secret and not settings.developer_webhook_encryption_key:
   raise RuntimeError('Invalid configuration: DEVELOPER_WEBHOOK_ENCRYPTION_KEY is required when the developer platform is enabled in production')
  if settings.developer_webhook_encryption_key and len(settings.developer_webhook_encryption_key.encode()) < 32:
   raise RuntimeError('Invalid configuration: DEVELOPER_WEBHOOK_ENCRYPTION_KEY must be at least 32 characters')
@@ -162,7 +162,7 @@ def validate_runtime_config():
   raise RuntimeError('Invalid configuration: registry rate-limit capacity and refill rate must be positive')
  if settings.registry_cache_ttl_seconds < 0 or settings.registry_cache_negative_ttl_seconds < 0:
   raise RuntimeError('Invalid configuration: registry cache TTL values must be non-negative')
- if settings.app_env.lower()!='production':
+ if settings.app_env.lower() not in {'staging', 'production'}:
   return
  missing=[]
  if not settings.api_key_list or {'change-this-local-only-key-before-use','replace-with-a-long-random-secret'} & set(settings.api_key_list):
