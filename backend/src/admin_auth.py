@@ -193,7 +193,7 @@ def session(request: Request, response: Response):
     response.headers['Cache-Control'] = 'no-store'
     if not claims:
         raise HTTPException(401, 'Not signed in')
-    return {'authenticated': True, 'csrf_token': claims['csrf'], 'expires_at': claims['exp']}
+    return {'authenticated': True, 'csrf_token': claims['csrf'], 'expires_at': claims['exp'], 'auth_method': claims.get('auth_method', 'password'), 'identity_email': claims.get('email')}
 
 
 @router.post('/logout', status_code=204)
