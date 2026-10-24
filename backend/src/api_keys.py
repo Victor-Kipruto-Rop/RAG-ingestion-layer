@@ -8,7 +8,7 @@ import jwt
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import select, func, text
+from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 from .config import settings
 from .database import get_db
@@ -97,14 +97,6 @@ def require_user_claims(authorization: str | None = Header(default=None, alias="
     normalized["sub"] = subject
     return normalized
 
-def _set_tenant_database_context(db: Session, claims: dict) -> None:
-    """Set a transaction-local RLS tenant context before any key-table query."""
-    bind = db.get_bind()
-    if bind.dialect.name == "postgresql":
-        db.execute(text("SELECT set_config('app.current_org_id', :org_id, true)"),
-                   {"org_id": str(claims["org_id"])})
-
-
 def _roles(claims: dict) -> set[str]:
     roles = claims.get("roles", [])
     if isinstance(roles, str):
@@ -192,7 +184,6 @@ def current_identity(claims: dict = Depends(require_user_claims)):
 
 @router.get("")
 def list_api_keys(claims: dict = Depends(require_user_claims), db: Session = Depends(get_db)):
-    _set_tenant_database_context(db, claims)
     rows = db.scalars(select(ApiKey).where(ApiKey.organization_id == str(claims["org_id"])).order_by(ApiKey.created_at.desc())).all()
     return {"items": [_serialize(row) for row in rows]}
 
