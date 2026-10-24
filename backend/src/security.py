@@ -140,6 +140,9 @@ def _validate_customer_api_key(raw_key, request):
         if last_used is None or (now - last_used).total_seconds() > 60:  # avoid a write per request
             key.last_used_at = now
             db.commit()
+        # Request handlers may use this tenant-scoped ID to queue subscribed workspace
+        # webhooks; never derive tenant identity from caller-supplied headers.
+        request.state.customer_organization_id = key.organization_id
         return _customer_rate_limit_identity(key.organization_id)
 
 def _check_nonce_local(nonce, expires_at):
