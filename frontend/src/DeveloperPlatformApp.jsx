@@ -6,6 +6,7 @@ import {
   RefreshCw, Rocket, Search, ShieldCheck, Terminal, Trash2, UserRound, Webhook, X, Zap
 } from 'lucide-react';
 import { API_BASE, api, setCsrfToken } from './api.js';
+import ToastPopup from './ToastPopup.jsx';
 
 const EVENTS = ['api_key.created','api_key.revoked','api_key.rotated','webhook.test','registry.lookup.completed','data.source.updated','production_access.requested','production_access.reviewed'];
 const LANGS = ['cURL','JavaScript','Python','PHP','Go','Java','Ruby','C#'];
@@ -27,25 +28,6 @@ async function readJson(path, options={}) { const r=await api(path,options); ret
 function CodeBlock({children}) { return <pre className="dp-code"><code>{children}</code></pre>; }
 function Metric({label,value,detail,icon:Icon}) { return <div className="dp-metric"><span className="dp-metric-icon"><Icon size={17}/></span><div><small>{label}</small><strong>{value}</strong><span>{detail}</span></div></div>; }
 function PageHeading({eyebrow,title,description,actions}) { return <div className="dp-page-heading"><div><div className="dp-eyebrow">{eyebrow}</div><h1>{title}</h1><p>{description}</p></div>{actions && <div className="dp-heading-actions">{actions}</div>}</div>; }
-
-function ToastPopup({ kind='success', message, onClose }) {
-  const [createdAt, setCreatedAt] = useState(() => new Date());
-  useEffect(() => {
-    if (!message) return undefined;
-    setCreatedAt(new Date());
-    const timer = window.setTimeout(onClose, 7000);
-    return () => window.clearTimeout(timer);
-  }, [message, onClose]);
-  if (!message) return null;
-  const Icon = kind === 'error' ? CircleHelp : CheckCircle2;
-  return <div className="dp-toast-viewport" aria-live={kind === 'error' ? 'assertive' : 'polite'}>
-    <section className={`dp-toast-popup ${kind}`} role={kind === 'error' ? 'alert' : 'status'}>
-      <span className="dp-toast-icon"><Icon size={19}/></span>
-      <div className="dp-toast-copy"><strong>{kind === 'error' ? 'Something needs attention' : 'Success'}</strong><p>{message}</p><time dateTime={createdAt.toISOString()}>{createdAt.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})}</time></div>
-      <button type="button" className="dp-toast-close" onClick={onClose} aria-label="Dismiss message"><X size={17}/></button>
-    </section>
-  </div>;
-}
 
 export default function DeveloperPlatformApp() {
   const [page,setPage] = useState('Overview');
@@ -201,7 +183,7 @@ export default function DeveloperPlatformApp() {
   const copy = async value => {try{await navigator.clipboard.writeText(value);setNotice('Copied to clipboard.');}catch{setError('Clipboard unavailable; select and copy the text manually.');}};
   const visibleKeys = useMemo(()=>keys.filter(k=>`${k.name} ${k.environment} ${k.key_prefix} ${k.status}`.toLowerCase().includes(search.toLowerCase())),[keys,search]);
 
-  if(!authed) return <>{authMode==='landing' ? <PublicHomePage setMode={setAuthMode} config={authConfig}/> : <AuthScreen mode={authMode} setMode={setAuthMode} config={authConfig} onAuthenticated={finishAuth} busy={busy} error={error} setError={setError}/>}<ToastPopup kind="error" message={error} onClose={()=>setError('')}/></>;
+  if(!authed) return <>{authMode==='landing' ? <PublicHomePage setMode={setAuthMode} config={authConfig}/> : <AuthScreen mode={authMode} setMode={setAuthMode} config={authConfig} onAuthenticated={finishAuth} busy={busy} error={error} setError={setError}/>}</>;
 
   const activeTitle=page;
   return <div className="dp-shell">
@@ -228,7 +210,7 @@ export default function DeveloperPlatformApp() {
       </div>
       <footer className="dp-footer"><span>© {new Date().getFullYear()} PesaGuard Developer Platform</span><span><span className="dp-status-dot"/> Service state is read from the API</span><a href={`${API_BASE}/health`} target="_blank" rel="noreferrer">API health <ExternalLink size={13}/></a></footer>
     </main>
-    <ToastPopup kind="error" message={error} onClose={()=>setError('')}/><ToastPopup kind="success" message={notice} onClose={()=>setNotice('')}/>
+    <ToastPopup kind="error" message={error} onClose={()=>setError('')}/><ToastPopup kind={/warning|blocked|not approved|not configured|cannot|unavailable|disabled until|requires approval|rejected|denied/i.test(notice) ? 'warning' : 'success'} message={notice} onClose={()=>setNotice('')}/>
   </div>;
 }
 
@@ -270,7 +252,7 @@ function AuthScreen({mode,setMode,config,onAuthenticated,busy,error,setError}){
     finally{setLocalBusy(false);}
   };
   const title=reset?(stage==='request'?'Recover your account':'Verify reset code'):mode==='signup'?(stage==='details'?'Build your developer workspace':'Verify your email'):'Welcome back, developer';
-  return <div className="dp-auth-shell">
+  return <><div className="dp-auth-shell">
     <div className="dp-auth-visual"><div className="dp-auth-nav"><a className="dp-brand" href="#"><span className="dp-brand-mark"><img src="/pesaguard-mark.svg" alt=""/></span><span><strong>PesaGuard</strong><small>DEVELOPER PLATFORM</small></span></a><span className="dp-open-badge"><i/> API PLATFORM</span></div><WindHero compact/><div className="dp-auth-pitch"><div className="dp-eyebrow">INTEGRATE WITH CONFIDENCE</div><h1>Build once.<br/><em>Move money data</em><br/>with clarity.</h1><p>Environment-isolated keys, signed webhooks, clear contracts and observable API behavior for real integrations.</p><div className="dp-trust-row"><span><ShieldCheck size={15}/> Least privilege</span><span><Zap size={15}/> Fast feedback</span><span><Radio size={15}/> Event-driven</span></div></div><div className="dp-auth-foot">Built for developers shipping production integrations.</div></div>
     <div className="dp-auth-form-wrap"><div className="dp-auth-form">
       <div className="dp-auth-mobile-brand"><span className="dp-brand-mark"><img src="/pesaguard-mark.svg" alt=""/></span><span><strong>PesaGuard</strong><small>DEVELOPER PLATFORM</small></span></div>
@@ -287,7 +269,7 @@ function AuthScreen({mode,setMode,config,onAuthenticated,busy,error,setError}){
       {mode==='signup'&&!config.signup_enabled&&<div className="dp-config-warning"><LockKeyhole size={16}/><span>Registration is disabled until email delivery, OTP pepper and developer signing/session secrets are configured on the backend.</span></div>}
       <div className="dp-auth-security"><ShieldCheck size={16}/><span>HttpOnly session cookie · CSRF protection · one-time email codes · session revocation</span></div>
     </div></div>
-  </div>;
+  </div><ToastPopup kind="error" message={localError || error} onClose={()=>{setLocalError('');setError('');}}/><ToastPopup kind={/warning|blocked|not approved|not configured|unavailable/i.test(message) ? 'warning' : 'success'} message={message} onClose={()=>setMessage('')}/></>;
 }
 function WindHero({compact=false}){return <div className={compact?'dp-wind-scene compact':'dp-wind-scene'} aria-hidden="true"><div className="dp-wind-orb"/><div className="dp-wind-ring ring-one"/><div className="dp-wind-ring ring-two"/><div className="dp-wind-ring ring-three"/><svg viewBox="0 0 760 420" preserveAspectRatio="xMidYMid meet"><defs><linearGradient id="wind-gradient" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#b7ffe0" stopOpacity=".8"/><stop offset=".5" stopColor="#34d399" stopOpacity=".15"/><stop offset="1" stopColor="#5eead4" stopOpacity=".65"/></linearGradient></defs>{Array.from({length:19},(_,i)=><path key={i} d={`M -20 ${34+i*19} C 110 ${-20+i*20}, 205 ${120+i*12}, 360 ${58+i*17} S 590 ${25+i*18}, 790 ${70+i*18}`} fill="none" stroke="url(#wind-gradient)" strokeWidth={i%4===0?2:1} strokeOpacity={.22+(i%5)*.08}/>)}</svg><div className="dp-orbit-chip chip-a"><Code2 size={14}/> SDKs</div><div className="dp-orbit-chip chip-b"><Webhook size={14}/> Webhooks</div><div className="dp-orbit-chip chip-c"><ShieldCheck size={14}/> Scoped access</div></div>}
 
