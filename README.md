@@ -4,6 +4,22 @@ A standalone organization-data warehouse for PesaGuard. It imports authorized re
 
 This is a datasource, not the PesaGuard customer onboarding system and not an authority that independently certifies companies. Imported data is marked unverified unless a trusted verification workflow establishes otherwise.
 
+## Dashboard documentation and operator OAuth
+
+The dashboard includes a Documentation section in the sidebar with platform overview, API reference links, authentication guidance, pipeline and data-quality guidance, architecture/technology mapping, and operations/security checklists.
+
+Google and GitHub OAuth are supported for **existing allowlisted dashboard operators only**. They do not provide open self-service signup and do not grant operator access to arbitrary provider accounts.
+
+1. Create OAuth applications in Google Cloud Console and GitHub Developer Settings.
+2. Register exact callbacks:
+   - `https://YOUR_PUBLIC_HOST/api/v1/admin/oauth/google/callback`
+   - `https://YOUR_PUBLIC_HOST/api/v1/admin/oauth/github/callback`
+3. Configure `PUBLIC_BASE_URL`, the corresponding `GOOGLE_OAUTH_CLIENT_ID/SECRET` and/or `GITHUB_OAUTH_CLIENT_ID/SECRET`, plus `ADMIN_OAUTH_ALLOWED_EMAILS` containing the exact verified operator email addresses.
+4. Use HTTPS and set `SESSION_COOKIE_SECURE=true` in production. Keep client secrets in the deployment secret manager; never put them in frontend environment variables.
+5. Verify `GET /api/v1/admin/oauth/providers` reports the expected enabled providers, then test login, state mismatch rejection, unallowlisted accounts and logout in staging.
+
+The current dashboard authentication model is a single configured operator credential plus allowlisted OAuth identities, not a multi-tenant user-account system. Self-service signup, account-specific profile persistence, password-reset email delivery and per-user notification preferences require a separate user/role model and transactional email configuration; they must not be simulated with browser-only state or open signup on the internal data platform.
+
 ## Local development
 
 1. For Windows local testing, copy `.env.example` to `.env` and replace `REGISTRY_API_KEYS` with a long random local-only key.
