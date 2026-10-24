@@ -392,7 +392,7 @@ def workspace_metrics(request: Request, db: Session = Depends(get_db)):
     failed = db.scalar(select(func.count()).select_from(IngestionJob).where(IngestionJob.status.in_(['FAILED','ERROR']))) or 0
     source_count = db.scalar(select(func.count()).select_from(RegistrySource).where(RegistrySource.enabled.is_(True))) or 0
     return {'indexed_organizations':total_orgs,'ingestion_jobs':total_jobs,'completed_jobs':completed,
-            'failed_jobs':failed,'connected_sources_count':source_count,'generated_at':__import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat(),
+            'failed_jobs':failed,'enabled_sources_count':source_count,'connected_sources_count':None,'generated_at':__import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat(),
             'source':'database'}
 
 
@@ -460,7 +460,7 @@ async def workspace_stream(request: Request):
                     payload = {
                         'metrics': {'indexed_organizations': total_orgs, 'ingestion_jobs': total_jobs,
                             'completed_jobs': completed, 'failed_jobs': failed,
-                            'connected_sources_count': source_count, 'source': 'database'},
+                            'enabled_sources_count': source_count, 'connected_sources_count': None, 'source': 'database'},
                         'jobs': [{'id': j.id, 'job_id': j.id, 'file_name': j.file_name, 'status': j.status,
                             'records_processed': int(j.records_processed or 0), 'records_inserted': int(j.records_inserted or 0),
                             'created_at': j.created_at.isoformat() if j.created_at else None,
