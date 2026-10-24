@@ -22,6 +22,12 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from .config import settings
+from .database import get_db
+from .models import RegistrySource, IngestionJob, AuditLog
+from sqlalchemy import select, func
+from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
+from fastapi import Depends
 
 COOKIE_NAME = 'pg_admin_session'
 SAFE_METHODS = {'GET', 'HEAD', 'OPTIONS'}
@@ -151,3 +157,123 @@ if __name__ == '__main__':
         print(hash_password(first))
     else:
         sys.exit('usage: python -m src.admin_auth hash-password')
+
+
+# Session-authenticated dashboard endpoints. The internal service API key stays server-side.
+def require_admin(request: Request):
+    claims = session_from_request(request)
+    if not claims:
+        raise HTTPException(401, 'Not signed in')
+    enforce_session_csrf(request, claims)
+    return claims
+
+
+def _source_json(source, last_import=None):
+    from datetime import datetime, timezone
+    if source.freshness_sla_hours is None:
+        freshness = 'no_sla'
+    elif last_import is None:
+        freshness = 'never_imported'
+    else:
+        imported = last_import if last_import.tzinfo else last_import.replace(tzinfo=timezone.utc)
+        freshness = 'stale' if (datetime.now(timezone.utc)-imported).total_seconds() > source.freshness_sla_hours*3600 else 'fresh'
+    return {'id':source.id,'source_key':source.source_key,'display_name':source.display_name,'jurisdiction':source.jurisdiction,
+        'source_type':source.source_type,'authority_url':source.authority_url,'licence_reference':source.licence_reference,
+        'freshness_sla_hours':source.freshness_sla_hours,'precedence':source.precedence,'enabled':source.enabled,'notes':source.notes,
+        'last_successful_import_at':last_import.isoformat() if last_import else None,'freshness_status':freshness,
+        'created_at':source.created_at.isoformat() if source.created_at else None,
+        'updated_at':source.updated_at.isoformat() if source.updated_at else None}
+
+
+class DashboardSourcePayload(BaseModel):
+    source_key: str = Field(min_length=1, max_length=100)
+    display_name: str = Field(min_length=1, max_length=200)
+    jurisdiction: str = Field(default='KE', max_length=100)
+    source_type: str = Field(default='IMPORTED_DATASET', max_length=40)
+    authority_url: str | None = Field(default=None, max_length=1000)
+    licence_reference: str | None = Field(default=None, max_length=500)
+    freshness_sla_hours: int | None = Field(default=None, ge=1, le=8760)
+    precedence: int = Field(default=100, ge=0, le=10000)
+    enabled: bool = True
+    notes: str | None = Field(default=None, max_length=10000)
+
+
+def _validate_source(payload):
+    payload.source_key = payload.source_key.strip().lower()
+    payload.display_name = payload.display_name.strip()
+    if not payload.source_key or not all(c.isalnum() or c in '-_' for c in payload.source_key):
+        raise HTTPException(422, 'Source key may contain letters, numbers, hyphens and underscores only')
+    if not payload.display_name:
+        raise HTTPException(422, 'Display name is required')
+    if payload.authority_url and not payload.authority_url.lower().startswith(('https://','http://')):
+        raise HTTPException(422, 'Authority URL must use HTTP or HTTPS')
+
+
+@router.get('/sources')
+def dashboard_sources(request: Request, db: Session = Depends(get_db)):
+    require_admin(request)
+    rows = db.scalars(select(RegistrySource).order_by(RegistrySource.precedence, RegistrySource.display_name)).all()
+    last_imports = dict(db.execute(select(IngestionJob.source_id, func.max(IngestionJob.completed_at))
+        .where(IngestionJob.status.in_(['COMPLETED','COMPLETED_WITH_ERRORS']), IngestionJob.source_id.is_not(None))
+        .group_by(IngestionJob.source_id)).all())
+    return {'items':[_source_json(s,last_imports.get(s.id)) for s in rows], 'count':len(rows)}
+
+
+@router.post('/sources', status_code=201)
+def dashboard_create_source(payload: DashboardSourcePayload, request: Request, db: Session = Depends(get_db)):
+    require_admin(request); _validate_source(payload)
+    if db.scalar(select(RegistrySource).where(RegistrySource.source_key == payload.source_key)):
+        raise HTTPException(409, 'A source with this key already exists')
+    source = RegistrySource(**payload.model_dump())
+    db.add(source)
+    try:
+        db.flush()
+        db.add(AuditLog(action='dashboard_source_created', actor='admin', details={'source_id':source.id,'source_key':source.source_key}))
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, 'A source with this key already exists')
+    db.refresh(source)
+    return _source_json(source)
+
+
+@router.patch('/sources/{source_id}')
+def dashboard_update_source(source_id: str, payload: DashboardSourcePayload, request: Request, db: Session = Depends(get_db)):
+    require_admin(request); _validate_source(payload)
+    source = db.get(RegistrySource, source_id)
+    if not source: raise HTTPException(404, 'Source not found')
+    if db.scalar(select(RegistrySource).where(RegistrySource.source_key == payload.source_key, RegistrySource.id != source_id)):
+        raise HTTPException(409, 'A source with this key already exists')
+    for name, value in payload.model_dump().items(): setattr(source, name, value)
+    db.add(AuditLog(action='dashboard_source_updated', actor='admin', details={'source_id':source.id,'source_key':source.source_key}))
+    db.commit(); db.refresh(source)
+    return _source_json(source)
+
+
+@router.delete('/sources/{source_id}', status_code=204)
+def dashboard_delete_source(source_id: str, request: Request, db: Session = Depends(get_db)):
+    require_admin(request)
+    source = db.get(RegistrySource, source_id)
+    if not source: raise HTTPException(404, 'Source not found')
+    if db.scalar(select(func.count()).select_from(IngestionJob).where(IngestionJob.source_id == source_id)):
+        raise HTTPException(409, 'This source has ingestion history. Disable it instead of deleting it.')
+    db.add(AuditLog(action='dashboard_source_deleted', actor='admin', details={'source_id':source.id,'source_key':source.source_key}))
+    db.delete(source); db.commit()
+    return Response(status_code=204)
+
+
+@router.get('/ingestion/jobs')
+def dashboard_ingestion_jobs(request: Request, page: int = 1, page_size: int = 50, status: str | None = None,
+                             db: Session = Depends(get_db)):
+    require_admin(request)
+    page = max(1,page); page_size = max(1,min(page_size,100))
+    stmt = select(IngestionJob)
+    if status: stmt = stmt.where(IngestionJob.status == status.upper())
+    total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    rows = db.scalars(stmt.order_by(IngestionJob.created_at.desc()).offset((page-1)*page_size).limit(page_size)).all()
+    return {'items':[{'id':j.id,'file_name':j.file_name,'source_id':j.source_id,'source_name':j.source_name,'status':j.status,
+        'records_processed':j.records_processed,'records_inserted':j.records_inserted,'records_updated':j.records_updated,
+        'records_skipped':j.records_skipped,'attempts':j.attempts,'error_summary':j.error_summary,
+        'created_at':j.created_at.isoformat() if j.created_at else None,'started_at':j.started_at.isoformat() if j.started_at else None,
+        'completed_at':j.completed_at.isoformat() if j.completed_at else None,'heartbeat_at':j.heartbeat_at.isoformat() if j.heartbeat_at else None} for j in rows],
+        'total':total,'page':page,'page_size':page_size}
