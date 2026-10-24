@@ -253,12 +253,11 @@ def oauth_providers():
 
 
 @router.get('/oauth/{provider}/start')
-def oauth_start(provider: str, request: Request, response: Response):
+def oauth_start(provider: str, request: Request):
     client_id, client_secret = _oauth_provider_config(provider)
     if not client_id or not client_secret or not settings.admin_oauth_email_list:
         raise HTTPException(503, f"{provider.title()} sign-in is not configured for an explicitly allowlisted operator")
     state = secrets.token_urlsafe(32)
-    response = RedirectResponse(url='/', status_code=303)
     callback = _oauth_callback_url(request, provider)
     if provider == 'google':
         params = {'client_id': client_id, 'redirect_uri': callback, 'response_type': 'code',
@@ -268,7 +267,7 @@ def oauth_start(provider: str, request: Request, response: Response):
         params = {'client_id': client_id, 'redirect_uri': callback, 'response_type': 'code',
                   'scope': 'read:user user:email', 'state': state}
         destination = 'https://github.com/login/oauth/authorize?' + urlencode(params)
-    response.headers['Location'] = destination
+    response = RedirectResponse(url=destination, status_code=303)
     response.set_cookie(_oauth_state_cookie(provider), state, max_age=OAUTH_STATE_TTL_SECONDS,
                         httponly=True, secure=settings.session_cookie_secure, samesite='lax', path='/api/v1/admin/oauth/')
     response.headers['Cache-Control'] = 'no-store'
