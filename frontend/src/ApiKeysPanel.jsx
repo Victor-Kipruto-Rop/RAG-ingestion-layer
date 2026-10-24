@@ -85,7 +85,7 @@ export default function ApiKeysPanel({readOnly=false}) {
             <label className="key-field-label">Expiry<select value={expires} onChange={e => setExpires(e.target.value)}><option value="30">30 days</option><option value="90">90 days</option><option value="180">180 days</option><option value="365">365 days</option></select></label>
             <fieldset className="scope-field"><legend>Permissions</legend>{[['registry:read','Read registry records'],['sources:read','Read data sources']].map(([scope,label])=><label key={scope}><input type="checkbox" checked={scopes.includes(scope)} onChange={e=>setScopes(old=>e.target.checked?[...old,scope]:old.filter(x=>x!==scope))}/><span>{label}</span></label>)}</fieldset>
             {environment === 'production' && <div className="production-warning"><AlertTriangle size={16} />Production key creation requires an owner/admin role and a verified organization.</div>}
-            <button className="button-primary" disabled={busy || !name.trim() || !scopes.length}><KeyRound size={15} /> {busy ? 'Working…' : `Generate ${environment === 'sandbox' ? 'sandbox' : 'production'} key`}</button>
+            <button className="button-primary" disabled={busy || readOnly || !name.trim() || !scopes.length}><KeyRound size={15} /> {busy ? 'Working…' : `Generate ${environment === 'sandbox' ? 'sandbox' : 'production'} key`}</button>
           </form>
         </section>
         <section className="panel key-list-panel"><div className="panel-heading"><div><h2>Your API keys</h2><p>{items.length} key record{items.length === 1 ? '' : 's'} for this organization</p></div><span className="record-count">{items.filter(x=>x.status==='active').length} active</span></div>
