@@ -168,6 +168,21 @@ def _serialize(row: ApiKey):
             "last_used_at": row.last_used_at.isoformat() if row.last_used_at else None,
             "expires_at": row.expires_at.isoformat() if row.expires_at else None}
 
+@router.get("/me")
+def current_identity(claims: dict = Depends(require_user_claims)):
+    roles = sorted(_roles(claims))
+    return {
+        "user_id": str(claims["sub"]),
+        "organization_id": str(claims["org_id"]),
+        "tenant_id": str(claims.get("tenant_id") or claims["org_id"]),
+        "roles": roles,
+        "organization_verified": claims.get("organization_verified") is True,
+        "production_key_eligible": claims.get("organization_verified") is True and bool({"owner", "admin"} & set(roles)),
+        "identity_issuer": claims.get("iss"),
+        "token_expires_at": int(claims["exp"]),
+    }
+
+
 @router.get("")
 def list_api_keys(claims: dict = Depends(require_user_claims), db: Session = Depends(get_db)):
     rows = db.scalars(select(ApiKey).where(ApiKey.organization_id == str(claims["org_id"])).order_by(ApiKey.created_at.desc())).all()
