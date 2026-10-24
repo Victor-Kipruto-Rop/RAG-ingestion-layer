@@ -97,7 +97,7 @@ class Settings(BaseSettings):
  def auth_email_delivery_configured(self):
   resend_ready = bool(self.resend_api_key and self.resend_from_email)
   smtp_ready = bool(self.smtp_host and self.smtp_from_email and (self.smtp_username and self.smtp_password or not self.smtp_username and not self.smtp_password))
-  return bool(self.auth_otp_pepper and (resend_ready or smtp_ready))
+  return bool(len(self.auth_otp_pepper) >= 32 and (resend_ready or smtp_ready))
 @lru_cache
 def get_settings(): return Settings()
 settings=get_settings()
@@ -122,7 +122,7 @@ def validate_runtime_config():
  if settings.smtp_use_ssl and settings.smtp_use_starttls:
   raise RuntimeError('Invalid configuration: SMTP_USE_SSL and SMTP_USE_STARTTLS cannot both be enabled')
  if settings.app_env.lower() == 'production' and settings.admin_signup_email_list and not settings.auth_email_delivery_configured:
-  raise RuntimeError('Invalid configuration: SMTP_HOST, SMTP_FROM_EMAIL and AUTH_OTP_PEPPER are required for operator sign-up')
+  raise RuntimeError('Invalid configuration: RESEND_API_KEY + RESEND_FROM_EMAIL (preferred) or SMTP settings, and AUTH_OTP_PEPPER >= 32 characters are required for operator sign-up')
  if settings.app_env.lower() == 'production' and settings.admin_signup_email_list and len(settings.auth_otp_pepper) < 32:
   raise RuntimeError('Invalid configuration: AUTH_OTP_PEPPER must contain at least 32 characters')
  if settings.developer_access_token_secret and len(settings.developer_access_token_secret.encode()) < 32:
