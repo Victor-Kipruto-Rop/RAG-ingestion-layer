@@ -330,3 +330,61 @@ def dashboard_complete_upload(job_id: str, request: Request, db: Session = Depen
     require_admin(request)
     from .api import complete_direct_upload
     return complete_direct_upload(job_id, db)
+
+# Workspace overview endpoints. All counts are computed from persisted datasource records.
+@router.get('/workspace/metrics')
+def workspace_metrics(request: Request, db: Session = Depends(get_db)):
+    require_admin(request)
+    total_orgs = db.scalar(select(func.count()).select_from(Organization)) or 0
+    total_jobs = db.scalar(select(func.count()).select_from(IngestionJob)) or 0
+    completed = db.scalar(select(func.count()).select_from(IngestionJob).where(IngestionJob.status.in_(['COMPLETED','COMPLETED_WITH_ERRORS']))) or 0
+    failed = db.scalar(select(func.count()).select_from(IngestionJob).where(IngestionJob.status.in_(['FAILED','ERROR']))) or 0
+    source_count = db.scalar(select(func.count()).select_from(RegistrySource).where(RegistrySource.enabled.is_(True))) or 0
+    return {'indexed_organizations':total_orgs,'ingestion_jobs':total_jobs,'completed_jobs':completed,
+            'failed_jobs':failed,'connected_sources_count':source_count,'generated_at':__import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat(),
+            'source':'database'}
+
+
+@router.get('/ingestion/activity')
+def ingestion_activity(request: Request, limit: int = 50, db: Session = Depends(get_db)):
+    require_admin(request)
+    limit = max(1, min(limit, 200))
+    rows = db.scalars(select(IngestionJob).order_by(IngestionJob.created_at.desc()).limit(limit)).all()
+    events = []
+    volumes = [max(0, int(j.records_processed or 0)) for j in reversed(rows)]
+    for i, job in enumerate(rows):
+        # Only flag a volumetric anomaly when enough preceding observations exist.
+        history = volumes[max(0, len(volumes) - i - 8):len(volumes) - i - 1]
+        volume = max(0, int(job.records_processed or 0))
+        anomaly = None
+        if len(history) >= 5:
+            mean = sum(history) / len(history)
+            variance = sum((v - mean) ** 2 for v in history) / len(history)
+            std = variance ** 0.5
+            if std > 0 and abs(volume - mean) / std >= 3:
+                anomaly = {'type':'volume_spike' if volume > mean else 'volume_drop', 'z_score':round((volume-mean)/std, 2)}
+        events.append({'job_id':job.id,'created_at':job.created_at.isoformat() if job.created_at else None,
+            'status':job.status,'records_processed':volume,'records_inserted':int(job.records_inserted or 0),
+            'anomaly':anomaly})
+    return {'items':events,'count':len(events),'generated_at':__import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat(),
+            'source':'database'}
+
+
+@router.get('/registry/overview')
+def registry_overview(request: Request, db: Session = Depends(get_db)):
+    require_admin(request)
+    total = db.scalar(select(func.count()).select_from(Organization)) or 0
+    if not total:
+        return {'total_records':0,'completeness_percentage':None,'null_assertion_pass_percentage':None,
+                'unreviewed_records':0,'source':'database','generated_at':__import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat()}
+    rows = db.execute(select(Organization.legal_name, Organization.registration_number, Organization.tax_pin,
+                             Organization.status, Organization.data_quality_status)).all()
+    total_fields = len(rows) * 4
+    present_fields = sum(sum(value is not None and str(value).strip() != '' for value in row[:4]) for row in rows)
+    completeness = round((present_fields / total_fields) * 100, 2) if total_fields else None
+    reviewed = sum(1 for row in rows if str(row[4] or '').upper() not in {'UNREVIEWED', 'UNKNOWN', ''})
+    return {'total_records':total,'completeness_percentage':completeness,
+            'null_assertion_pass_percentage':round(present_fields / total_fields * 100, 2) if total_fields else None,
+            'unreviewed_records':total-reviewed,'source':'database',
+            'generated_at':__import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat()}
+
