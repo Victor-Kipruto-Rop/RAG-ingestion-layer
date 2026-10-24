@@ -89,8 +89,14 @@ frontend-tests:
   script:
     - cd frontend
     - npm ci --no-audit --no-fund
+    - node --check scripts/deploy-pages-staging.mjs
+    - test -f wrangler.jsonc
+    - test -f public/_redirects
+    - test -f public/_headers
     - npm test
     - npm run build
+    - test -f dist/_redirects
+    - test -f dist/_headers
     - npm audit --audit-level=moderate
   artifacts:
     when: always
@@ -189,9 +195,8 @@ cloudflare-pages-staging:
     - cd frontend
     - npm ci --no-audit --no-fund
     - npm run build
-    - cd ..
   script:
-    - npx --yes wrangler pages deploy frontend/dist --project-name=pesaguard-datasource-staging --branch=staging
+    - npm run pages:deploy:staging
   rules:
     - if: '$CI_COMMIT_BRANCH == "chore/production-ci-release-gates"'
       when: manual
