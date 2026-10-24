@@ -181,3 +181,43 @@ class AdminNotificationRead(Base):
  __tablename__='admin_notification_reads'
  notification_key:Mapped[str]=mapped_column(String(300),primary_key=True)
  read_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
+
+
+class AdminAccount(Base):
+ __tablename__='admin_accounts'
+ id:Mapped[str]=mapped_column(String(36),primary_key=True,default=lambda:str(uuid.uuid4()))
+ email:Mapped[str]=mapped_column(String(320),unique=True,index=True,nullable=False)
+ display_name:Mapped[str]=mapped_column(String(120),nullable=False)
+ password_hash:Mapped[str]=mapped_column(String(255),nullable=False)
+ email_verified_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+ disabled_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
+ created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
+ updated_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,onupdate=now_utc,nullable=False)
+
+
+class AdminAuthChallenge(Base):
+ __tablename__='admin_auth_challenges'
+ id:Mapped[str]=mapped_column(String(36),primary_key=True,default=lambda:str(uuid.uuid4()))
+ email:Mapped[str]=mapped_column(String(320),index=True,nullable=False)
+ purpose:Mapped[str]=mapped_column(String(32),nullable=False)
+ otp_hash:Mapped[str]=mapped_column(String(64),nullable=False)
+ password_hash:Mapped[str|None]=mapped_column(String(255),nullable=True)
+ display_name:Mapped[str|None]=mapped_column(String(120),nullable=True)
+ attempts:Mapped[int]=mapped_column(Integer,default=0,nullable=False)
+ expires_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+ consumed_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
+ created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
+
+
+class AdminSession(Base):
+ __tablename__='admin_sessions'
+ id:Mapped[str]=mapped_column(String(36),primary_key=True)
+ email:Mapped[str|None]=mapped_column(String(320),index=True,nullable=True)
+ auth_method:Mapped[str]=mapped_column(String(32),nullable=False,default='password')
+ created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
+ last_seen_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
+ expires_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+ revoked_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
+ user_agent:Mapped[str|None]=mapped_column(String(500),nullable=True)
+ ip_digest:Mapped[str|None]=mapped_column(String(64),nullable=True)
+ __table_args__=(Index('ix_admin_sessions_email_created','email','created_at'),Index('ix_admin_sessions_expiry','expires_at'),)
