@@ -180,7 +180,7 @@ def login(payload: LoginRequest, request: Request, response: Response):
     _check_login_rate(request.client.host if request.client else 'unknown')
     if not verify_password(payload.password, settings.admin_password_hash):
         raise HTTPException(401, 'Invalid credentials')
-    token, claims = issue_session_token(email=email, auth_method=provider)
+    token, claims = issue_session_token()
     response.set_cookie(COOKIE_NAME, token, max_age=max(60, settings.session_ttl_seconds), httponly=True,
                         secure=settings.session_cookie_secure, samesite='strict', path='/')
     response.headers['Cache-Control'] = 'no-store'
@@ -238,7 +238,7 @@ def _issue_admin_oauth_session(response: Response, email: str, provider: str) ->
         raise HTTPException(403, 'This identity is not authorized for operator access')
     if not settings.session_secret:
         raise HTTPException(503, 'Dashboard session signing is not configured')
-    token, claims = issue_session_token()
+    token, claims = issue_session_token(email=email, auth_method=provider)
     response.set_cookie(COOKIE_NAME, token, max_age=max(60, settings.session_ttl_seconds),
                         httponly=True, secure=settings.session_cookie_secure, samesite='strict', path='/')
     response.headers['Cache-Control'] = 'no-store'
