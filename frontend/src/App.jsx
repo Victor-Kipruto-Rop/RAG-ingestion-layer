@@ -144,14 +144,14 @@ function QualityPanel({ summary }) {
   const duplicate = summary?.data_quality?.duplicate_percentage;
   const hasQuality = [valid, missing].some(v => v !== undefined && v !== null);
   const rows = hasQuality ? [
-    ['Valid records', Number(valid || 0), 'quality-valid'],
+    ['Field completeness', Number(valid || 0), 'quality-valid'],
     ['Missing required fields', Number(missing || 0), 'quality-missing'],
     ...(duplicate === undefined || duplicate === null ? [] : [['Duplicate candidates', Number(duplicate), 'quality-duplicate']]),
   ] : null;
   return <div className="quality-panel">
     <div className="card-heading"><div><h2>Data quality</h2><p>Registry validation overview</p></div><div className="heading-icon"><SlidersHorizontal size={17} /></div></div>
     {rows ? rows.map(([label, pct, cls]) => <div className="quality-row" key={label}><div className="quality-label"><span>{label}</span><strong>{pct.toFixed(1)}%</strong></div><div className="quality-track"><span className={cls} style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} /></div></div>) : <div className="quality-unavailable"><ShieldCheck size={24} /><strong>Quality metrics not available yet</strong><span>The API does not currently expose aggregate quality percentages. Values are intentionally not estimated.</span></div>}
-    <div className="quality-foot"><span className="tiny-dot" />{hasQuality ? 'Metrics returned by API' : 'Waiting for quality metrics endpoint'}</div>
+    <div className="quality-foot"><span className="tiny-dot" />{hasQuality ? 'Field-presence check · not schema validation' : 'Waiting for quality metrics endpoint'}</div>
   </div>;
 }
 
