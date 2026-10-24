@@ -25,7 +25,7 @@ from pydantic import BaseModel, Field
 
 from .config import settings
 from .database import get_db
-from .models import RegistrySource, IngestionJob, Organization, AuditLog
+from .models import RegistrySource, IngestionJob, Organization, AuditLog, WarehouseRawImport, WarehouseAccessLog, FailedImportDLQ, IngestionRowError
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
@@ -441,6 +441,100 @@ def registry_overview(request: Request, db: Session = Depends(get_db)):
             'unreviewed_records':total-reviewed,'source':'database',
             'generated_at':__import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat()}
 
+
+
+@router.get('/data-quality/overview')
+def admin_data_quality_overview(request: Request, db: Session = Depends(get_db)):
+    require_admin(request)
+    total = db.scalar(select(func.count()).select_from(Organization)) or 0
+    rows = db.execute(select(Organization.legal_name, Organization.registration_number,
+                             Organization.tax_pin, Organization.status,
+                             Organization.data_quality_status)).all()
+    required_fields = 4
+    field_slots = len(rows) * required_fields
+    present = sum(sum(value is not None and str(value).strip() != '' for value in row[:required_fields]) for row in rows)
+    complete_rows = sum(all(value is not None and str(value).strip() != '' for value in row[:required_fields]) for row in rows)
+    row_errors = db.scalar(select(func.count()).select_from(IngestionRowError)) or 0
+    unreviewed = sum(1 for row in rows if str(row[4] or '').upper() in {'UNREVIEWED', 'UNKNOWN', ''})
+    return {'total_records': total, 'complete_records': complete_rows,
+            'incomplete_records': max(0, total - complete_rows),
+            'completeness_percentage': round(present / field_slots * 100, 2) if field_slots else None,
+            'complete_record_percentage': round(complete_rows / total * 100, 2) if total else None,
+            'unreviewed_records': unreviewed, 'ingestion_row_errors': row_errors,
+            'required_fields': ['legal_name', 'registration_number', 'tax_pin', 'status'],
+            'source': 'database', 'generated_at': __import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat()}
+
+
+@router.get('/warehouse/overview')
+def admin_warehouse_overview(request: Request, db: Session = Depends(get_db)):
+    require_admin(request)
+    import_count = db.scalar(select(func.count()).select_from(WarehouseRawImport)) or 0
+    total_bytes = db.scalar(select(func.coalesce(func.sum(WarehouseRawImport.byte_size), 0))) or 0
+    access_count = db.scalar(select(func.count()).select_from(WarehouseAccessLog)) or 0
+    dlq_count = db.scalar(select(func.count()).select_from(FailedImportDLQ).where(FailedImportDLQ.resolved_at.is_(None))) or 0
+    imports = db.scalars(select(WarehouseRawImport).order_by(WarehouseRawImport.created_at.desc()).limit(50)).all()
+    access = db.scalars(select(WarehouseAccessLog).order_by(WarehouseAccessLog.created_at.desc()).limit(20)).all()
+    return {'raw_imports': import_count, 'stored_bytes': int(total_bytes), 'warehouse_access_events': access_count,
+            'unresolved_dead_letter_rows': dlq_count,
+            'imports': [{'id': x.id, 'job_id': x.ingestion_job_id, 'file_name': x.original_filename,
+                         'content_type': x.content_type, 'byte_size': int(x.byte_size or 0),
+                         'source_name': x.source_name, 'status': x.import_status,
+                         'created_at': x.created_at.isoformat() if x.created_at else None} for x in imports],
+            'access_events': [{'id': x.id, 'request_id': x.request_id, 'caller_service': x.caller_service,
+                               'endpoint': x.endpoint, 'method': x.http_method, 'status_code': x.response_status,
+                               'duration_ms': x.duration_ms, 'outcome': x.outcome,
+                               'created_at': x.created_at.isoformat() if x.created_at else None} for x in access],
+            'source': 'database', 'generated_at': __import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat()}
+
+
+@router.get('/validation/rules')
+def admin_validation_rules(request: Request):
+    require_admin(request)
+    # These are application-level checks, not user-configurable rules stored in the database.
+    rules = [
+        {'id': 'legal-name-required', 'name': 'Legal name required', 'field': 'legal_name',
+         'severity': 'error', 'status': 'enforced', 'description': 'Every registry organization must have a non-empty legal name.'},
+        {'id': 'registration-number-unique', 'name': 'Registration number uniqueness', 'field': 'normalized_registration_number',
+         'severity': 'error', 'status': 'enforced', 'description': 'A normalized registration number cannot belong to two registry records.'},
+        {'id': 'tax-pin-presence', 'name': 'Tax PIN presence', 'field': 'tax_pin',
+         'severity': 'review', 'status': 'measured', 'description': 'Presence is measured for completeness; this does not verify a PIN with KRA.'},
+        {'id': 'registration-number-presence', 'name': 'Registration number presence', 'field': 'registration_number',
+         'severity': 'review', 'status': 'measured', 'description': 'Presence is measured for completeness; this does not verify BRS registration.'},
+        {'id': 'source-provenance', 'name': 'Source provenance', 'field': 'source_name/source_file/source_row',
+         'severity': 'review', 'status': 'partially-tracked', 'description': 'Ingestion records retain available source provenance metadata.'},
+    ]
+    return {'items': rules, 'total': len(rules), 'editable': False, 'source': 'application-defined',
+            'note': 'Rules are defined by application behavior. There is no persisted rule-management model in this deployment.',
+            'generated_at': __import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat()}
+
+
+@router.get('/audit/logs')
+def admin_audit_logs(request: Request, limit: int = 100, db: Session = Depends(get_db)):
+    require_admin(request)
+    limit = max(1, min(limit, 200))
+    rows = db.scalars(select(AuditLog).order_by(AuditLog.created_at.desc()).limit(limit)).all()
+    return {'items': [{'id': x.id, 'action': x.action, 'actor': x.actor, 'file_name': x.file_name,
+                       'detail_fields': sorted(list((x.details or {}).keys())) if isinstance(x.details, dict) else [],
+                       'created_at': x.created_at.isoformat() if x.created_at else None} for x in rows],
+            'count': len(rows), 'source': 'database',
+            'generated_at': __import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat()}
+
+
+@router.get('/settings/overview')
+def admin_settings_overview(request: Request):
+    require_admin(request)
+    origins = settings.cors_origin_list
+    return {'environment': settings.app_env, 'api_environment': settings.api_environment,
+            'database': {'configured': bool(settings.database_url), 'engine': 'postgresql' if settings.database_url.startswith(('postgres://', 'postgresql://')) else 'sqlite/local or unverified'},
+            'object_storage': {'configured': all([settings.r2_account_id, settings.r2_access_key_id, settings.r2_secret_access_key, settings.r2_bucket_name])},
+            'redis': {'configured': bool(settings.redis_url), 'required_for_distributed_admin_rate_limit': bool(settings.admin_password_hash)},
+            'operator_session': {'http_only_cookie': True, 'secure_cookie': settings.session_cookie_secure,
+                                 'same_site': 'strict', 'ttl_seconds': settings.session_ttl_seconds,
+                                 'distributed_rate_limit_configured': bool(settings.redis_url)},
+            'cors_origins': origins, 'metrics_token_configured': bool(settings.metrics_token),
+            'secrets_exposed': False, 'editable': False,
+            'note': 'Read-only diagnostic summary. Secret values are never returned by this endpoint.',
+            'source': 'runtime-configuration'}
 
 @router.get('/workspace/stream')
 async def workspace_stream(request: Request):
