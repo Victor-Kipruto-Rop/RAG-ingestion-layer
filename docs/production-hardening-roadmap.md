@@ -31,6 +31,7 @@ This roadmap is the release checklist for taking PesaGuard Registry Datasource f
 - [ ] Validate production environment settings at startup without printing secret values.
 - [ ] Add HMAC request signing, timestamp tolerance, nonce/replay protection and key rotation.
 - [ ] Redact PII and credentials from raw payloads, logs and error messages.
+- [x] Do not persist webhook receiver response bodies; delivery history stores status metadata only (regression test added).
 - [ ] Test authentication, tenant boundaries and failure modes.
 
 ## Phase 6 — API resilience and cache policy
