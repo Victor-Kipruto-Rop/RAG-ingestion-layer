@@ -114,3 +114,18 @@ def test_webhook_url_validation_accepts_public_https_target(monkeypatch):
 
     monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
     assert _validate_webhook_url("https://hooks.example.test/receive") is None
+
+
+def test_production_oauth_start_requires_frontend_redirect_origin(monkeypatch):
+    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings, "developer_access_token_secret", "d" * 40)
+    monkeypatch.setattr(settings, "session_secret", "s" * 40)
+    monkeypatch.setattr(settings, "developer_frontend_url", "")
+    monkeypatch.setattr(settings, "google_oauth_client_id", "google-client")
+    monkeypatch.setattr(settings, "google_oauth_client_secret", "google-secret")
+
+    with pytest.raises(HTTPException) as exc:
+        developer_platform.developer_oauth_start("google", SimpleNamespace(base_url="https://api.example.test/"))
+
+    assert exc.value.status_code == 503
+    assert "DEVELOPER_FRONTEND_URL" in exc.value.detail
