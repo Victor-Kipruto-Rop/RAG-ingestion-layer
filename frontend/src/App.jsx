@@ -45,7 +45,7 @@ function StatusPill({ value }) {
   return <span className={`status-pill ${tone}`}><i />{String(value || 'Unknown').replaceAll('_', ' ')}</span>;
 }
 
-function Sidebar({ page, setPage, mobile, setMobile }) {
+function Sidebar({ page, setPage, mobile, setMobile, connected }) {
   let group = '';
   return <aside className={`sidebar ${mobile ? 'sidebar-open' : ''}`}>
     <div className="brand-row">
@@ -70,7 +70,7 @@ function Sidebar({ page, setPage, mobile, setMobile }) {
     <div className="sidebar-footer">
       <div className="secure-icon"><ShieldCheck size={17} /></div>
       <div><strong>Secure workspace</strong><span>Operator access</span></div>
-      <span className="footer-online" title="API connection status" />
+      <span className={`footer-online ${connected ? "" : "muted"}`} title={connected ? "API connected" : "API not connected"} />
     </div>
   </aside>;
 }
@@ -327,7 +327,7 @@ export default function App() {
 
   return <div className="app-shell">
     {mobile && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setMobile(false)} />}
-    <Sidebar page={page} setPage={setPage} mobile={mobile} setMobile={setMobile} />
+    <Sidebar page={page} setPage={setPage} mobile={mobile} setMobile={setMobile} connected={connected} />
     <main className="main-content">
       <Topbar page={page} connected={connected} onRefresh={refresh} loading={loading} search={search} setSearch={setSearch} setMobile={setMobile} onSignOut={signOut} previewMode={previewMode} onTogglePreview={() => setPreviewMode(v => !v)} failedJobs={jobs.filter(job => ['failed','error'].includes(String(job.status || '').toLowerCase()))} notificationsOpen={notificationsOpen} setNotificationsOpen={setNotificationsOpen} onViewJobs={() => setPage('Ingestion Jobs')} />
       <div className="page-content">
@@ -348,7 +348,7 @@ export default function App() {
             <section className="panel"><WidgetErrorBoundary label="Data quality"><QualityPanel summary={summary} /></WidgetErrorBoundary></section>
           </div>
           <section className="panel jobs-panel"><div className="panel-heading"><div><h2>Recent ingestion jobs</h2><p>Latest persisted pipeline activity</p></div><button className="button-link" onClick={() => setPage('Ingestion Jobs')}>View all jobs <ArrowRight size={15} /></button></div><WidgetErrorBoundary label="Recent ingestion jobs"><JobsTable jobs={jobs} compact search={search} /></WidgetErrorBoundary></section>
-          <section className="infra-section"><div className="section-title"><div><h2>Infrastructure health</h2><p>Connection state reported by the current datasource session</p></div><span className="health-summary"><i /> {connected ? 'API reachable' : 'Awaiting connection'}</span></div><div className="service-grid"><ServiceStatus label="Registry API" detail="Datasource application" value={connected ? 'Connected' : 'Not connected'} connected={connected} icon={Server} /><ServiceStatus label="Database metrics" detail="Registry data access" value={summary ? 'Available' : 'Unknown'} connected={!!summary} icon={Database} /><ServiceStatus label="External verification" detail="KRA / BRS integrations" value="Not configured" connected={false} icon={ShieldCheck} /></div></section>
+          <section className="infra-section"><div className="section-title"><div><h2>Infrastructure health</h2><p>Connection state reported by the current datasource session</p></div><span className="health-summary"><i /> {connected ? 'API reachable' : 'Awaiting connection'}</span></div><div className="service-grid"><ServiceStatus label="Registry API" detail="Datasource application" value={connected ? 'Connected' : 'Not connected'} connected={connected} icon={Server} /><ServiceStatus label="Database metrics" detail="Registry data access" value={summary ? 'Available' : 'Unknown'} connected={!!summary} icon={Database} /><ServiceStatus label="External verification" detail="KRA / BRS integrations" value="Not verified" connected={false} icon={ShieldCheck} /></div></section>
         </>}
 
         {page === 'Data Sources' && <WidgetErrorBoundary label="Data Sources"><DataSourcesPanel onUpload={() => setPage('Upload center')} readOnly={previewMode} searchTerm={search} /></WidgetErrorBoundary>}
