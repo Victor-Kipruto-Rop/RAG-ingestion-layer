@@ -185,6 +185,8 @@ export default function App() {
   const [signingIn, setSigningIn] = useState(false);
   const [connected, setConnected] = useState(false);
   const [summary, setSummary] = useState(null);
+  const [registryOverview, setRegistryOverview] = useState(null);
+  const [activity, setActivity] = useState([]);
   const [orgs, setOrgs] = useState([]);
   const [orgPage, setOrgPage] = useState(1);
   const [orgTotal, setOrgTotal] = useState(0);
@@ -201,15 +203,26 @@ export default function App() {
     if (!authed) return;
     setLoading(true); setError('');
     try {
-      const [metricsResponse, orgResponse, jobsResponse] = await Promise.all([
-        request('/api/v1/admin/metrics/summary'),
+      const [metricsResponse, registryResponse, activityResponse, orgResponse, jobsResponse] = await Promise.all([
+        request('/api/v1/admin/workspace/metrics'),
+        request('/api/v1/admin/registry/overview'),
+        request('/api/v1/admin/ingestion/activity?limit=50'),
         request(`/api/v1/admin/organizations?page=${orgPage}&page_size=100${search ? `&q=${encodeURIComponent(search)}` : ''}`),
         request('/api/v1/admin/ingestion/jobs?page_size=50')
       ]);
       const metrics = await metricsResponse.json();
+      const registry = await registryResponse.json();
+      const activityResult = await activityResponse.json();
       const orgResult = await orgResponse.json();
       const jobsResult = await jobsResponse.json();
-      setSummary(metrics); setOrgs(orgResult.items || []); setOrgTotal(orgResult.total || 0);
+      setSummary({ ...metrics, total_organizations: metrics.indexed_organizations, total_jobs: metrics.ingestion_jobs,
+        data_quality: registry.completeness_percentage == null ? null : {
+          valid_percentage: registry.null_assertion_pass_percentage,
+          missing_percentage: Math.max(0, 100 - registry.completeness_percentage),
+          duplicate_percentage: null
+        }});
+      setRegistryOverview(registry); setActivity(activityResult.items || []);
+      setOrgs(orgResult.items || []); setOrgTotal(orgResult.total || 0);
       setJobs(jobsResult.items || []); setConnected(true);
     } catch (e) {
       setConnected(false);
@@ -218,6 +231,22 @@ export default function App() {
     }
     finally { setLoading(false); }
   }, [authed, request, orgPage, search]);
+
+  useEffect(() => {
+    if (!authed) return undefined;
+    const timer = window.setInterval(() => { refresh(); }, 15000);
+    return () => window.clearInterval(timer);
+  }, [authed, refresh]);
+
+  useEffect(() => {
+    const onShortcut = (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault(); document.querySelector('.global-search input')?.focus();
+      }
+    };
+    window.addEventListener('keydown', onShortcut);
+    return () => window.removeEventListener('keydown', onShortcut);
+  }, []);
 
   useEffect(() => {
     // Restore an existing server-side session after a page reload.
@@ -237,7 +266,7 @@ export default function App() {
   };
   const signOut = async () => {
     try { await api('/api/v1/admin/logout', { method: 'POST' }); } catch { /* cookie is cleared server-side or expires */ }
-    setCsrfToken(''); setAuthed(false); setConnected(false); setSummary(null); setOrgs([]); setJobs([]);
+    setCsrfToken(''); setAuthed(false); setConnected(false); setSummary(null); setRegistryOverview(null); setActivity([]); setOrgs([]); setJobs([]);
   };
   const upload = async (event) => {
     event.preventDefault();
@@ -292,7 +321,7 @@ export default function App() {
             <MetricCard icon={AlertCircle} label="Failed jobs" value={summary ? number(metrics.failed_jobs) : '—'} note="May require investigation" accent="amber" />
           </div>
           <div className="dashboard-grid">
-            <section className="panel activity-panel"><div className="panel-heading"><div><h2>Ingestion activity</h2><p>Processed and inserted records from recent jobs</p></div><span className="panel-period"><Activity size={14} /> Recent activity</span></div><ActivityChart jobs={jobs} /></section>
+            <section className="panel activity-panel"><div className="panel-heading"><div><h2>Ingestion activity</h2><p>Processed and inserted records from recent jobs</p></div><span className="panel-period"><Activity size={14} /> Recent activity</span></div>{summary?.connected_sources_count === 0 ? <div className="chart-empty"><Activity size={25} /><strong>Activity will appear here</strong><span>Connect the API and process ingestion jobs to populate this chart.</span><button className="button-link" onClick={() => setPage('Data Sources')}>Connect a source <ArrowRight size={15} /></button></div> : <ActivityChart jobs={jobs} />}</section>
             <section className="panel"><QualityPanel summary={summary} /></section>
           </div>
           <section className="panel jobs-panel"><div className="panel-heading"><div><h2>Recent ingestion jobs</h2><p>Latest persisted pipeline activity</p></div><button className="button-link" onClick={() => setPage('Ingestion Jobs')}>View all jobs <ArrowRight size={15} /></button></div><JobsTable jobs={jobs} compact search={search} /></section>
