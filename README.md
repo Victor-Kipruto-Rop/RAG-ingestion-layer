@@ -3,6 +3,7 @@
 The public developer control plane is implemented in `frontend/src/DeveloperPlatformApp.jsx` and `backend/src/developer_platform.py`. It includes email OTP signup and recovery, Google/GitHub OAuth configuration, revocable sessions, tenant API-key management, production-access requests, signed webhooks, API Explorer, and multi-language integration examples.
 
 - [Developer platform operations guide](docs/developer-platform.md)
+- [Staging release acceptance checklist](docs/release-acceptance-staging.md) — mandatory evidence gates for OAuth, SMTP, environment isolation, API keys, webhooks, and session revocation.
 - [Python SDK](sdks/python/README.md)
 - [JavaScript SDK](sdks/javascript/README.md)
 - Sandbox base URL: `https://sandbox-api.pesaguard.co.ke` with `pg_sandbox_` keys.
