@@ -316,3 +316,18 @@ def dashboard_upload(request: Request, file: UploadFile, db: Session = Depends(g
     from .api import upload as upload_impl
     return upload_impl(request, file, db, request.headers.get('X-Correlation-ID'),
                        request.headers.get('Idempotency-Key'), request.headers.get('X-Registry-Source'))
+
+
+@router.post('/ingestion/uploads/presign', status_code=201)
+def dashboard_presign_upload(payload: dict, request: Request, db: Session = Depends(get_db)):
+    require_admin(request)
+    from .api import DirectUploadRequest, presign_direct_upload
+    parsed = DirectUploadRequest.model_validate(payload)
+    return presign_direct_upload(parsed, request, db, request.headers.get('X-Correlation-ID'), request.headers.get('Idempotency-Key'))
+
+
+@router.post('/ingestion/uploads/{job_id}/complete')
+def dashboard_complete_upload(job_id: str, request: Request, db: Session = Depends(get_db)):
+    require_admin(request)
+    from .api import complete_direct_upload
+    return complete_direct_upload(job_id, db)
