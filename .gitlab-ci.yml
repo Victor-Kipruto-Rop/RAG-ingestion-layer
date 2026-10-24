@@ -7,9 +7,10 @@ stages:
 
 workflow:
   rules:
+    # Merge-request validation runs without deployment or operational jobs.
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    # Staging branch supports push, web/manual, and scheduled pipelines.
     - if: '$CI_COMMIT_BRANCH == "chore/production-ci-release-gates"'
-    - if: '$CI_PIPELINE_SOURCE == "web" && $CI_COMMIT_BRANCH == "chore/production-ci-release-gates"'
-    - if: '$CI_PIPELINE_SOURCE == "schedule" && $CI_COMMIT_BRANCH == "chore/production-ci-release-gates"'
     - when: never
 
 variables:
