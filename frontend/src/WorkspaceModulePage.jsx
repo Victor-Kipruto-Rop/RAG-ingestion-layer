@@ -75,9 +75,17 @@ const renderValue = (value, type) => {
 };
 
 function Table({ rows, columns, query }) {
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
   const filtered = useMemo(() => (rows || []).filter(row => columns.some(([key]) => renderValue(row[key]).toLowerCase().includes(query.toLowerCase()))), [rows,columns,query]);
+  const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  useEffect(() => { setPage(1); }, [query, rows]);
   if (!filtered.length) return <div className="module-empty"><Database size={24}/><strong>{query ? 'No matching records' : 'No records available yet'}</strong><span>{query ? 'Try a different search.' : 'The backend has not returned any records for this section.'}</span></div>;
-  return <div className="table-scroll"><table className="data-table module-table"><thead><tr>{columns.map(([key,label])=><th key={key}>{label}</th>)}</tr></thead><tbody>{filtered.map((row,i)=><tr key={row.id || row.job_id || row.request_id || i}>{columns.map(([key,,type])=><td key={key} className={key==='endpoint'||key==='description'?'module-wrap':''}>{renderValue(row[key],type)}</td>)}</tr>)}</tbody></table></div>;
+  const visible = filtered.slice((page - 1) * pageSize, page * pageSize);
+  return <>
+    <div className="table-scroll"><table className="data-table module-table"><thead><tr>{columns.map(([key,label])=><th key={key}>{label}</th>)}</tr></thead><tbody>{visible.map((row,i)=><tr key={row.id || row.job_id || row.request_id || i}>{columns.map(([key,,type])=><td key={key} className={key==='endpoint'||key==='description'?'module-wrap':''}>{renderValue(row[key],type)}</td>)}</tr>)}</tbody></table></div>
+    {filtered.length > pageSize && <div className="pagination"><span>Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, filtered.length)} of {filtered.length} records</span><div><button className="button-secondary" disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))}>Previous</button><button className="button-secondary" disabled={page >= pages} onClick={() => setPage(p => Math.min(pages, p + 1))}>Next</button></div></div>}
+  </>;
 }
 
 function SettingsGrid({ data }) {
