@@ -8,7 +8,7 @@ import jwt
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import select, func
+from sqlalchemy import select, func, text
 from sqlalchemy.orm import Session
 from .config import settings
 from .database import get_db
@@ -97,6 +97,14 @@ def require_user_claims(authorization: str | None = Header(default=None, alias="
     normalized["sub"] = subject
     return normalized
 
+def _set_tenant_database_context(db: Session, claims: dict) -> None:
+    """Set a transaction-local RLS tenant context before any key-table query."""
+    bind = db.get_bind()
+    if bind.dialect.name == "postgresql":
+        db.execute(text("SELECT set_config('app.current_org_id', :org_id, true)"),
+                   {"org_id": str(claims["org_id"])})
+
+
 def _roles(claims: dict) -> set[str]:
     roles = claims.get("roles", [])
     if isinstance(roles, str):
@@ -184,15 +192,18 @@ def current_identity(claims: dict = Depends(require_user_claims)):
 
 @router.get("")
 def list_api_keys(claims: dict = Depends(require_user_claims), db: Session = Depends(get_db)):
+    _set_tenant_database_context(db, claims)
     rows = db.scalars(select(ApiKey).where(ApiKey.organization_id == str(claims["org_id"])).order_by(ApiKey.created_at.desc())).all()
     return {"items": [_serialize(row) for row in rows]}
 
 @router.post("", status_code=201)
 def create_api_key(payload: CreateApiKey, claims: dict = Depends(require_user_claims), db: Session = Depends(get_db)):
+    _set_tenant_database_context(db, claims)
     return _create_key(db, claims, payload)
 
 @router.post("/{key_id}/rotate", status_code=201)
 def rotate_api_key(key_id: str, claims: dict = Depends(require_user_claims), db: Session = Depends(get_db)):
+    _set_tenant_database_context(db, claims)
     _require_org_admin(claims)
     row = db.scalar(select(ApiKey).where(ApiKey.id == key_id, ApiKey.organization_id == str(claims["org_id"])))
     if not row:
@@ -218,6 +229,7 @@ def rotate_api_key(key_id: str, claims: dict = Depends(require_user_claims), db:
 
 @router.delete("/{key_id}", status_code=204)
 def revoke_api_key(key_id: str, claims: dict = Depends(require_user_claims), db: Session = Depends(get_db)):
+    _set_tenant_database_context(db, claims)
     _require_org_admin(claims)
     row = db.scalar(select(ApiKey).where(ApiKey.id == key_id, ApiKey.organization_id == str(claims["org_id"])))
     if not row:
@@ -230,6 +242,7 @@ def revoke_api_key(key_id: str, claims: dict = Depends(require_user_claims), db:
 
 @router.get("/audit/events")
 def list_key_audit(claims: dict = Depends(require_user_claims), db: Session = Depends(get_db), limit: int = 100):
+    _set_tenant_database_context(db, claims)
     limit = max(1, min(limit, 200))
     rows = db.scalars(select(ApiKeyAuditEvent).where(ApiKeyAuditEvent.organization_id == str(claims["org_id"])).order_by(ApiKeyAuditEvent.created_at.desc()).limit(limit)).all()
     return {"items": [{"id": r.id, "api_key_id": r.api_key_id, "action": r.action, "details": r.details or {}, "created_at": r.created_at.isoformat()} for r in rows]}
