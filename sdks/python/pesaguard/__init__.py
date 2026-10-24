@@ -1,3 +1,3 @@
-from .client import PesaGuardClient, PesaGuardError
+from .client import PesaGuardClient, PesaGuardError, verify_webhook_signature
 
-__all__ = ["PesaGuardClient", "PesaGuardError"]
+__all__ = ["PesaGuardClient", "PesaGuardError", "verify_webhook_signature"]
