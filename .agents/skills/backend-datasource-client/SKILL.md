@@ -17,3 +17,5 @@ description: Use when connecting the PesaGuard backend server-side client to the
 
 ## Guardrails
 Do not place the service key in frontend configuration. Do not replace real network behavior with a mock and call that end-to-end proof.
+
+undefined
