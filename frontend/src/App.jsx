@@ -6,7 +6,7 @@ import {
   MoreHorizontal, RefreshCw, Search, Server, Settings, ShieldCheck, SlidersHorizontal,
   Upload, X, ScrollText, Workflow
 } from 'lucide-react';
-import { api, setCsrfToken } from './api.js';
+import { api, API_BASE, setCsrfToken } from './api.js';
 import ApiKeysPanel from './ApiKeysPanel.jsx';
 import DataSourcesPanel from './DataSourcesPanel.jsx';
 import LoginPage from './LoginPage.jsx';
@@ -241,6 +241,22 @@ export default function App() {
     const timer = window.setInterval(() => { refresh(); }, 15000);
     return () => window.clearInterval(timer);
   }, [authed, refresh]);
+
+  useEffect(() => {
+    if (!authed || typeof EventSource === 'undefined') return undefined;
+    const stream = new EventSource(API_BASE + '/api/v1/admin/workspace/stream', { withCredentials: true });
+    stream.addEventListener('workspace', (event) => {
+      try {
+        const snapshot = JSON.parse(event.data);
+        setSummary(current => ({ ...(current || {}), ...snapshot.metrics,
+          total_organizations: snapshot.metrics.indexed_organizations, total_jobs: snapshot.metrics.ingestion_jobs }));
+        setJobs(snapshot.jobs || []);
+        setConnected(true);
+      } catch { /* Keep last valid snapshot; REST refresh remains available. */ }
+    });
+    stream.onerror = () => stream.close();
+    return () => stream.close();
+  }, [authed]);
 
   useEffect(() => {
     const onShortcut = (event) => {
