@@ -22,6 +22,8 @@ def test_workspace_overview_endpoints_require_operator_session(monkeypatch):
         login = client.post("/api/v1/admin/login", json={"password": "workspace-test-password"})
         assert login.status_code == 200
         assert client.get("/api/v1/admin/workspace/metrics").status_code == 200
+        searched_jobs = client.get("/api/v1/admin/ingestion/jobs?page=1&page_size=25&q=definitely-no-matching-job-7d3c").json()
+        assert searched_jobs["items"] == [] and searched_jobs["total"] == 0
         metrics = client.get("/api/v1/admin/workspace/metrics").json()
         assert {"indexed_organizations", "ingestion_jobs", "completed_jobs", "failed_jobs", "connected_sources_count"} <= set(metrics)
         activity = client.get("/api/v1/admin/ingestion/activity").json()
