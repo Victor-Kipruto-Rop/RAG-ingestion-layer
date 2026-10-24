@@ -466,7 +466,7 @@ def admin_review_developer_production_request(
     payload: DeveloperProductionReviewRequest,
     request: Request,
     background_tasks: BackgroundTasks,
-    claims: dict = Depends(require_admin),
+    claims: dict = Depends(_require_admin_for_developer_routes),
     db: Session = Depends(get_db),
 ):
     row = db.get(DeveloperProductionAccessRequest, request_id)
@@ -507,7 +507,7 @@ def admin_review_developer_production_request(
 def admin_set_developer_workspace_verification(
     workspace_id: str,
     payload: DeveloperWorkspaceVerificationRequest,
-    claims: dict = Depends(require_admin),
+    claims: dict = Depends(_require_admin_for_developer_routes),
     db: Session = Depends(get_db),
 ):
     workspace = db.get(DeveloperWorkspace, workspace_id)
