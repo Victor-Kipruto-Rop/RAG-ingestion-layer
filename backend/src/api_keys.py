@@ -61,7 +61,7 @@ def require_user_claims(authorization: str | None = Header(default=None, alias="
         if not isinstance(kid, str) or kid not in ring or header.get("alg") != "HS256":
             raise jwt.InvalidTokenError("Untrusted signing key")
         options = {
-            "require": ["exp", "iat", "nbf", "jti", "sub", "tenant_id", "type", "iss", "aud"],
+            "require": ["exp", "iat", "nbf", "jti", "sub", "tenant_id", "type", "iss", "aud", "auth_version", "scope"],
             "verify_aud": bool(expected_audience),
             "verify_iss": bool(expected_issuer),
         }
