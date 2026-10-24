@@ -657,9 +657,9 @@ def _send_auth_otp(email: str, code: str, purpose: str) -> None:
     subject = 'PesaGuard Datasource email verification' if purpose == 'signup' else 'PesaGuard Datasource password reset'
     action = 'verify your email and finish creating your operator account' if purpose == 'signup' else 'reset your operator account password'
     body = (
-        f'Your PesaGuard Datasource verification code is {code}.\\n\\n'
+        f'Your PesaGuard Datasource verification code is {code}.\n\n'
         f'Use this code to {action}. It expires in {settings.auth_otp_ttl_seconds // 60} minute(s). '
-        'If you did not request this, you can ignore this message. Do not share this code.\\n'
+        'If you did not request this, you can ignore this message. Do not share this code.\n'
     )
     if settings.resend_api_key and settings.resend_from_email:
         try:
