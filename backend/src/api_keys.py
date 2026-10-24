@@ -189,7 +189,6 @@ def list_api_keys(claims: dict = Depends(require_user_claims), db: Session = Dep
 
 @router.post("", status_code=201)
 def create_api_key(payload: CreateApiKey, claims: dict = Depends(require_user_claims), db: Session = Depends(get_db)):
-    _set_tenant_database_context(db, claims)
     return _create_key(db, claims, payload)
 
 @router.post("/{key_id}/rotate", status_code=201)
