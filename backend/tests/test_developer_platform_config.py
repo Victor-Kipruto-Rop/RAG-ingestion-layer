@@ -75,3 +75,42 @@ def test_production_oauth_rejects_insecure_or_credentialed_callback_origins(monk
         developer_platform._oauth_callback_url(SimpleNamespace(base_url="https://internal/"), "google")
 
     assert exc.value.status_code == 503
+
+
+from src.developer_platform import _validate_webhook_url
+
+
+def test_webhook_url_validation_rejects_insecure_and_private_targets():
+    for target in (
+        "http://example.com/hook",
+        "https://localhost/hook",
+        "https://127.0.0.1/hook",
+        "https://192.168.1.10/hook",
+        "https://user:password@example.com/hook",
+    ):
+        with pytest.raises(HTTPException):
+            _validate_webhook_url(target)
+
+
+def test_webhook_url_validation_rejects_hostnames_resolving_to_private_addresses(monkeypatch):
+    import socket
+
+    def fake_getaddrinfo(*_args, **_kwargs):
+        return [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", 443)),
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.8", 443)),
+        ]
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    with pytest.raises(HTTPException):
+        _validate_webhook_url("https://public-looking.example/hook")
+
+
+def test_webhook_url_validation_accepts_public_https_target(monkeypatch):
+    import socket
+
+    def fake_getaddrinfo(*_args, **_kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", 443))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    assert _validate_webhook_url("https://hooks.example.test/receive") is None
