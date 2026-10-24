@@ -1,3 +1,4 @@
+from urllib.parse import urlparse
 from functools import lru_cache
 from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
@@ -98,6 +99,17 @@ settings=get_settings()
 
 
 def validate_runtime_config():
+ sandbox_url = urlparse(settings.developer_public_base_url.strip())
+ production_url = urlparse(settings.developer_production_base_url.strip())
+ if not sandbox_url.hostname or not production_url.hostname:
+  raise RuntimeError('Invalid configuration: DEVELOPER_PUBLIC_BASE_URL and DEVELOPER_PRODUCTION_BASE_URL must be absolute URLs')
+ if settings.developer_public_base_url.rstrip('/') == settings.developer_production_base_url.rstrip('/'):
+  raise RuntimeError('Invalid configuration: sandbox and production API base URLs must be different')
+ if settings.app_env.lower() == 'production':
+  if sandbox_url.scheme != 'https' or production_url.scheme != 'https':
+   raise RuntimeError('Invalid configuration: developer sandbox and production base URLs must use HTTPS in production')
+  if sandbox_url.hostname.lower() == production_url.hostname.lower():
+   raise RuntimeError('Invalid configuration: sandbox and production must use different hostnames in production')
  if settings.cors_origin_list and '*' in settings.cors_origin_list:
   raise RuntimeError("Invalid configuration: CORS_ORIGINS must list explicit origins; '*' is not allowed because the dashboard uses credentialed requests")
  if settings.auth_otp_ttl_seconds < 60 or settings.auth_otp_ttl_seconds > 1800 or settings.auth_otp_max_attempts < 1 or settings.auth_otp_max_attempts > 10:
