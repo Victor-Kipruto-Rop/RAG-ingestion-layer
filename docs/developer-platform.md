@@ -28,7 +28,7 @@ Developer accounts are separate from internal operator accounts.
 - `GET/PUT /api/v1/developer/profile` reads and updates the display/workspace name.
 - `GET /api/v1/developer/notifications` returns workspace-scoped persisted API-key, production-access and webhook-delivery activity.
 
-Cookies are HttpOnly, CSRF protected and Secure in production. Passwords must be at least 12 characters. OTPs are hashed with `AUTH_OTP_PEPPER`, expire, have a bounded attempt count and are delivered by configured SMTP. Set strong `DEVELOPER_ACCESS_TOKEN_SECRET`, `SESSION_SECRET`, and `AUTH_OTP_PEPPER` values (at least 32 random characters each), plus SMTP settings. Signup and reset stay disabled when required configuration is missing.
+Cookies are HttpOnly, CSRF protected and Secure in production. Passwords must be at least 12 characters. OTPs are hashed with `AUTH_OTP_PEPPER`, expire, and have a bounded attempt count. Email is delivered through Resend when `RESEND_API_KEY` and `RESEND_FROM_EMAIL` are configured; SMTP is an explicit compatibility fallback. Set strong `DEVELOPER_ACCESS_TOKEN_SECRET`, `SESSION_SECRET`, and `AUTH_OTP_PEPPER` values (at least 32 random characters each), plus a verified Resend sender. Signup and reset stay disabled when required configuration is missing. See [Resend and authentication setup](developer-platform-email-auth.md).
 
 ## Google and GitHub sign-in
 
