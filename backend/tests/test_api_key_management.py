@@ -4,7 +4,7 @@ import json
 import jwt
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, func
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -63,6 +63,25 @@ def test_customers_cannot_request_ingestion_scopes(db, scope):
     with pytest.raises(HTTPException) as refused:
         _create_key(db, _claims(), CreateApiKey(name='Nope', environment='sandbox', scopes=[scope]))
     assert refused.value.status_code == 422
+
+@pytest.mark.parametrize('roles', [['member'], [], None, {'unexpected': 'shape'}])
+def test_non_admin_or_malformed_role_claims_cannot_create_api_keys(db, roles):
+    with pytest.raises(HTTPException) as refused:
+        _create_key(db, _claims(roles=roles), CreateApiKey(name='No privilege', environment='sandbox'))
+    assert refused.value.status_code == 403
+    assert db.scalar(select(func.count()).select_from(ApiKey)) == 0
+
+
+def test_api_key_creation_accepts_normalized_owner_role(db):
+    created = _create_key(db, _claims(roles=['OWNER']), CreateApiKey(name='Owner key', environment='sandbox'))
+    assert created['environment'] == 'sandbox'
+
+
+def test_unverified_organization_cannot_create_production_key(db):
+    with pytest.raises(HTTPException) as refused:
+        _create_key(db, _claims(organization_verified=False), CreateApiKey(name='Unverified', environment='production', expires_in_days=30))
+    assert refused.value.status_code == 403
+    assert db.scalar(select(func.count()).select_from(ApiKey)) == 0
 
 
 # --- JWT validation
