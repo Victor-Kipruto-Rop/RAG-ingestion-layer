@@ -9,7 +9,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from src import api_keys
-from src.api_keys import CreateApiKey, _create_key, require_user_claims, rotate_api_key, list_api_keys, list_key_audit, current_identity
+from src.api_keys import CreateApiKey, _create_key, require_user_claims, rotate_api_key, list_api_keys, list_key_audit, current_identity, revoke_api_key
 from src.config import settings
 from src.database import Base
 from src.models import ApiKey, ApiKeyAuditEvent
@@ -158,3 +158,15 @@ def test_access_token_without_organization_or_tenant_is_rejected(jwt_settings):
     with pytest.raises(HTTPException) as refused:
         require_user_claims(_token(org_id=None, tenant_id=None))
     assert refused.value.status_code == 401
+
+
+def test_cross_tenant_rotate_and_revoke_are_not_found(db):
+    created = _create_key(db, _claims(org_id='tenant-a'), CreateApiKey(name='Tenant A key', environment='sandbox'))
+    with pytest.raises(HTTPException) as rotate_refused:
+        rotate_api_key(created['id'], claims=_claims(org_id='tenant-b', sub='user-b'), db=db)
+    assert rotate_refused.value.status_code == 404
+    with pytest.raises(HTTPException) as revoke_refused:
+        revoke_api_key(created['id'], claims=_claims(org_id='tenant-b', sub='user-b'), db=db)
+    assert revoke_refused.value.status_code == 404
+    db.expire_all()
+    assert db.get(ApiKey, created['id']).status == 'active'
