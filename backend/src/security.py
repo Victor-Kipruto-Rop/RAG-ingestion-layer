@@ -177,6 +177,18 @@ async def _take_token(identity, request):
             raise HTTPException(429,'Registry lookup rate limit exceeded',headers={'Retry-After':'1'})
         _local_buckets[key]=(tokens-1,now)
 
+RATE_LIMITED_LOOKUP_PATHS = frozenset({
+    "/api/v1/registry/lookup",
+    "/api/v1/registry/search",
+    "/api/v1/organizations",
+})
+
+
+def requires_lookup_rate_limit(path: str) -> bool:
+    """Paths that can reveal or enumerate canonical registry records."""
+    return path in RATE_LIMITED_LOOKUP_PATHS
+
+
 def is_customer_identity(identity):
     return str(identity).startswith("customer-api-key:")
 
@@ -233,6 +245,6 @@ async def require_api_key(request:Request,
             if not keys or not any(hmac.compare_digest(x_api_key,key) for key in keys):
                 raise HTTPException(401,'Invalid or missing API key')
             identity='api-key:'+hashlib.sha256(x_api_key.encode()).hexdigest()
-    if request.url.path in {'/api/v1/registry/lookup','/api/v1/registry/search'}:
+    if requires_lookup_rate_limit(request.url.path):
         await _take_token(identity,request)
     return identity
