@@ -1,8 +1,14 @@
 import React from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.jsx';
+import DeveloperPlatformApp from './DeveloperPlatformApp.jsx';
 import AppErrorBoundary from './AppErrorBoundary.jsx';
 import './index.css';
 import './datasources.css';
 import './login.css';
-createRoot(document.getElementById('root')).render(<React.StrictMode><AppErrorBoundary><App/></AppErrorBoundary></React.StrictMode>);
+import './workspace-modules.css';
+import './glass-theme.css';
+import './developer-platform.css';
+import './developer-public.css';
+const Root = window.location.pathname === '/internal' || window.location.pathname.startsWith('/internal/') ? App : DeveloperPlatformApp;
+createRoot(document.getElementById('root')).render(<React.StrictMode><AppErrorBoundary><Root/></AppErrorBoundary></React.StrictMode>);

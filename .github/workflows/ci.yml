@@ -88,6 +88,22 @@ jobs:
         run: npm audit --audit-level=moderate
       - name: Build production frontend container
         run: docker build --build-arg VITE_API_BASE_URL=https://api.example.invalid -t pesaguard-registry-frontend:ci .
+  sdk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Python SDK and its test dependencies
+        run: python -m pip install --upgrade pip && pip install -e "sdks/python[test]"
+      - name: Test Python SDK environment isolation, API errors and webhook signatures
+        run: pytest -q sdks/python/sdk_client_tests.py
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test JavaScript SDK environment isolation, API errors and webhook signatures
+        run: node --test sdks/javascript/test/client.test.js
   local-compose-config:
     runs-on: ubuntu-latest
     steps:

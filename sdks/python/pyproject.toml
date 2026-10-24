@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pesaguard-registry"
+version = "0.1.0"
+description = "Python client for the PesaGuard Registry API"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["requests>=2.31,<3"]
+
+[project.optional-dependencies]
+test = ["pytest>=8,<9", "responses>=0.25,<1"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pesaguard*"]

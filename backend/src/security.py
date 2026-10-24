@@ -84,6 +84,12 @@ def _audit_unknown_environment_mismatch(raw_key, request, key_environment, reque
     except Exception:
         raise HTTPException(503, "Security audit service is unavailable; request rejected")
 
+def _customer_rate_limit_identity(organization_id: str) -> str:
+    """Use a stable tenant bucket so creating more keys cannot multiply lookup quotas."""
+    tenant_digest = hashlib.sha256(("tenant:" + str(organization_id)).encode()).hexdigest()
+    return "customer-api-key:" + tenant_digest
+
+
 def _validate_customer_api_key(raw_key, request):
     from .models import ApiKey
     runtime_environment = settings.api_environment.lower().strip()
@@ -134,7 +140,10 @@ def _validate_customer_api_key(raw_key, request):
         if last_used is None or (now - last_used).total_seconds() > 60:  # avoid a write per request
             key.last_used_at = now
             db.commit()
-        return "customer-api-key:" + key.id
+        # Request handlers may use this tenant-scoped ID to queue subscribed workspace
+        # webhooks; never derive tenant identity from caller-supplied headers.
+        request.state.customer_organization_id = key.organization_id
+        return _customer_rate_limit_identity(key.organization_id)
 
 def _check_nonce_local(nonce, expires_at):
     now=time.time()
@@ -176,6 +185,18 @@ async def _take_token(identity, request):
             _local_buckets[key]=(tokens,now)
             raise HTTPException(429,'Registry lookup rate limit exceeded',headers={'Retry-After':'1'})
         _local_buckets[key]=(tokens-1,now)
+
+RATE_LIMITED_LOOKUP_PATHS = frozenset({
+    "/api/v1/registry/lookup",
+    "/api/v1/registry/search",
+    "/api/v1/organizations",
+})
+
+
+def requires_lookup_rate_limit(path: str) -> bool:
+    """Paths that can reveal or enumerate canonical registry records."""
+    return path in RATE_LIMITED_LOOKUP_PATHS
+
 
 def is_customer_identity(identity):
     return str(identity).startswith("customer-api-key:")
@@ -233,6 +254,6 @@ async def require_api_key(request:Request,
             if not keys or not any(hmac.compare_digest(x_api_key,key) for key in keys):
                 raise HTTPException(401,'Invalid or missing API key')
             identity='api-key:'+hashlib.sha256(x_api_key.encode()).hexdigest()
-    if request.url.path in {'/api/v1/registry/lookup','/api/v1/registry/search'}:
+    if requires_lookup_rate_limit(request.url.path):
         await _take_token(identity,request)
     return identity

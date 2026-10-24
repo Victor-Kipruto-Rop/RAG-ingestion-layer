@@ -24,13 +24,13 @@ Compute HMAC-SHA256 over that canonical message using HMAC_SHARED_SECRET. Both c
 REQUIRE_HMAC=true also requires REDIS_URL so replay protection is shared across API instances. If Redis-backed replay protection is unavailable, signed requests fail closed. When HMAC is optional, a process-local nonce fallback is only a migration aid, not distributed replay protection.
 
 ## Rate limiting and cache
-Registry lookup/search endpoints use a token bucket. When REDIS_URL is configured, buckets are shared across instances; otherwise the fallback is per-process and is not a distributed control. Set REDIS_URL to a managed Redis-compatible service only after approving its cost and availability. Cache entries are best-effort, use short negative TTLs, and are invalidated after committed ingestion updates. PostgreSQL remains authoritative.
+Registry lookup/search and paginated organization enumeration use a token bucket. Customer API-key buckets are keyed by a one-way tenant digest, so creating multiple keys for the same organization does not multiply its lookup quota. When REDIS_URL is configured, buckets are shared across instances; otherwise the fallback is per-process and is not a distributed control. Production startup therefore requires REDIS_URL. Cache entries are best-effort, use short negative TTLs, and are invalidated after committed ingestion updates. PostgreSQL remains authoritative.
 
 ## Metrics
 Set METRICS_TOKEN to a strong secret to enable GET /metrics with the X-Metrics-Token header. Without a configured token the endpoint returns 404. Scrape over a restricted network path where possible. Histograms expose buckets for Prometheus-side p95/p99 calculations; they are not a guarantee that requests complete within a fixed latency.
 
 ## Production startup validation
-Production startup validates a non-placeholder REGISTRY_API_KEYS, PostgreSQL DATABASE_URL, and the R2 account/access key/secret/bucket. If REQUIRE_HMAC is enabled, HMAC_SHARED_SECRET and REDIS_URL are mandatory. The application does not print configured secret values.
+Production startup validates a non-placeholder REGISTRY_API_KEYS, PostgreSQL DATABASE_URL, the R2 account/access key/secret/bucket, and REDIS_URL for shared rate limiting and coordination. If REQUIRE_HMAC is enabled, HMAC_SHARED_SECRET is also mandatory. The application does not print configured secret values.
 ## Dashboard sessions
 
 The dashboard does not hold the service API key. An operator signs in at `POST /api/v1/admin/login`
@@ -44,3 +44,12 @@ unsafe requests must send that token in `X-CSRF-Token`; the browser keeps it in 
   but cannot revoke a copied token early. Rotate `SESSION_SECRET` to invalidate all sessions.
 - Login attempts are limited per client address per process. Put a shared rate limit at your edge for multi-instance deployments.
 - Service-to-service callers keep using `X-API-Key` or HMAC signatures; HMAC bodies are size-bounded before verification.
+
+
+## Health and readiness
+
+- `GET /health/live` indicates that the API process can answer requests; it does not claim dependencies are available.
+- `GET /health/ready` checks PostgreSQL and reports Redis/object-storage dependency state. In production it returns HTTP 503 unless PostgreSQL, Redis, and private R2 object storage are healthy. When HMAC replay protection is enabled outside production, Redis is also required for readiness.
+- `GET /health` returns an overall healthy/degraded status with dependency names and safe state labels only. It does not return credentials, connection strings, or exception details.
+- Readiness checks must be tested against the actual staging Redis/R2 permissions and transient failures before relying on them for deployment routing.
+- `GET /metrics` remains separately protected by `X-Metrics-Token`; keep it off public ingress where possible.

@@ -1,0 +1,10 @@
+{
+  "name": "@pesaguard/registry",
+  "version": "0.1.0",
+  "description": "JavaScript client for the PesaGuard Registry API",
+  "type": "module",
+  "exports": "./src/index.js",
+  "scripts": { "test": "node --test" },
+  "engines": { "node": ">=18" },
+  "license": "UNLICENSED"
+}

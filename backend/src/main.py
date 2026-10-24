@@ -16,8 +16,11 @@ from .database import engine,SessionLocal
 from . import models
 from .api import router
 from .api_keys import router as api_keys_router
-from .admin_auth import router as admin_router
-from .models import WarehouseAccessLog
+from .admin_auth import router as admin_router, COOKIE_NAME, session_from_request, refresh_session_token
+from .developer_platform import router as developer_router
+from .models import WarehouseAccessLog, AdminSession, now_utc
+from . import storage as storage_module
+from .security import _redis_client
 structlog.configure(processors=[structlog.processors.TimeStamper(fmt='iso'),structlog.processors.add_log_level,structlog.processors.format_exc_info,structlog.processors.JSONRenderer()],logger_factory=structlog.stdlib.LoggerFactory())
 logging.basicConfig(level=logging.INFO,format='%(message)s')
 log=structlog.get_logger('registry.api')
@@ -45,6 +48,7 @@ app.add_middleware(CORSMiddleware,allow_origins=settings.cors_origin_list,allow_
 app.include_router(router)
 app.include_router(api_keys_router)
 app.include_router(admin_router)
+app.include_router(developer_router)
 @app.middleware('http')
 async def warehouse_access_telemetry(request,call_next):
  path=request.url.path
@@ -69,6 +73,27 @@ async def warehouse_access_telemetry(request,call_next):
      db.commit()
    except Exception:
     log.exception('warehouse_access_telemetry_persist_failed',request_id=request_id)
+
+@app.middleware('http')
+async def sliding_admin_session(request: Request, call_next):
+ response = await call_next(request)
+ if request.url.path.startswith('/api/v1/admin/') and response.status_code < 400:
+  claims = session_from_request(request)
+  if claims:
+   token, renewed = refresh_session_token(claims)
+   try:
+    with SessionLocal() as db:
+     session_row = db.get(AdminSession, claims.get('jti'))
+     if session_row and session_row.revoked_at is None:
+      session_row.expires_at = datetime.fromtimestamp(int(renewed['exp']), tz=timezone.utc)
+      session_row.last_seen_at = now_utc()
+      db.commit()
+   except Exception as exc:
+    log.warning('admin_session_refresh_persist_failed', error_type=type(exc).__name__)
+   response.set_cookie(COOKIE_NAME, token, max_age=max(60, settings.session_ttl_seconds),
+                       httponly=True, secure=settings.session_cookie_secure, samesite='strict', path='/')
+   response.headers['Cache-Control'] = 'no-store'
+ return response
 
 @app.middleware('http')
 async def request_observability(request:Request,call_next):
@@ -103,17 +128,57 @@ def metrics(x_metrics_token:str|None=Header(default=None,alias='X-Metrics-Token'
 
 @app.get('/health/live',tags=['health'])
 def live():return {'status':'alive','service':settings.app_name}
+def _health_snapshot():
+ checks = {}
+ try:
+  with engine.connect() as conn:
+   conn.execute(text('SELECT 1'))
+  checks['database'] = 'healthy'
+ except Exception as exc:
+  checks['database'] = 'unavailable'
+  log.warning('database_readiness_check_failed', error_type=type(exc).__name__)
+
+ production = settings.app_env.lower() == 'production'
+ if storage_module.configured():
+  try:
+   storage_module.health_check()
+   checks['object_storage'] = 'healthy'
+  except Exception as exc:
+   checks['object_storage'] = 'unavailable'
+   log.warning('object_storage_readiness_check_failed', error_type=type(exc).__name__)
+ else:
+  checks['object_storage'] = 'unavailable' if production else 'not_configured'
+
+ if settings.redis_url:
+  try:
+   client = _redis_client()
+   if client is None:
+    raise RuntimeError('Redis client unavailable')
+   client.ping()
+   checks['redis'] = 'healthy'
+  except Exception as exc:
+   checks['redis'] = 'unavailable'
+   log.warning('redis_readiness_check_failed', error_type=type(exc).__name__)
+ else:
+  checks['redis'] = 'unavailable' if (production or settings.require_hmac) else 'not_configured'
+
+ ready = checks['database'] == 'healthy'
+ if production:
+  ready = ready and checks['object_storage'] == 'healthy' and checks['redis'] == 'healthy'
+ elif settings.require_hmac:
+  ready = ready and checks['redis'] == 'healthy'
+ return ready, checks
+
+
 @app.get('/health/ready',tags=['health'])
 def ready():
- try:
-  with engine.connect() as conn:conn.execute(text('SELECT 1'))
-  return {'status':'ready','database':'healthy'}
- except Exception:
-  log.exception('database_readiness_check_failed');raise HTTPException(503,detail={'status':'not_ready','database':'unavailable'})
+ is_ready, dependencies = _health_snapshot()
+ if not is_ready:
+  raise HTTPException(503, detail={'status':'not_ready','dependencies':dependencies})
+ return {'status':'ready','dependencies':dependencies}
+
+
 @app.get('/health',tags=['health'])
 def health():
- try:
-  with engine.connect() as conn:conn.execute(text('SELECT 1'))
-  status='healthy'
- except Exception:status='degraded'
- return {'status':status,'database':'healthy' if status=='healthy' else 'unavailable'}
+ is_ready, dependencies = _health_snapshot()
+ return {'status':'healthy' if is_ready else 'degraded','dependencies':dependencies}

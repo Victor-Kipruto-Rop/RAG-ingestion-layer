@@ -1,8 +1,46 @@
+## Developer platform and SDKs
+
+The public developer control plane is implemented in `frontend/src/DeveloperPlatformApp.jsx` and `backend/src/developer_platform.py`. It includes email OTP signup and recovery, Google/GitHub OAuth configuration, revocable sessions, tenant API-key management, production-access requests, signed webhooks, API Explorer, and multi-language integration examples.
+
+- [Developer platform operations guide](docs/developer-platform.md)
+- [Resend email, OTP signup/recovery, and session security setup](docs/developer-platform-email-auth.md)
+- [Complete email catalogue and sending algorithms](docs/email-notification-catalog-and-algorithms.md) — transactional, security, API-key, webhook, production access, ingestion, lifecycle and consent-based marketing emails.
+- [Staging release acceptance checklist](docs/release-acceptance-staging.md) — mandatory evidence gates for OAuth, Resend/SMTP delivery, environment isolation, API keys, webhooks, and session revocation.
+- [Python SDK](sdks/python/README.md)
+- [JavaScript SDK](sdks/javascript/README.md)
+- Sandbox base URL: `https://sandbox-api.pesaguard.co.ke` with `pg_sandbox_` keys.
+- Production base URL: `https://api.pesaguard.co.ke` with `pg_live_` keys; production access requires verified workspace and operator approval.
+
+The SDKs are source-controlled and have CI test targets; they are not published to PyPI/npm yet. Provider OAuth, Resend (or explicit SMTP fallback) delivery, webhook encryption, PostgreSQL, Redis, and separate sandbox/production deployments must be configured and verified in the target environment before calling these flows operational in production.
+
 # PesaGuard Registry Datasource
 
 A standalone organization-data warehouse for PesaGuard. It imports authorized registry datasets, normalizes and searches organization records, preserves source provenance and change history, and exposes a protected internal API.
 
 This is a datasource, not the PesaGuard customer onboarding system and not an authority that independently certifies companies. Imported data is marked unverified unless a trusted verification workflow establishes otherwise.
+
+## Dashboard documentation and operator OAuth
+
+The dashboard includes a Documentation section in the sidebar with platform overview, API reference links, authentication guidance, pipeline and data-quality guidance, architecture/technology mapping, and operations/security checklists.
+
+Google and GitHub OAuth are supported for **existing allowlisted dashboard operators only**. They do not provide open self-service signup and do not grant operator access to arbitrary provider accounts.
+
+1. Create OAuth applications in Google Cloud Console and GitHub Developer Settings.
+2. Register exact callbacks:
+   - `https://YOUR_PUBLIC_HOST/api/v1/admin/oauth/google/callback`
+   - `https://YOUR_PUBLIC_HOST/api/v1/admin/oauth/github/callback`
+3. Configure `PUBLIC_BASE_URL`, the corresponding `GOOGLE_OAUTH_CLIENT_ID/SECRET` and/or `GITHUB_OAUTH_CLIENT_ID/SECRET`, plus `ADMIN_OAUTH_ALLOWED_EMAILS` containing the exact verified operator email addresses.
+4. Use HTTPS and set `SESSION_COOKIE_SECURE=true` in production. Keep client secrets in the deployment secret manager; never put them in frontend environment variables.
+5. Verify `GET /api/v1/admin/oauth/providers` reports the expected enabled providers, then test login, state mismatch rejection, unallowlisted accounts and logout in staging.
+
+The internal operator dashboard remains separate from the public developer platform. The public developer platform has its own account/workspace/session models, OTP-based signup and password recovery, OAuth, profile and session endpoints. Keep the two identity domains separate. Developer email delivery still requires configured Resend or SMTP, verified sender-domain DNS, and target-environment verification; durable outbox processing and provider bounce/complaint callbacks remain release requirements.
+
+### Operator profile and notifications
+
+- The Profile sidebar page reads and updates the persisted operator display name and contact email through `/api/v1/admin/profile`.
+- The Notifications page derives operational alerts from persisted ingestion jobs. Read state is persisted through `/api/v1/admin/notifications` and `POST /api/v1/admin/notifications/read`.
+- Apply database migrations before using these endpoints: `cd backend && alembic upgrade head`.
+- These are operator profile metadata and operational job alerts, not a multi-user signup system or email/push notification delivery service.
 
 ## Local development
 
@@ -45,7 +83,7 @@ Configure `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `R2_B
 
 ## Production hardening
 
-The current implementation work is tracked in [the phased production hardening roadmap](docs/production-hardening-roadmap.md). Review [database migration safety](docs/database-migrations.md) before running Alembic against any existing database, and see [internal API security](docs/internal-api-security.md) and [large-file ingestion](docs/large-file-ingestion.md) for HMAC signing, replay protection, rate limits, cache behavior and metrics.
+The current implementation work is tracked in [the phased production hardening roadmap](docs/production-hardening-roadmap.md). The broader premium UX and production-readiness execution plan is [here](docs/premium-production-roadmap.md), with strict phase-by-phase agent instructions in [prompts/](prompts/README.md) and evidence reports in [docs/phase-reports/](docs/phase-reports/). Review [database migration safety](docs/database-migrations.md) before running Alembic against any existing database, and see [internal API security](docs/internal-api-security.md) and [large-file ingestion](docs/large-file-ingestion.md) for HMAC signing, replay protection, rate limits, cache behavior and metrics.
 
 - CSV ingestion uses a disk-backed spool, bounded database batches, and persisted row progress for safe retry/resume; PDF diagnostics remain bounded and manual-review-only.
 - Invalid row diagnostics are written to the restricted dead-letter table with sensitive row values masked.
@@ -110,3 +148,8 @@ A safe Windows local environment template is provided as [`.env.example`](.env.e
 ## Sandbox and production API keys
 
 See [environment-scoped API key setup](docs/environment-scoped-api-keys.md). User-issued keys are tied to one environment and organization. Sandbox keys are rejected by production deployments and production keys are rejected by sandbox deployments. Key management requires a trusted PesaGuard-issued access token; configure the JWT issuer, audience and signing secret server-side. Apply migration 009 before enabling this feature. Do not expose `REGISTRY_API_KEYS` in browser code.
+
+
+## Operator authentication setup
+
+See [`docs/operator-auth-setup.md`](docs/operator-auth-setup.md) for database migrations, allowlisted sign-up, email OTP, password recovery, Google/GitHub OAuth, and persisted session revocation configuration.
