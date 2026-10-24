@@ -1,4 +1,4 @@
-from src import developer_platform
+from src import admin_auth, developer_platform
 
 
 class FakeResponse:
@@ -64,3 +64,32 @@ def test_resend_delivery_failure_does_not_silently_fallback_to_smtp(monkeypatch)
         developer_platform._send_email("developer@example.com", "Verify", "Code: 123456")
     assert FakeClient.last_instance.request[0] == "https://api.resend.com/emails"
     monkeypatch.setattr(FakeClient, "post", original_post)
+
+
+def test_operator_otp_uses_resend(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(admin_auth.settings, "resend_api_key", "re_test_key")
+    monkeypatch.setattr(admin_auth.settings, "resend_from_email", "PesaGuard <no-reply@example.com>")
+
+    def fake_post(url, **kwargs):
+        captured["url"] = url
+        captured["kwargs"] = kwargs
+        return FakeResponse(200)
+
+    monkeypatch.setattr(admin_auth.httpx, "post", fake_post)
+    admin_auth._send_auth_otp("operator@example.com", "654321", "signup")
+
+    assert captured["url"] == "https://api.resend.com/emails"
+    assert captured["kwargs"]["headers"]["Authorization"] == "Bearer re_test_key"
+    assert captured["kwargs"]["json"]["to"] == ["operator@example.com"]
+    assert "654321" in captured["kwargs"]["json"]["text"]
+
+
+def test_operator_otp_fails_closed_on_resend_error(monkeypatch):
+    monkeypatch.setattr(admin_auth.settings, "resend_api_key", "re_test_key")
+    monkeypatch.setattr(admin_auth.settings, "resend_from_email", "PesaGuard <no-reply@example.com>")
+    monkeypatch.setattr(admin_auth.httpx, "post", lambda *args, **kwargs: FakeResponse(429))
+
+    import pytest
+    with pytest.raises(RuntimeError, match="Resend email delivery failed with HTTP 429"):
+        admin_auth._send_auth_otp("operator@example.com", "654321", "password_reset")
