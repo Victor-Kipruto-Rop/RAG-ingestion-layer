@@ -794,6 +794,11 @@ def delete_webhook(webhook_id: str, request: Request, db: Session = Depends(get_
     return None
 
 
+def _webhook_response_excerpt(status_code: int) -> str:
+    """Return safe, non-sensitive metadata for webhook delivery history."""
+    return f"HTTP {int(status_code)}; response body omitted"
+
+
 def _deliver_webhook(webhook_id: str, workspace_id: str, event_type: str, payload: dict):
     started = time.perf_counter()
     status = "failed"
@@ -830,7 +835,9 @@ def _deliver_webhook(webhook_id: str, workspace_id: str, event_type: str, payloa
                         "PesaGuard-Signature": f"t={timestamp},v1={signature}",
                     })
                 response_status = response.status_code
-                excerpt = response.text[:500]
+                # Receiver-controlled response bodies may contain PII, credentials, or
+                # internal diagnostics. Persist status metadata only; never store body text.
+                excerpt = _webhook_response_excerpt(response.status_code)
                 if 200 <= response.status_code < 300:
                     status = "delivered"
                     break
