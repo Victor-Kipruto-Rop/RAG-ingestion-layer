@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Activity, ArrowDownRight, ArrowRight, ArrowUpRight, BookOpen, Boxes, Check, CheckCircle2,
+  Activity, ArrowDownRight, ArrowRight, ArrowUpRight, BookOpen, Boxes, BellRing, Check, CheckCircle2,
   ChevronDown, CircleHelp, Clipboard, Code2, Copy, ExternalLink, Eye, EyeOff, FileCode2,
   FlaskConical, Globe2, Github, KeyRound, Layers3, LockKeyhole, LogOut, Menu, Plus, Radio,
   RefreshCw, Rocket, Search, ShieldCheck, Terminal, Trash2, UserRound, Webhook, X, Zap
@@ -21,7 +21,7 @@ const LANG_CODE = {
 };
 const NAV = [
   {group:'BUILD',items:[['Overview',Rocket],['Projects',Layers3],['API Keys',KeyRound],['Webhooks',Webhook],['API Explorer',FlaskConical],['SDKs & Testing',Code2]]},
-  {group:'SHIP',items:[['Production access',ShieldCheck],['Documentation',BookOpen],['Account',UserRound],['Sessions',ShieldCheck]]}
+  {group:'SHIP',items:[['Production access',ShieldCheck],['Documentation',BookOpen],['Notifications',BellRing],['Account',UserRound],['Sessions',ShieldCheck]]}
 ];
 async function readJson(path, options={}) { const r=await api(path,options); return r.status===204 ? null : r.json(); }
 function CodeBlock({children}) { return <pre className="dp-code"><code>{children}</code></pre>; }
@@ -42,6 +42,7 @@ export default function DeveloperPlatformApp() {
   const [mobileNav,setMobileNav] = useState(false);
   const [projects,setProjects] = useState([]);
   const [sessions,setSessions] = useState([]);
+  const [notifications,setNotifications] = useState([]);
   const [keys,setKeys] = useState([]);
   const [webhooks,setWebhooks] = useState([]);
   const [deliveries,setDeliveries] = useState([]);
@@ -86,11 +87,11 @@ export default function DeveloperPlatformApp() {
       setCsrfToken(fresh.csrf_token || ''); setCsrf(fresh.csrf_token || '');
       setAccessToken(fresh.access_token || '');
       setUser(fresh.user); setWorkspace(fresh.workspace);
-      const [p,k,w,r,s] = await Promise.all([
+      const [p,k,w,r,s,n] = await Promise.all([
         readJson('/api/v1/developer/projects'), readJson('/api/v1/keys',{headers:{Authorization:`Bearer ${fresh.access_token}`}}),
-        readJson('/api/v1/developer/webhooks'), readJson('/api/v1/developer/production-access/requests'), readJson('/api/v1/developer/sessions')
+        readJson('/api/v1/developer/webhooks'), readJson('/api/v1/developer/production-access/requests'), readJson('/api/v1/developer/sessions'), readJson('/api/v1/developer/notifications')
       ]);
-      setProjects(p.items || []); setKeys(k.items || []); setWebhooks(w.items || []); setProductionRequests(r.items || []); setSessions((s.items || []).filter(x=>!x.revoked));
+      setProjects(p.items || []); setKeys(k.items || []); setWebhooks(w.items || []); setProductionRequests(r.items || []); setSessions((s.items || []).filter(x=>!x.revoked)); setNotifications(n.items || []);
     } catch(e) { setError(e.message || 'Could not load developer workspace data.'); }
     finally { setBusy(false); }
   },[authed]);
@@ -200,7 +201,8 @@ export default function DeveloperPlatformApp() {
         {page==='Production access'&&<ProductionAccessPage workspace={workspace} requests={productionRequests} submit={requestProduction} busy={busy} baseUrls={baseUrls}/>}
         {page==='Documentation'&&<DeveloperDocsPage baseUrls={baseUrls} apiDocs={apiDocs} setPage={setPage}/>}
         {page==='Account'&&<AccountPage user={user} workspace={workspace} profile={profile} setProfile={setProfile} saveProfile={saveProfile} busy={busy}/>}
-        {page==='Sessions'&&<SessionsPage items={sessions} revoke={revokeSession} busy={busy}/>} 
+        {page==='Sessions'&&<SessionsPage items={sessions} revoke={revokeSession} busy={busy}/>}
+        {page==='Notifications'&&<DeveloperNotificationsPage items={notifications} refresh={refreshData} busy={busy}/>} 
       </div>
       <footer className="dp-footer"><span>© {new Date().getFullYear()} PesaGuard Developer Platform</span><span><span className="dp-status-dot"/> Service state is read from the API</span><a href={`${API_BASE}/health`} target="_blank" rel="noreferrer">API health <ExternalLink size={13}/></a></footer>
     </main>
@@ -311,6 +313,13 @@ function Empty({title,detail}){return <div className="dp-empty"><span><CircleHel
 
 function SessionsPage({items,revoke,busy}){
  return <><PageHeading eyebrow="ACCOUNT SECURITY" title="Active sessions" description="Review and revoke authenticated developer sessions. Revocation is persisted and checked by the API on every session-authenticated request."/><section className="dp-panel"><div className="dp-panel-head"><div><h3>Session inventory</h3><p>{items.length} active session(s) returned by the backend.</p></div><ShieldCheck size={18}/></div>{items.length?<div className="dp-table-wrap"><table className="dp-table"><thead><tr><th>Device / browser</th><th>Created</th><th>Last seen</th><th>Expires</th><th>State</th><th>Action</th></tr></thead><tbody>{items.map(s=><tr key={s.id}><td><strong>{s.current?'This session':'Other session'}</strong><small>{s.user_agent||'Browser not identified'}</small></td><td>{new Date(s.created_at).toLocaleString()}</td><td>{new Date(s.last_seen_at).toLocaleString()}</td><td>{new Date(s.expires_at).toLocaleString()}</td><td><span className="dp-state good">{s.current?'current':'active'}</span></td><td><button className="dp-button quiet" disabled={busy} onClick={()=>revoke(s)}><LogOut size={14}/>{s.current?'Sign out':'Revoke'}</button></td></tr>)}</tbody></table></div>:<Empty title="No active sessions found" detail="Your current session should appear after a successful refresh. Sign in again if it has expired."/ >}</section></>;
+}
+
+function DeveloperNotificationsPage({items,refresh,busy}){
+  return <><PageHeading eyebrow="WORKSPACE ACTIVITY" title="Notifications" description="A live feed assembled from persisted API-key audit events, production-access decisions and webhook delivery outcomes." actions={<button className="dp-button quiet" onClick={refresh} disabled={busy}><RefreshCw size={15}/> Refresh</button>}/>
+    <section className="dp-panel"><div className="dp-panel-head"><div><h3>Recent activity</h3><p>{items.length} event(s) returned by the backend. New entries appear after a refresh.</p></div><BellRing size={18}/></div>
+    {items.length?<div className="dp-notification-list">{items.map(item=><article className="dp-notification-item" key={item.id}><span className="dp-notification-mark"><BellRing size={16}/></span><div><strong>{item.title}</strong><p>{item.message}</p><small>{item.source} · {new Date(item.created_at).toLocaleString()}</small></div><code>{item.type}</code></article>)}</div>:<Empty title="No workspace notifications yet" detail="API-key changes, production-access decisions and webhook delivery outcomes will appear here."/ >}
+    </section></>;
 }
 
 function PublicHomePage({setMode,config}){
