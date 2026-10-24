@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime, timezone
 
 import structlog
-from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, or_, select
@@ -167,14 +167,26 @@ def _present_lookup(result, mask):
 
 
 @router.get('/api/v1/registry/lookup')
-def lookup(reg_no: str | None = None, tax_pin: str | None = None, db: Session = Depends(get_db), caller: str = Depends(require_api_key)):
+def lookup(request: Request, background_tasks: BackgroundTasks, reg_no: str | None = None, tax_pin: str | None = None, db: Session = Depends(get_db), caller: str = Depends(require_api_key)):
     if bool(reg_no) == bool(tax_pin):
         raise HTTPException(422, 'Provide exactly one of reg_no or tax_pin')
     ident = normalize_identifier(reg_no or tax_pin)
     if not ident:
         raise HTTPException(422, 'Identifier must contain letters or digits')
     result = _lookup_identifier(db, 'reg' if reg_no else 'pin', ident)
-    return _present_lookup(result, is_customer_identity(caller))
+    response = _present_lookup(result, is_customer_identity(caller))
+    _queue_registry_event(background_tasks, request, "registry.lookup.completed",
+        {"lookup_type": "registration_number" if reg_no else "tax_pin", "request_id": getattr(request.state, "request_id", None)})
+    return response
+
+
+def _queue_registry_event(background_tasks: BackgroundTasks, request: Request, event_type: str, payload: dict):
+    workspace_id = getattr(request.state, "customer_organization_id", None)
+    if not workspace_id:
+        return
+    # Import lazily to avoid coupling the internal registry router to platform startup order.
+    from .developer_platform import _queue_workspace_event
+    _queue_workspace_event(background_tasks, str(workspace_id), event_type, payload)
 
 
 def _search(db, q, limit, mask):
@@ -194,9 +206,13 @@ def _search(db, q, limit, mask):
 
 
 @router.get('/api/v1/registry/search')
-def search(q: str = Query(min_length=2, max_length=200), limit: int = Query(default=20, ge=1, le=100),
+def search(request: Request, background_tasks: BackgroundTasks, q: str = Query(min_length=2, max_length=200), limit: int = Query(default=20, ge=1, le=100),
            db: Session = Depends(get_db), caller: str = Depends(require_api_key)):
-    return _search(db, q, limit, is_customer_identity(caller))
+    result = _search(db, q, limit, is_customer_identity(caller))
+    _queue_registry_event(background_tasks, request, "registry.lookup.completed",
+        {"lookup_type": "name_search", "result_count": result["count"], "match_mode": result["match_mode"],
+         "request_id": getattr(request.state, "request_id", None)})
+    return result
 
 
 @router.get('/api/v1/organizations')
