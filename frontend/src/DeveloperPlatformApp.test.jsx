@@ -74,5 +74,9 @@ describe('DeveloperPlatformApp account onboarding', () => {
     const request = requests.find(r => r.url.includes('/auth/signup/request-otp'));
     expect(JSON.parse(request.body)).toMatchObject({ email: 'developer@example.com', display_name: 'Test Developer', workspace_name: 'Test Workspace' });
     expect(screen.getByLabelText(/6-digit email code/i)).toBeTruthy();
+    const successToast = screen.getByRole('status');
+    expect(successToast.textContent).toContain('Success');
+    expect(successToast.querySelector('time')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /dismiss message/i })).toBeTruthy();
   });
 });
