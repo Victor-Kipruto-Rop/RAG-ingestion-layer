@@ -98,14 +98,17 @@ def require_user_claims(authorization: str | None = Header(default=None, alias="
     return normalized
 
 def _roles(claims: dict) -> set[str]:
+    """Normalize trusted role claims defensively; malformed role values grant no privilege."""
     roles = claims.get("roles", [])
     if isinstance(roles, str):
         roles = [roles]
-    return set(roles)
+    if not isinstance(roles, (list, tuple, set)):
+        return set()
+    return {role.strip().lower() for role in roles if isinstance(role, str) and role.strip()}
 
 def _require_org_admin(claims: dict):
     if not ({"owner", "admin"} & _roles(claims)):
-        raise HTTPException(403, "Only an organization owner or admin can rotate or revoke API keys")
+        raise HTTPException(403, "Only an organization owner or admin can manage API keys")
 
 def _audit(db: Session, *, org_id: str, actor: str, action: str, key_id: str | None = None, details: dict | None = None):
     db.add(ApiKeyAuditEvent(
@@ -125,6 +128,9 @@ ALLOWED_SCOPES = {"registry:read", "sources:read"}
 
 
 def _create_key(db: Session, claims: dict, payload: CreateApiKey, commit: bool = True):
+    # Key creation is a privileged organization operation in both environments.
+    # UI hiding is not authorization; enforce the policy at the shared backend boundary.
+    _require_org_admin(claims)
     env = payload.environment.lower().strip()
     if env not in {"sandbox", "production"}:
         raise HTTPException(422, "environment must be sandbox or production")
