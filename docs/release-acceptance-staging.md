@@ -76,6 +76,7 @@ Record a run ID, date, tester, deployed commit SHA, service IDs, and redacted ev
 - [ ] Create a webhook to an approved staging receiver; reject non-HTTPS public destinations and private/loopback/link-local IPs.
 - [ ] Send a test event and verify signature validation, event ID, timestamp/replay protection, response handling, and persisted delivery result.
 - [ ] Verify retry behavior and delivery history for receiver timeout, 4xx, and 5xx responses. Confirm secrets and sensitive payloads are redacted from logs.
+- [x] Source-level guard: webhook delivery history omits receiver response bodies and stores only HTTP status metadata; regression test added. Staging behavior still requires CI and runtime verification.
 - [ ] List active sessions, revoke a different session, and prove its next authenticated request fails.
 - [ ] Revoke the current session and prove the session cookie is cleared and subsequent requests fail.
 - [ ] Confirm cookie flags, CSRF checks for unsafe requests, expiry enforcement, and Redis-backed distributed login throttling.
