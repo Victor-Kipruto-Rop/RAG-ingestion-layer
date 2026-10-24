@@ -159,3 +159,15 @@ See [environment-scoped API key setup](docs/environment-scoped-api-keys.md). Use
 ## Operator authentication setup
 
 See [`docs/operator-auth-setup.md`](docs/operator-auth-setup.md) for database migrations, allowlisted sign-up, email OTP, password recovery, Google/GitHub OAuth, and persisted session revocation configuration.
+
+## GitLab CI/CD (staging)
+
+GitLab CI/CD is configured in [`.gitlab-ci.yml`](.gitlab-ci.yml). Follow the
+[GitLab setup and operations guide](.gitlab/SETUP.md) for repository import and
+sync, runners, CI/CD variables, Cloudflare Pages deployment, staging ingestion
+jobs, security gates and troubleshooting.
+
+The staging pipeline is limited to `chore/production-ci-release-gates`.
+Cloudflare Pages deployment and ingestion operations are manual. Configure
+staging-only variables before running those jobs; never reuse production
+credentials or data resources.
