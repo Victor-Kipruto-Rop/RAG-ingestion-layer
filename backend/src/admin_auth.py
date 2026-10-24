@@ -529,7 +529,7 @@ def admin_settings_overview(request: Request):
     require_admin(request)
     origins = settings.cors_origin_list
     return {'environment': settings.app_env, 'api_environment': settings.api_environment,
-            'database': {'configured': bool(settings.database_url), 'engine': 'postgresql' if settings.database_url.startswith(('postgres://', 'postgresql://')) else 'sqlite/local or unverified'},
+            'database': {'configured': bool(settings.database_url), 'engine': 'postgresql' if 'postgres' in settings.database_url.lower() else ('sqlite/local' if settings.database_url.lower().startswith('sqlite') else 'unknown')},
             'object_storage': {'configured': all([settings.r2_account_id, settings.r2_access_key_id, settings.r2_secret_access_key, settings.r2_bucket_name])},
             'redis': {'configured': bool(settings.redis_url), 'required_for_distributed_admin_rate_limit': bool(settings.admin_password_hash)},
             'operator_session': {'http_only_cookie': True, 'secure_cookie': settings.session_cookie_secure,
