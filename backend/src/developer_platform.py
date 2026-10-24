@@ -615,8 +615,20 @@ def revoke_developer_session(session_id: str, request: Request, db: Session = De
     return None
 
 
+def _queue_workspace_event(background_tasks: BackgroundTasks, workspace_id: str, event_type: str, payload: dict):
+    hooks = []
+    with SessionLocal() as db:
+        rows = db.scalars(select(DeveloperWebhook).where(
+            DeveloperWebhook.workspace_id == workspace_id,
+            DeveloperWebhook.enabled.is_(True),
+        )).all()
+        hooks = [row.id for row in rows if event_type in (row.events or [])]
+    for hook_id in hooks:
+        background_tasks.add_task(_deliver_webhook, hook_id, workspace_id, event_type, payload)
+
+
 @router.post("/production-access/request", status_code=201)
-def request_production_access(payload: ProductionAccessRequestBody, request: Request, db: Session = Depends(get_db)):
+def request_production_access(payload: ProductionAccessRequestBody, request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     claims = _session_claims(request, db)
     _csrf(request, claims)
     account = claims["account"]
@@ -630,6 +642,8 @@ def request_production_access(payload: ProductionAccessRequestBody, request: Req
         use_case=payload.use_case.strip(), expected_volume=payload.expected_volume.strip())
     db.add(row)
     db.commit()
+    _queue_workspace_event(background_tasks, workspace.id, "production_access.requested",
+        {"request_id": row.id, "status": row.status, "expected_volume": row.expected_volume})
     return {"id": row.id, "status": row.status, "message": "Request submitted for review. Production key issuance remains disabled until the workspace is verified and approved."}
 
 
@@ -719,6 +733,9 @@ def _deliver_webhook(webhook_id: str, workspace_id: str, event_type: str, payloa
         body = json.dumps({"id": event_id, "type": event_type, "created_at": now_utc().isoformat(), "data": payload}, separators=(",", ":")).encode()
         timestamp = str(int(time.time()))
         try:
+            # Re-resolve immediately before delivery to reduce DNS-rebinding SSRF risk.
+            # Redirects are disabled below so a public endpoint cannot redirect into a private network.
+            _validate_webhook_url(row.endpoint_url)
             secret = _fernet().decrypt(row.secret_ciphertext.encode())
             signature = hmac.new(secret, timestamp.encode() + b"." + body, hashlib.sha256).hexdigest()
             with httpx.Client(timeout=8.0, follow_redirects=False) as client:
