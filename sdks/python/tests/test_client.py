@@ -1,8 +1,10 @@
 import pytest
+import hashlib
+import hmac
 import requests
 import responses
 
-from pesaguard import PesaGuardClient, PesaGuardError
+from pesaguard import PesaGuardClient, PesaGuardError, verify_webhook_signature
 
 
 def test_sandbox_key_uses_sandbox_host_and_header():
@@ -43,3 +45,22 @@ def test_http_error_is_typed_and_response_body_is_preserved():
             client.search("example")
         assert exc.value.status_code == 403
         assert exc.value.response_body["detail"] == "API_KEY_ENVIRONMENT_MISMATCH"
+
+
+def test_webhook_signature_verification_accepts_valid_recent_payload():
+    payload = b'{"id":"evt_1","type":"webhook.test"}'
+    secret = "whsec_test_secret"
+    timestamp = 1_800_000_000
+    signature = hmac.new(secret.encode(), str(timestamp).encode() + b"." + payload, hashlib.sha256).hexdigest()
+    header = f"t={timestamp},v1={signature}"
+    assert verify_webhook_signature(payload, header, secret, now=timestamp)
+
+
+def test_webhook_signature_verification_rejects_tampered_or_stale_payload():
+    payload = b'{"id":"evt_1"}'
+    secret = "whsec_test_secret"
+    timestamp = 1_800_000_000
+    signature = hmac.new(secret.encode(), str(timestamp).encode() + b"." + payload, hashlib.sha256).hexdigest()
+    header = f"t={timestamp},v1={signature}"
+    assert not verify_webhook_signature(payload + b" ", header, secret, now=timestamp)
+    assert not verify_webhook_signature(payload, header, secret, now=timestamp + 1000)
