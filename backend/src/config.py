@@ -50,6 +50,12 @@ class Settings(BaseSettings):
  session_ttl_seconds:int=28800
  session_cookie_secure:bool=True
  admin_login_max_attempts_per_minute:int=10
+ public_base_url:str=''
+ google_oauth_client_id:str=''
+ google_oauth_client_secret:str=''
+ github_oauth_client_id:str=''
+ github_oauth_client_secret:str=''
+ admin_oauth_allowed_emails:str=''
  worker_commit_interval_seconds:int=60
  entity_resolution_max_candidates:int=200
  upload_ttl_grace_seconds:int=900
@@ -59,6 +65,8 @@ class Settings(BaseSettings):
  def cors_origin_list(self): return [x.strip() for x in self.cors_origins.split(',') if x.strip()]
  @property
  def api_key_list(self): return [x.strip() for x in self.registry_api_keys.split(',') if x.strip()]
+ @property
+ def admin_oauth_email_list(self): return [x.strip().lower() for x in self.admin_oauth_allowed_emails.split(',') if x.strip()]
 @lru_cache
 def get_settings(): return Settings()
 settings=get_settings()
