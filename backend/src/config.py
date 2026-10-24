@@ -69,6 +69,31 @@ def validate_runtime_config():
   raise RuntimeError("Invalid configuration: CORS_ORIGINS must list explicit origins; '*' is not allowed because the dashboard uses credentialed requests")
  if settings.admin_password_hash and len(settings.session_secret)<32:
   raise RuntimeError('Invalid configuration: SESSION_SECRET must be at least 32 characters when ADMIN_PASSWORD_HASH is set')
+ # Validate worker safety limits in every environment, not only production.
+ if settings.worker_poll_seconds <= 0:
+  raise RuntimeError('Invalid configuration: WORKER_POLL_SECONDS must be greater than zero')
+ if settings.worker_max_attempts < 1:
+  raise RuntimeError('Invalid configuration: WORKER_MAX_ATTEMPTS must be at least 1')
+ if settings.worker_retry_seconds < 1:
+  raise RuntimeError('Invalid configuration: WORKER_RETRY_SECONDS must be at least 1')
+ if settings.worker_retry_max_seconds < settings.worker_retry_seconds:
+  raise RuntimeError('Invalid configuration: WORKER_RETRY_MAX_SECONDS must be greater than or equal to WORKER_RETRY_SECONDS')
+ if settings.worker_stale_after_seconds < 1:
+  raise RuntimeError('Invalid configuration: WORKER_STALE_AFTER_SECONDS must be at least 1')
+ if settings.worker_max_jobs_per_run < 1:
+  raise RuntimeError('Invalid configuration: WORKER_MAX_JOBS_PER_RUN must be at least 1')
+ if settings.ingestion_batch_size < 1:
+  raise RuntimeError('Invalid configuration: INGESTION_BATCH_SIZE must be at least 1')
+ if settings.max_upload_bytes < 1 or settings.max_direct_upload_bytes < 1:
+  raise RuntimeError('Invalid configuration: upload size limits must be greater than zero')
+ if settings.direct_upload_url_ttl_seconds < 1:
+  raise RuntimeError('Invalid configuration: DIRECT_UPLOAD_URL_TTL_SECONDS must be at least 1')
+ if settings.hmac_clock_skew_seconds < 0 or settings.hmac_nonce_ttl_seconds < 1:
+  raise RuntimeError('Invalid configuration: HMAC clock skew must be non-negative and nonce TTL must be at least 1')
+ if settings.registry_rate_limit_capacity < 1 or settings.registry_rate_limit_refill_per_second <= 0:
+  raise RuntimeError('Invalid configuration: registry rate-limit capacity and refill rate must be positive')
+ if settings.registry_cache_ttl_seconds < 0 or settings.registry_cache_negative_ttl_seconds < 0:
+  raise RuntimeError('Invalid configuration: registry cache TTL values must be non-negative')
  if settings.app_env.lower()!='production':
   return
  missing=[]
