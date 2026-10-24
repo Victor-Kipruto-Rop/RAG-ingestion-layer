@@ -35,7 +35,8 @@ from src.config import settings
 def test_signup_and_password_reset_fail_closed_without_session_signing(monkeypatch):
     monkeypatch.setattr(settings, "developer_access_token_secret", "d" * 40)
     monkeypatch.setattr(settings, "session_secret", "")
-    monkeypatch.setattr(settings, "auth_email_delivery_configured", True)
+    monkeypatch.setattr(settings, "resend_api_key", "resend-test-key")
+    monkeypatch.setattr(settings, "resend_from_email", "noreply@example.test")
     monkeypatch.setattr(settings, "auth_otp_pepper", "p" * 40)
 
     with pytest.raises(HTTPException) as exc:
