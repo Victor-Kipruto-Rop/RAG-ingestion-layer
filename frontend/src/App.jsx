@@ -74,7 +74,7 @@ function Sidebar({ page, setPage, mobile, setMobile }) {
   </aside>;
 }
 
-function Topbar({ page, connected, onRefresh, loading, search, setSearch, setMobile, onSignOut, previewMode, onTogglePreview, failedJobs, notificationsOpen, setNotificationsOpen }) {
+function Topbar({ page, connected, onRefresh, loading, search, setSearch, setMobile, onSignOut, previewMode, onTogglePreview, failedJobs, notificationsOpen, setNotificationsOpen, onViewJobs }) {
   return <header className="topbar">
     <div className="topbar-left">
       <button className="icon-button mobile-menu" onClick={() => setMobile(true)} aria-label="Open menu"><Menu size={20} /></button>
@@ -84,7 +84,7 @@ function Topbar({ page, connected, onRefresh, loading, search, setSearch, setMob
       <label className="global-search"><Search size={16} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search records, jobs, sources…" /><kbd>⌘ K</kbd></label>
       <button className={`environment preview-toggle ${previewMode ? 'active' : ''}`} onClick={onTogglePreview} aria-pressed={previewMode} title="Preview mode disables dashboard write actions"><span className={connected ? 'pulse-dot' : 'pulse-dot muted'} />{previewMode ? 'Preview mode' : (connected ? 'API connected' : 'API offline')}</button>
       <div className="notification-wrap"><button className="icon-button notification-button" aria-label={`Notifications, ${failedJobs.length} failed jobs`} aria-expanded={notificationsOpen} onClick={() => setNotificationsOpen(!notificationsOpen)}><Bell size={18} />{failedJobs.length > 0 && <i>{failedJobs.length > 99 ? '99+' : failedJobs.length}</i>}</button>
-      {notificationsOpen && <div className="notification-popover"><strong>Workspace alerts</strong>{failedJobs.length ? failedJobs.slice(0,5).map(job => <button key={job.id} className="notification-item" onClick={() => { setNotificationsOpen(false); }}><span className="notification-danger-dot"/><span><b>{job.file_name || 'Ingestion job failed'}</b><small>{job.error_summary || 'This job needs investigation.'}</small></span></button>) : <p>No failed ingestion jobs are currently reported.</p>}<button className="button-link" onClick={() => { setNotificationsOpen(false); }}>Close alerts</button></div>}</div>
+      {notificationsOpen && <div className="notification-popover"><strong>Workspace alerts</strong>{failedJobs.length ? failedJobs.slice(0,5).map(job => <button key={job.id} className="notification-item" onClick={() => { setNotificationsOpen(false); onViewJobs(); }}><span className="notification-danger-dot"/><span><b>{job.file_name || 'Ingestion job failed'}</b><small>{job.error_summary || 'This job needs investigation.'}</small></span></button>) : <p>No failed ingestion jobs are currently reported.</p>}<button className="button-link" onClick={() => { setNotificationsOpen(false); }}>Close alerts</button></div>}</div>
       {connected && <button className="button-secondary" onClick={onSignOut}>Sign out</button>}
       <button className="icon-button refresh-button" onClick={onRefresh} aria-label="Refresh data" disabled={loading}><RefreshCw size={17} className={loading ? 'spin' : ''} /></button>
     </div>
@@ -328,7 +328,7 @@ export default function App() {
     {mobile && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setMobile(false)} />}
     <Sidebar page={page} setPage={setPage} mobile={mobile} setMobile={setMobile} />
     <main className="main-content">
-      <Topbar page={page} connected={connected} onRefresh={refresh} loading={loading} search={search} setSearch={setSearch} setMobile={setMobile} onSignOut={signOut} previewMode={previewMode} onTogglePreview={() => setPreviewMode(v => !v)} failedJobs={jobs.filter(job => ['failed','error'].includes(String(job.status || '').toLowerCase()))} notificationsOpen={notificationsOpen} setNotificationsOpen={setNotificationsOpen} />
+      <Topbar page={page} connected={connected} onRefresh={refresh} loading={loading} search={search} setSearch={setSearch} setMobile={setMobile} onSignOut={signOut} previewMode={previewMode} onTogglePreview={() => setPreviewMode(v => !v)} failedJobs={jobs.filter(job => ['failed','error'].includes(String(job.status || '').toLowerCase()))} notificationsOpen={notificationsOpen} setNotificationsOpen={setNotificationsOpen} onViewJobs={() => setPage('Ingestion Jobs')} />
       <div className="page-content">
         {previewMode && <div className="alert-banner info"><ShieldCheck size={17}/><span>Preview mode is active. Write actions are disabled; data shown still comes from the connected backend.</span></div>}
         {error && <div className="alert-banner error"><AlertTriangle size={17} /><span>{error}</span><button onClick={() => setError('')} aria-label="Dismiss error"><X size={16} /></button></div>}
