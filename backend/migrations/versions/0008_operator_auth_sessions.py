@@ -48,6 +48,7 @@ def upgrade():
         sa.Column('ip_digest', sa.String(64), nullable=True),
     )
     op.create_index('ix_admin_sessions_email', 'admin_sessions', ['email'])
+    op.create_index('ix_admin_sessions_email', 'admin_sessions', ['email'])
     op.create_index('ix_admin_sessions_email_created', 'admin_sessions', ['email', 'created_at'])
     op.create_index('ix_admin_sessions_expiry', 'admin_sessions', ['expires_at'])
 
@@ -55,6 +56,7 @@ def upgrade():
 def downgrade():
     op.drop_index('ix_admin_sessions_expiry', table_name='admin_sessions')
     op.drop_index('ix_admin_sessions_email_created', table_name='admin_sessions')
+    op.drop_index('ix_admin_sessions_email', table_name='admin_sessions')
     op.drop_index('ix_admin_sessions_email', table_name='admin_sessions')
     op.drop_table('admin_sessions')
     op.drop_index('ix_admin_auth_challenges_email', table_name='admin_auth_challenges')
