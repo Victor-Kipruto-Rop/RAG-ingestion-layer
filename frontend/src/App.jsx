@@ -49,8 +49,7 @@ function Sidebar({ page, setPage, mobile, setMobile, connected }) {
   let group = '';
   return <aside className={`sidebar ${mobile ? 'sidebar-open' : ''}`}>
     <div className="brand-row">
-      <div className="brand-mark"><Database size={19} strokeWidth={2.2} /></div>
-      <div className="brand-copy"><strong>PesaGuard</strong><span>DATASOURCE</span></div>
+      <img className="brand-logo" src="/pesaguard-logo.svg" alt="PesaGuard" />
       <button className="icon-button mobile-close" onClick={() => setMobile(false)} aria-label="Close menu"><X size={18} /></button>
     </div>
     <div className="workspace-chip"><span className="pulse-dot" />INTERNAL DATA PLATFORM</div>
