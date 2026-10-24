@@ -15,6 +15,8 @@ This is a datasource, not the PesaGuard customer onboarding system and not an au
 
 Do not commit `.env`, API keys, database URLs, or R2 credentials.
 
+For step-by-step local setup without Docker (API, worker, dashboard, tests) see [`docs/local-development.md`](docs/local-development.md).
+
 ## Database migrations
 
 Apply in order to PostgreSQL/Supabase:
