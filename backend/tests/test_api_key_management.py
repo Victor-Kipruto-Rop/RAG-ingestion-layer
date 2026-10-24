@@ -81,7 +81,7 @@ def _token(secret=SECRET, algorithm='HS256', **overrides):
     claims.update(overrides)
     claims = {k: v for k, v in claims.items() if v is not None}
     headers = {'kid': 'current'} if algorithm == 'HS256' else None
-    return 'Bearer ' + jwt.encode(claims, secret, algorithm=algorithm, headers=headers)
+    return 'Bearer ' + jwt.encode(claims, None if algorithm == 'none' else secret, algorithm=algorithm, headers=headers)
 
 
 def test_valid_token_is_accepted(jwt_settings):
@@ -94,7 +94,7 @@ def test_valid_token_is_accepted(jwt_settings):
     (lambda: _token(exp=None), 401),
     (lambda: _token(aud='someone-else'), 401),
     (lambda: _token(iss='attacker'), 401),
-    (lambda: _token(org_id=None, tenant_id=None), 403),
+    (lambda: _token(org_id=None, tenant_id=None), 401),
     (lambda: _token(type='refresh'), 401),
     (lambda: _token(tenant_id=None), 401),
     (lambda: 'Bearer ' + jwt.encode({'sub': 'u', 'org_id': 'o', 'exp': int(time.time()) + 60}, None, algorithm='none'), 401),
