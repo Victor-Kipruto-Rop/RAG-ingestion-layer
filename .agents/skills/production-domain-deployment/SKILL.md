@@ -114,3 +114,19 @@ Report:
 6. Proposed DNS records only when targets are verified from the hosting provider.
 7. Rollback plan and remaining blockers.
 8. State explicitly whether any live DNS/deployment changes were made.
+
+## Cloudflare Pages frontend configuration
+
+The datasource frontend is intended to run on Cloudflare Pages at `https://datasource.pesaguard.co.ke`.
+
+- For the Pages project, use repository `Victor-Kipruto-Rop/pesaguard-datasource`, root directory `frontend`, build command `npm run build`, and output directory `dist`.
+- Configure the public build-time variable `VITE_API_BASE_URL=https://api.datasource.pesaguard.co.ke` in the Production environment. This variable is visible to browser code by design and must contain no credential.
+- Use the approved release branch as the Pages production branch. Use feature/integration branches for previews until explicitly approved.
+- The repository's `frontend/wrangler.jsonc` declares the Pages project name and build output; keep Cloudflare dashboard settings consistent with it.
+- `frontend/public/_redirects` supplies an SPA fallback for direct navigation and refreshes.
+- Attach `datasource.pesaguard.co.ke` from the Pages project's Custom domains interface. Do not guess or manually overwrite DNS targets.
+- The API remains a separate service at `https://api.datasource.pesaguard.co.ke`; API hosting, DNS, TLS, CORS, authentication, and tenant authorization require independent verification.
+- Never put `REGISTRY_API_KEYS`, backend secrets, database credentials, or service-to-service tokens in `VITE_*` variables.
+- Follow `docs/cloudflare-pages-frontend.md` for the setup and release checklist. Repository configuration alone does not create the Cloudflare project, attach a domain, deploy, or prove production health.
+
+Live Cloudflare account changes, DNS edits, and production deployments require explicit authorization and must follow the existing safety gates.
