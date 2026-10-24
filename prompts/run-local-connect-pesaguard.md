@@ -2,6 +2,10 @@
 
 > **Purpose:** Give an AI coding agent a strict, executable workflow for starting the datasource locally, safely creating local environment files, connecting it to the PesaGuard backend, and proving the integration works.
 
+## Required agent skills
+
+Before executing, inspect and apply the repository skills in `.agents/skills/`. Load the relevant `SKILL.md` files and follow their workflows and guardrails throughout the task. These ten skills cover repository inspection, local secrets, Docker runtime, datasource health, backend client integration, tenant authorization, registry lookup semantics, regression testing, debugging, and Git/documentation hygiene. Do not treat a skill as permission to bypass the safety rules in this prompt.
+
 ## Mission
 
 Execute and verify the local integration between:
