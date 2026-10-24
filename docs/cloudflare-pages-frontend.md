@@ -13,7 +13,7 @@ Create a Pages project connected to this GitHub repository, `Victor-Kipruto-Rop/
 
 | Setting | Value |
 |---|---|
-| Production branch | `chore/local-pesaguard-integration-readiness` for initial review, then switch to the approved production branch after the change is reviewed |
+| Production branch | The repository's approved release branch, verified from repository settings; do not assume the integration branch is approved for production |
 | Root directory | `frontend` |
 | Framework preset | Vite (or None if Vite is not offered) |
 | Build command | `npm run build` |
@@ -22,7 +22,7 @@ Create a Pages project connected to this GitHub repository, `Victor-Kipruto-Rop/
 
 Use the repository's approved production branch for real production releases. The integration branch is listed only so the initial configuration can be previewed; do not accidentally designate it as permanent production if your release branch is different.
 
-The value of `VITE_API_BASE_URL` is a public API origin, not a secret. Vite embeds it in the browser bundle. **Never put datasource API keys, database credentials, signing secrets, or server-only tokens in any `VITE_*` variable.**
+Use `chore/local-pesaguard-integration-readiness` as a preview branch if needed, and promote only after review. The value of `VITE_API_BASE_URL` is a public API origin, not a secret. Vite embeds it in the browser bundle. **Never put datasource API keys, database credentials, signing secrets, or server-only tokens in any `VITE_*` variable.**
 
 In Cloudflare Pages, add `VITE_API_BASE_URL` under **Settings → Environment variables → Production**. Set it to the exact HTTPS API origin above. Do not configure preview deployments to call production by default; use a separate staging API for previews, or leave previews unconfigured until a safe staging environment exists.
 
