@@ -449,3 +449,19 @@ body{background:#0b100d;color:#e5eee8}
 .module-detail strong{color:#9ba99f}.module-detail span{color:#d8e5dc}
 .source-title a{color:#6bdfa0}
 @media(max-width:900px){.sidebar{background:#0d120f}.sidebar-scrim{background:#000b}}
+
+/* Accessible focus, key-management search, and identity status */
+:where(button,a,input,select,textarea,[tabindex]):focus-visible{outline:2px solid #5de794;outline-offset:3px}
+.key-token-input{display:flex;align-items:center;gap:8px;border:1px solid #2b3930;border-radius:10px;padding:0 8px;background:#0d130f}
+.key-token-input input{flex:1;min-width:0;border:0!important;outline:0!important;background:transparent!important;padding:12px 4px;color:#e5eee8}
+.key-token-input button{flex:none}
+.key-token-help{font-size:11px;line-height:1.6;color:#91a096;margin-top:-6px}
+.key-connected-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border:1px solid #284332;border-radius:12px;background:#101b14;color:#a8d9b7;font-size:12px}
+.key-connected-bar>span{display:flex;align-items:center;gap:8px;min-width:0;overflow-wrap:anywhere}
+.key-connected-bar svg{flex:none;color:#5de794}
+.key-search{display:flex;align-items:center;gap:9px;padding:10px 12px;border:1px solid #2b3930;border-radius:10px;background:#0d130f;color:#8e9f94}
+.key-search input{width:100%;min-width:0;border:0;outline:0;background:transparent;color:#e5eee8;font:inherit;font-size:12px}
+.key-search input::placeholder{color:#718178}
+.key-search:focus-within{border-color:#5de794}
+@media(max-width:600px){.key-connected-bar{align-items:flex-start;flex-direction:column}.key-connected-bar .button-secondary{width:100%;justify-content:center}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
