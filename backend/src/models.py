@@ -167,3 +167,17 @@ class ApiKeyAuditEvent(Base):
  action:Mapped[str]=mapped_column(String(80),nullable=False)
  details:Mapped[dict]=mapped_column(json_type,default=dict,nullable=False)
  created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
+
+
+class AdminProfile(Base):
+ __tablename__='admin_profiles'
+ id:Mapped[str]=mapped_column(String(36),primary_key=True,default='admin')
+ display_name:Mapped[str]=mapped_column(String(120),nullable=False,default='Datasource Operator')
+ contact_email:Mapped[str|None]=mapped_column(String(320),nullable=True)
+ updated_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,onupdate=now_utc,nullable=False)
+
+
+class AdminNotificationRead(Base):
+ __tablename__='admin_notification_reads'
+ notification_key:Mapped[str]=mapped_column(String(300),primary_key=True)
+ read_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
