@@ -167,7 +167,6 @@ GitLab CI/CD is configured in [`.gitlab-ci.yml`](.gitlab-ci.yml). Follow the
 sync, runners, CI/CD variables, Cloudflare Pages deployment, staging ingestion
 jobs, security gates and troubleshooting.
 
-The staging pipeline is limited to `chore/production-ci-release-gates`.
-Cloudflare Pages deployment and ingestion operations are manual. Configure
-staging-only variables before running those jobs; never reuse production
-credentials or data resources.
+The pipeline runs validation on `main` and staging feature branches. Cloudflare Pages deployment and ingestion operations remain manual. Configure staging-only variables before running those jobs; never reuse production credentials or data resources.
+
+For a no-paid-Render-resources profile, review [`render.staging-free.yaml`](render.staging-free.yaml) and [`docs/STAGING_FREE_TIER.md`](docs/STAGING_FREE_TIER.md). This profile reuses the existing Supabase staging database and free Redis; it intentionally omits the background worker because Render does not offer a free worker plan. Asynchronous ingestion is therefore not end-to-end operational under this profile.
