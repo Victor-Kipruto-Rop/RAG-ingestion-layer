@@ -46,22 +46,55 @@ svg{flex-shrink:0}button svg{transition:filter .18s ease,transform .18s ease}but
 .module-table th,.module-table td{border-color:rgba(135,255,178,.12)}
 button:disabled{cursor:not-allowed;filter:saturate(.65)}
 
-/* Full glass mode: consistent materials across every route and component */
-:root{--pg-glass:rgba(12,30,19,.68);--pg-glass-strong:rgba(9,24,15,.86);--pg-glass-border:rgba(126,255,171,.17);--pg-glass-shadow:0 20px 60px rgba(0,0,0,.22),inset 0 1px 0 rgba(245,255,248,.045);--pg-glass-blur:blur(20px) saturate(145%)}
+/* Shared glass tokens and scoped finishing styles.
+   Avoid broad [class*=...] selectors: they accidentally style headings and nested layout wrappers. */
+:root{
+ --pg-glass:rgba(12,30,19,.68);
+ --pg-glass-strong:rgba(9,24,15,.86);
+ --pg-glass-border:rgba(126,255,171,.17);
+ --pg-glass-shadow:0 20px 60px rgba(0,0,0,.22),inset 0 1px 0 rgba(245,255,248,.045);
+ --pg-glass-blur:blur(20px) saturate(145%);
+}
 html,body,#root{min-height:100%;background-color:#07140d}
-body{background-image:radial-gradient(ellipse at 8% 4%,rgba(27,170,83,.17),transparent 34rem),radial-gradient(ellipse at 96% 0%,rgba(54,238,132,.10),transparent 30rem),radial-gradient(ellipse at 54% 90%,rgba(13,111,54,.14),transparent 40rem),linear-gradient(145deg,#07140d,#09170e 55%,#06110a);background-attachment:fixed}
+body{
+ background-image:radial-gradient(ellipse at 8% 4%,rgba(27,170,83,.17),transparent 34rem),
+ radial-gradient(ellipse at 96% 0%,rgba(54,238,132,.10),transparent 30rem),
+ radial-gradient(ellipse at 54% 90%,rgba(13,111,54,.14),transparent 40rem),
+ linear-gradient(145deg,#07140d,#09170e 55%,#06110a);
+ background-attachment:fixed;
+}
 .main-content,.page-content,.source-page,.module-page,.api-keys-page,.workspace,.workspace-content,.content-area,.page-shell{background:transparent!important}
-[class*="panel"],[class*="card"],[class*="section"],[class*="popover"],[class*="dialog"],[class*="modal"],[class*="editor"],[class*="form-wrap"],[class*="empty-state"],[class*="empty"]{background-color:var(--pg-glass);border-color:var(--pg-glass-border);box-shadow:var(--pg-glass-shadow);backdrop-filter:var(--pg-glass-blur);-webkit-backdrop-filter:var(--pg-glass-blur)}
+.panel,.metric-card,.quality-panel,.jobs-panel,.service-card,.full-panel,.upload-panel,.key-auth-panel,.keys-empty,.source-metrics article,.source-editor,.settings-card,.module-section,.module-detail,.login-form-wrap,.notification-popover,.key-create-form,.key-form{
+ background-color:var(--pg-glass);
+ border-color:var(--pg-glass-border);
+ box-shadow:var(--pg-glass-shadow);
+ backdrop-filter:var(--pg-glass-blur);
+ -webkit-backdrop-filter:var(--pg-glass-blur);
+}
 .metric-icon,.connect-banner-icon,.secure-icon,.login-lock,.login-benefits>div>span{background-color:rgba(42,211,108,.13);border-color:rgba(126,255,171,.20);color:#63f39b}
 .connect-banner,.alert-banner,.key-connected-bar,.source-status,.status-pill,.environment-badge,button,.button-primary,.button-secondary,.button-link,.icon-button,.refresh-button,.environment,.nav-item{backdrop-filter:blur(12px) saturate(140%);-webkit-backdrop-filter:blur(12px) saturate(140%)}
 input:not([type=checkbox]):not([type=radio]):not([type=range]),select,textarea{background-color:rgba(4,17,10,.62);border-color:rgba(130,255,176,.17);color:#e4f5e9}
 input::placeholder,textarea::placeholder{color:#73917e}
 input:focus,select:focus,textarea:focus{border-color:rgba(77,241,143,.68);box-shadow:0 0 0 3px rgba(43,218,112,.11),0 0 22px rgba(43,218,112,.05)}
 select option{background:#0b1b11;color:#e4f5e9}
-table{border-collapse:separate;border-spacing:0}thead,table thead,tr[role=row]:first-child{background:rgba(31,85,47,.27)}th{color:#8eae99;border-color:rgba(130,255,176,.14)}td{border-color:rgba(130,255,176,.10)}tbody tr:hover{background:rgba(41,177,86,.07)}
-hr,[class*="divider"],[class*="separator"]{border-color:rgba(130,255,176,.12)}
-h1,h2,h3,h4,h5,h6{color:#e7f7ec}a{color:#73eea1}a:hover{color:#b3ffcb}
+table{border-collapse:separate;border-spacing:0}
+thead,table thead,tr[role=row]:first-child{background:rgba(31,85,47,.27)}
+th{color:#8eae99;border-color:rgba(130,255,176,.14)}
+td{border-color:rgba(130,255,176,.10)}
+tbody tr:hover{background:rgba(41,177,86,.07)}
+hr,.divider,.separator{border-color:rgba(130,255,176,.12)}
+h1,h2,h3,h4,h5,h6{color:#e7f7ec}
+a{color:#73eea1}
+a:hover{color:#b3ffcb}
 code,pre,kbd{background:rgba(3,16,9,.58);border-color:rgba(130,255,176,.15);color:#b9f4cc}
 button:not(:disabled):hover,.button-secondary:hover:not(:disabled),.icon-button:hover:not(:disabled){border-color:rgba(95,248,154,.38)}
-@media(max-width:700px){[class*="panel"],[class*="card"],[class*="section"],[class*="editor"],[class*="form-wrap"]{backdrop-filter:blur(14px) saturate(135%);-webkit-backdrop-filter:blur(14px) saturate(135%)}}
-@media(prefers-reduced-transparency:reduce){[class*="panel"],[class*="card"],[class*="section"],[class*="popover"],[class*="dialog"],[class*="modal"],[class*="editor"],[class*="form-wrap"]{background-color:rgba(9,24,15,.96);backdrop-filter:none;-webkit-backdrop-filter:none}}
+@media(max-width:700px){
+ .panel,.metric-card,.quality-panel,.jobs-panel,.service-card,.full-panel,.upload-panel,.key-auth-panel,.keys-empty,.source-metrics article,.source-editor,.settings-card,.module-section,.module-detail,.login-form-wrap,.notification-popover,.key-create-form,.key-form{
+  backdrop-filter:blur(14px) saturate(135%);-webkit-backdrop-filter:blur(14px) saturate(135%);
+ }
+}
+@media(prefers-reduced-transparency:reduce){
+ .panel,.metric-card,.quality-panel,.jobs-panel,.service-card,.full-panel,.upload-panel,.key-auth-panel,.keys-empty,.source-metrics article,.source-editor,.settings-card,.module-section,.module-detail,.login-form-wrap,.notification-popover,.key-create-form,.key-form{
+  background-color:rgba(9,24,15,.96);backdrop-filter:none;-webkit-backdrop-filter:none;
+ }
+}
