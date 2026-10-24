@@ -28,6 +28,24 @@ function CodeBlock({children}) { return <pre className="dp-code"><code>{children
 function Metric({label,value,detail,icon:Icon}) { return <div className="dp-metric"><span className="dp-metric-icon"><Icon size={17}/></span><div><small>{label}</small><strong>{value}</strong><span>{detail}</span></div></div>; }
 function PageHeading({eyebrow,title,description,actions}) { return <div className="dp-page-heading"><div><div className="dp-eyebrow">{eyebrow}</div><h1>{title}</h1><p>{description}</p></div>{actions && <div className="dp-heading-actions">{actions}</div>}</div>; }
 
+function ToastPopup({ kind='success', message, onClose }) {
+  const [createdAt] = useState(() => new Date());
+  useEffect(() => {
+    if (!message) return undefined;
+    const timer = window.setTimeout(onClose, 7000);
+    return () => window.clearTimeout(timer);
+  }, [message, onClose]);
+  if (!message) return null;
+  const Icon = kind === 'error' ? CircleHelp : CheckCircle2;
+  return <div className="dp-toast-viewport" aria-live={kind === 'error' ? 'assertive' : 'polite'}>
+    <section className={`dp-toast-popup ${kind}`} role={kind === 'error' ? 'alert' : 'status'}>
+      <span className="dp-toast-icon"><Icon size={19}/></span>
+      <div className="dp-toast-copy"><strong>{kind === 'error' ? 'Something needs attention' : 'Success'}</strong><p>{message}</p><time dateTime={createdAt.toISOString()}>{createdAt.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})}</time></div>
+      <button type="button" className="dp-toast-close" onClick={onClose} aria-label="Dismiss message"><X size={17}/></button>
+    </section>
+  </div>;
+}
+
 export default function DeveloperPlatformApp() {
   const [page,setPage] = useState('Overview');
   const [authMode,setAuthMode] = useState('landing');
@@ -182,7 +200,7 @@ export default function DeveloperPlatformApp() {
   const copy = async value => {try{await navigator.clipboard.writeText(value);setNotice('Copied to clipboard.');}catch{setError('Clipboard unavailable; select and copy the text manually.');}};
   const visibleKeys = useMemo(()=>keys.filter(k=>`${k.name} ${k.environment} ${k.key_prefix} ${k.status}`.toLowerCase().includes(search.toLowerCase())),[keys,search]);
 
-  if(!authed) return authMode==='landing' ? <PublicHomePage setMode={setAuthMode} config={authConfig}/> : <AuthScreen mode={authMode} setMode={setAuthMode} config={authConfig} onAuthenticated={finishAuth} busy={busy} error={error} setError={setError}/>;
+  if(!authed) return <>{authMode==='landing' ? <PublicHomePage setMode={setAuthMode} config={authConfig}/> : <AuthScreen mode={authMode} setMode={setAuthMode} config={authConfig} onAuthenticated={finishAuth} busy={busy} error={error} setError={setError}/>}<ToastPopup kind="error" message={error} onClose={()=>setError('')}/></>;
 
   const activeTitle=page;
   return <div className="dp-shell">
@@ -195,8 +213,6 @@ export default function DeveloperPlatformApp() {
     <main className="dp-main">
       <header className="dp-topbar"><button className="dp-mobile-menu" onClick={()=>setMobileNav(v=>!v)} aria-label="Toggle navigation"><Menu size={20}/></button><div className="dp-breadcrumb"><span>Developer workspace</span><ArrowRight size={14}/><strong>{activeTitle}</strong></div><div className="dp-top-actions"><span className="dp-status-dot"/> API services <button onClick={refreshData} disabled={busy} aria-label="Refresh workspace"><RefreshCw size={16}/></button><button className="dp-avatar" onClick={()=>setPage('Account')} aria-label="Account settings">{(user.display_name||user.email||'D').slice(0,1).toUpperCase()}</button></div></header>
       <div className="dp-content">
-        {error&&<div className="dp-alert error" role="alert"><AlertCircleIcon/><span>{error}</span><button onClick={()=>setError('')}><X size={15}/></button></div>}
-        {notice&&<div className="dp-alert success" role="status"><Check size={16}/><span>{notice}</span><button onClick={()=>setNotice('')}><X size={15}/></button></div>}
         {page==='Overview'&&<OverviewPage workspace={workspace} projects={projects} keys={keys} webhooks={webhooks} baseUrls={baseUrls} setPage={setPage} refreshData={refreshData}/>}
         {page==='Projects'&&<ProjectsPage projects={projects} workspace={workspace}/>}
         {page==='API Keys'&&<ApiKeysPage keys={visibleKeys} allKeys={keys} search={search} setSearch={setSearch} form={keyForm} setForm={setKeyForm} makeKey={makeKey} rotateKey={rotateKey} revokeKey={revokeKey} busy={busy} workspace={workspace} newSecret={newSecret} showSecret={showSecret} setShowSecret={setShowSecret} copy={copy} baseUrls={baseUrls} productionRequests={productionRequests} setPage={setPage}/>}
@@ -211,6 +227,7 @@ export default function DeveloperPlatformApp() {
       </div>
       <footer className="dp-footer"><span>© {new Date().getFullYear()} PesaGuard Developer Platform</span><span><span className="dp-status-dot"/> Service state is read from the API</span><a href={`${API_BASE}/health`} target="_blank" rel="noreferrer">API health <ExternalLink size={13}/></a></footer>
     </main>
+    <ToastPopup kind="error" message={error} onClose={()=>setError('')}/><ToastPopup kind="success" message={notice} onClose={()=>setNotice('')}/>
   </div>;
 }
 
@@ -257,7 +274,6 @@ function AuthScreen({mode,setMode,config,onAuthenticated,busy,error,setError}){
     <div className="dp-auth-form-wrap"><div className="dp-auth-form">
       <div className="dp-auth-mobile-brand"><span className="dp-brand-mark"><img src="/pesaguard-mark.svg" alt=""/></span><span><strong>PesaGuard</strong><small>DEVELOPER PLATFORM</small></span></div>
       <div className="dp-auth-step">{reset?'ACCOUNT RECOVERY':mode==='signup'?'CREATE DEVELOPER ACCOUNT':'DEVELOPER SIGN IN'}</div><h2>{title}</h2><p className="dp-auth-subtitle">{reset?'We will send a time-limited code if this account is eligible.':mode==='signup'?'Create a developer account for your website, application or data platform.':'Sign in to manage API keys, webhooks, projects and production access.'}</p>
-      {(localError||error)&&<div className="dp-alert error" role="alert">{localError||error}</div>}{message&&<div className="dp-alert success" role="status">{message}</div>}
       <form onSubmit={submit} className="dp-form">
         {!reset&&mode==='signup'&&stage==='details'&&<><label>Full name<input autoComplete="name" value={displayName} onChange={e=>setDisplayName(e.target.value)} minLength={2} maxLength={120} required placeholder="Your name"/></label><label>Workspace name<input value={workspaceName} onChange={e=>setWorkspaceName(e.target.value)} minLength={2} maxLength={160} required placeholder="Company or project"/></label></>}
         <label>Email address<input type="email" autoComplete="email" value={email} onChange={e=>setEmail(e.target.value)} required readOnly={stage==='verify'||stage==='confirm'} placeholder="you@company.com"/></label>
