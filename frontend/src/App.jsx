@@ -3,7 +3,7 @@ import {
   Activity, AlertCircle, AlertTriangle, ArrowDownRight, ArrowRight, ArrowUpRight,
   Bell, Building2, CheckCircle2, ChevronDown, CircleDot, Clock3, Database, KeyRound,
   FileCheck2, FileSpreadsheet, FileText, HardDrive, LayoutDashboard, Menu,
-  MoreHorizontal, RefreshCw, Search, Server, Settings, ShieldCheck, SlidersHorizontal,
+  RefreshCw, Search, Server, Settings, ShieldCheck, SlidersHorizontal,
   Upload, X, ScrollText, Workflow
 } from 'lucide-react';
 import { api, API_BASE, setCsrfToken } from './api.js';
@@ -159,10 +159,10 @@ function QualityPanel({ summary }) {
 function JobsTable({ jobs, compact = false, search = '' }) {
   const filtered = jobs.filter(j => [j.file_name, j.status, j.source_name, j.id].some(v => String(v || '').toLowerCase().includes(search.toLowerCase())));
   if (!filtered.length) return <div className="empty-state"><div className="empty-icon"><Database size={23} /></div><strong>{search ? 'No matching ingestion jobs' : 'No ingestion jobs yet'}</strong><span>{search ? 'Try a different search term.' : 'Upload a dataset to create your first ingestion job.'}</span></div>;
-  return <div className="table-scroll"><table className="data-table"><thead><tr><th>DATASET / FILE</th><th>STATUS</th><th>PROCESSED</th><th>INSERTED</th><th>CREATED</th><th /></tr></thead><tbody>
+  return <div className="table-scroll"><table className="data-table"><thead><tr><th>DATASET / FILE</th><th>STATUS</th><th>PROCESSED</th><th>INSERTED</th><th>CREATED</th></tr></thead><tbody>
     {filtered.slice(0, compact ? 5 : 50).map(job => <tr key={job.id}>
       <td><div className="file-cell"><span className={`file-icon ${String(job.file_name || '').toLowerCase().endsWith('.pdf') ? 'pdf' : 'csv'}`}>{String(job.file_name || '').toLowerCase().endsWith('.pdf') ? <FileText size={17} /> : <FileSpreadsheet size={17} />}</span><span><strong>{job.file_name || 'Unnamed dataset'}</strong><small>JOB-{String(job.id || '').slice(0, 8).toUpperCase()}</small></span></div></td>
-      <td><StatusPill value={job.status} /></td><td>{number(job.records_processed)}</td><td>{number(job.records_inserted)}</td><td className="date-cell">{dateLabel(job.created_at)}</td><td><button className="row-action" title="Job actions" aria-label="Job actions"><MoreHorizontal size={18} /></button></td>
+      <td><StatusPill value={job.status} /></td><td>{number(job.records_processed)}</td><td>{number(job.records_inserted)}</td><td className="date-cell">{dateLabel(job.created_at)}</td>
     </tr>)}
   </tbody></table></div>;
 }
