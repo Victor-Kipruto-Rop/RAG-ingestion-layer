@@ -253,7 +253,7 @@ def _active_challenge(db: Session, email: str, purpose: str):
 def auth_config():
     signing_configured = bool(len(settings.developer_access_token_secret.encode()) >= 32 and len(settings.session_secret.encode()) >= 32)
     configured = bool(signing_configured and settings.auth_email_delivery_configured and len(settings.auth_otp_pepper.encode()) >= 32)
-    callback_configured = settings.app_env.lower() != "production" or bool(settings.developer_oauth_callback_base_url.strip() and settings.developer_frontend_url.strip())
+    callback_configured = settings.app_env.lower() not in {"staging", "production"} or bool(settings.developer_oauth_callback_base_url.strip() and settings.developer_frontend_url.strip())
     google = bool(signing_configured and callback_configured and settings.google_oauth_client_id and settings.google_oauth_client_secret)
     github = bool(signing_configured and callback_configured and settings.github_oauth_client_id and settings.github_oauth_client_secret)
     return {"signup_enabled": configured, "password_reset_enabled": configured, "password_min_length": 12,
@@ -285,12 +285,12 @@ def _oauth_provider(provider: str):
 
 def _oauth_callback_url(request: Request, provider: str) -> str:
     base = (settings.developer_oauth_callback_base_url or "").strip().rstrip("/")
-    if settings.app_env.lower() == "production" and not base:
+    if settings.app_env.lower() in {"staging", "production"} and not base:
         raise HTTPException(503, "DEVELOPER_OAUTH_CALLBACK_BASE_URL must be explicitly configured for production OAuth")
     if not base:
         base = str(request.base_url).rstrip("/")
     parsed = urlparse(base)
-    allowed_schemes = {"https"} if settings.app_env.lower() == "production" else {"http", "https"}
+    allowed_schemes = {"https"} if settings.app_env.lower() in {"staging", "production"} else {"http", "https"}
     if parsed.scheme not in allowed_schemes or not parsed.hostname or parsed.username or parsed.password:
         raise HTTPException(503, "OAuth callback base URL must be absolute and use HTTPS in production")
     return f"{base}/api/v1/developer/auth/oauth/{provider}/callback"
@@ -306,7 +306,7 @@ def developer_oauth_providers():
 def developer_oauth_start(provider: str, request: Request):
     if len(settings.developer_access_token_secret.encode()) < 32 or len(settings.session_secret.encode()) < 32:
         raise HTTPException(503, "Developer OAuth signing and session secrets must each contain at least 32 characters")
-    if settings.app_env.lower() == "production" and not settings.developer_frontend_url.strip():
+    if settings.app_env.lower() in {"staging", "production"} and not settings.developer_frontend_url.strip():
         raise HTTPException(503, "DEVELOPER_FRONTEND_URL must be configured for production OAuth")
     client_id, client_secret = _oauth_provider(provider)
     if not client_id or not client_secret:
