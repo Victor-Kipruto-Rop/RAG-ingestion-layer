@@ -70,7 +70,9 @@ def test_tampered_expired_and_logged_out_sessions_are_rejected(client):
     fresh = TestClient(app)
     fresh.cookies.set('pg_admin_session', expired)
     assert fresh.get('/api/v1/organizations').status_code == 401
-    assert client.post('/api/v1/admin/logout').status_code == 204
+    assert client.post('/api/v1/admin/logout').status_code == 403  # logout is a cookie-authenticated state change
+    csrf = client.get('/api/v1/admin/session').json()['csrf_token']
+    assert client.post('/api/v1/admin/logout', headers={'X-CSRF-Token': csrf}).status_code == 204
     assert client.get('/api/v1/organizations').status_code == 401
 
 
