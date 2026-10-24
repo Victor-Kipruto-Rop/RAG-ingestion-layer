@@ -14,6 +14,14 @@ These are repository-local agent skills using the `.agents/skills/<skill-name>/S
 8. [Integration and Regression Testing](integration-regression-tests/SKILL.md) — test the end-to-end flow and failure paths.
 9. [Local Integration Debugging and Logs](local-debugging/SKILL.md) — diagnose startup, networking, and API failures safely.
 10. [Git Hygiene and Local Setup Documentation](git-hygiene-docs/SKILL.md) — keep secrets out of Git and document actual behavior.
+11. [Production Deployment and Domain Configuration](production-domain-deployment/SKILL.md) — prepare and validate the production frontend/API domains, HTTPS, DNS, CORS, secrets, release checks, and rollback.
+
+## Production domains
+
+- Frontend: `https://datasource.pesaguard.co.ke`
+- Backend API: `https://api.datasource.pesaguard.co.ke`
+
+These are the intended canonical hostnames, not confirmation that DNS, TLS, hosting, or production deployment is already configured. Follow the production skill and obtain explicit authorization before changing live DNS or production resources.
 
 ## Rules
 
