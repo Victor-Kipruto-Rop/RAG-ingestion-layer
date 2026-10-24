@@ -138,7 +138,7 @@ def _health_snapshot():
   checks['database'] = 'unavailable'
   log.warning('database_readiness_check_failed', error_type=type(exc).__name__)
 
- production = settings.app_env.lower() == 'production'
+ production = settings.app_env.lower() in {'staging', 'production'}
  if storage_module.configured():
   try:
    storage_module.health_check()
