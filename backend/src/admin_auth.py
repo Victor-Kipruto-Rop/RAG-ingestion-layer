@@ -193,8 +193,12 @@ def session(request: Request, response: Response):
 
 
 @router.post('/logout', status_code=204)
-def logout(response: Response):
+def logout(request: Request, response: Response):
+    claims = session_from_request(request)
+    if claims:
+        enforce_session_csrf(request, claims)
     response.delete_cookie(COOKIE_NAME, path='/')
+    response.headers['Cache-Control'] = 'no-store'
     return None
 
 
