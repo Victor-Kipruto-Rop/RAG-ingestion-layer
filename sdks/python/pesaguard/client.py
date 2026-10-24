@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from typing import Any, Literal
+import hmac
+import time
 from urllib.parse import urlparse
 
 import requests
@@ -97,3 +99,30 @@ class PesaGuardClient:
 
     def __exit__(self, *_: object) -> None:
         self.close()
+
+def verify_webhook_signature(
+    payload: bytes,
+    signature_header: str,
+    secret: str,
+    *,
+    tolerance_seconds: int = 300,
+    now: int | None = None,
+) -> bool:
+    """Verify a PesaGuard t=<unix>,v1=<hex> signature using the exact raw body bytes."""
+    if not isinstance(payload, bytes) or not isinstance(secret, str) or not secret:
+        return False
+    fields = {}
+    for part in (signature_header or "").split(","):
+        key, separator, value = part.strip().partition("=")
+        if separator and key not in fields:
+            fields[key] = value
+    try:
+        timestamp = int(fields["t"])
+        supplied = fields["v1"]
+    except (KeyError, ValueError, TypeError):
+        return False
+    current = int(time.time()) if now is None else int(now)
+    if tolerance_seconds < 0 or abs(current - timestamp) > tolerance_seconds:
+        return False
+    expected = hmac.new(secret.encode(), str(timestamp).encode() + b"." + payload, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(supplied, expected)
