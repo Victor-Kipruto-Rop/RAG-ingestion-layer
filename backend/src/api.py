@@ -2,6 +2,7 @@ import copy
 import csv
 import hashlib
 import io
+import re
 import uuid
 from datetime import datetime, timezone
 
