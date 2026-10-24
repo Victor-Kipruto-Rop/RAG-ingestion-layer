@@ -11,7 +11,7 @@ This checklist separates source-level review from checks that require real crede
 - The connected Render workspace lists one Datasource service: `pesaguard-datasource`, on branch `main`, at `https://pesaguard-datasource.onrender.com`. Service metadata has no configured health-check path. No separate Datasource staging/sandbox service was identified in the workspace listing.
 - The application source defines separate sandbox and production API base URL settings and key prefixes (`pg_sandbox_` and `pg_live_`). This source contract does not prove the deployed environment variables or DNS/TLS routing are correct.
 - Google/GitHub OAuth and SMTP credentials were not provided in this request. Provider applications, verified sender identity, and live delivery therefore cannot be confirmed from source code alone.
-- Latest observed GitHub Actions run for the candidate (run ID `40114881580`) reports all jobs failed before steps were created; no test/build steps or useful job logs were available. This is **not** a passing CI result.
+- Latest observed GitHub Actions run for the candidate (run ID `40115338997`) reports all jobs failed before steps were created; no test/build steps or useful job logs were available. This is **not** a passing CI result.
 - No production credentials were read or changed, no staging account was used, and no deployment was triggered.
 
 ## 2. Configure secrets in the deployment control plane
