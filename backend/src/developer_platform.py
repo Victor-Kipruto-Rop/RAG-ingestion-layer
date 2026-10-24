@@ -17,6 +17,7 @@ from datetime import datetime, timezone, timedelta
 from email.message import EmailMessage
 from urllib.parse import urlparse, urlencode
 import ipaddress
+import logging
 
 import httpx
 import jwt
@@ -35,6 +36,7 @@ from .models import (
     DeveloperProductionAccessRequest, ApiKey, ApiKeyAuditEvent, now_utc,
 )
 from .admin_auth import hash_password, verify_password, _check_login_rate
+from .email_service import send_transactional_email
 
 router = APIRouter(prefix="/api/v1/developer", tags=["developer platform"])
 SESSION_COOKIE = "pg_developer_session"
@@ -66,54 +68,19 @@ def _otp_digest(email: str, purpose: str, code: str) -> str:
     return hmac.new(settings.auth_otp_pepper.encode(), f"{purpose}:{email}:{code}".encode(), hashlib.sha256).hexdigest()
 
 
-def _send_email(to_email: str, subject: str, body: str):
-    """Send transactional OTP mail through Resend, with explicit SMTP fallback."""
-    if settings.resend_api_key and settings.resend_from_email:
-        try:
-            with httpx.Client(timeout=10.0, follow_redirects=False) as client:
-                result = client.post(
-                    "https://api.resend.com/emails",
-                    headers={
-                        "Authorization": f"Bearer {settings.resend_api_key}",
-                        "Content-Type": "application/json",
-                        "Accept": "application/json",
-                    },
-                    json={
-                        "from": settings.resend_from_email,
-                        "to": [to_email],
-                        "subject": subject,
-                        "text": body,
-                    },
-                )
-            if result.status_code < 200 or result.status_code >= 300:
-                # Do not include provider response bodies; they can contain user data.
-                raise RuntimeError(f"Resend email delivery failed with HTTP {result.status_code}")
-            return
-        except httpx.HTTPError as exc:
-            raise RuntimeError("Resend email delivery request failed") from exc
+def _send_email(to_email: str, subject: str, body: str, *, template_id: str = "account.transactional", idempotency_key: str | None = None):
+    """Shared transport wrapper used by auth flows; never logs message contents."""
+    return send_transactional_email(to_email, subject, body, template_id=template_id,
+                                    idempotency_key=idempotency_key)
 
-    # Backwards-compatible explicit SMTP fallback for existing deployments.
-    if not settings.smtp_host or not settings.smtp_from_email:
-        raise RuntimeError("Email delivery is not configured")
-    message = EmailMessage()
-    message["Subject"] = subject
-    message["From"] = settings.smtp_from_email
-    message["To"] = to_email
-    message.set_content(body)
-    if settings.smtp_use_ssl:
-        with smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, timeout=10, context=ssl.create_default_context()) as server:
-            if settings.smtp_username:
-                server.login(settings.smtp_username, settings.smtp_password)
-            server.send_message(message)
-    else:
-        with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=10) as server:
-            server.ehlo()
-            if settings.smtp_use_starttls:
-                server.starttls(context=ssl.create_default_context())
-                server.ehlo()
-            if settings.smtp_username:
-                server.login(settings.smtp_username, settings.smtp_password)
-            server.send_message(message)
+
+def _send_notice_best_effort(to_email: str, subject: str, body: str, *, template_id: str, idempotency_key: str):
+    """Notify after commit without rolling back the completed security/business action."""
+    try:
+        _send_email(to_email, subject, body, template_id=template_id, idempotency_key=idempotency_key)
+    except Exception as exc:
+        logging.getLogger(__name__).warning("transactional_notice_failed template=%s error_type=%s",
+                                            template_id, type(exc).__name__)
 
 
 def _issue_access_token(account: DeveloperAccount, workspace: DeveloperWorkspace, session_id: str) -> str:
@@ -454,7 +421,7 @@ def signup_request_otp(payload: SignupRequest, request: Request, db: Session = D
     db.commit()
     try:
         _send_email(email, "Verify your PesaGuard Developer Platform account",
-                    f"Your verification code is {code}. It expires in {max(1, settings.auth_otp_ttl_seconds // 60)} minutes. If you did not request this, ignore this email.")
+                    f"Your verification code is {code}. It expires in {max(1, settings.auth_otp_ttl_seconds // 60)} minutes. If you did not request this, ignore this email.", template_id="account.verify_otp", idempotency_key=f"signup-otp:{challenge.id}")
     except Exception as exc:
         challenge.consumed_at = now_utc()
         db.commit()
@@ -491,6 +458,9 @@ def signup_verify_otp(payload: VerifyOtpRequest, request: Request, response: Res
     challenge.consumed_at = now_utc()
     db.commit()
     result = _session_response(request, response, db, account, workspace, auth_method="password")
+    _send_notice_best_effort(email, "Welcome to PesaGuard Developer Platform",
+        f"Welcome, {account.display_name}. Your developer account and workspace are ready.\n\nStart with the API documentation, create a sandbox key, and test requests against the sandbox base URL. Production access remains separate and requires approval.\n\nIf you did not create this account, contact PesaGuard support.",
+        template_id="account.welcome", idempotency_key=f"welcome:{account.id}")
     return result
 
 
@@ -560,7 +530,7 @@ def password_reset_request(payload: ResetRequest, request: Request, db: Session 
         db.commit()
         try:
             _send_email(email, "Reset your PesaGuard Developer Platform password",
-                        f"Your password reset code is {code}. It expires in {max(1, settings.auth_otp_ttl_seconds // 60)} minutes. If you did not request this, ignore this email.")
+                        f"Your password reset code is {code}. It expires in {max(1, settings.auth_otp_ttl_seconds // 60)} minutes. If you did not request this, ignore this email.", template_id="account.password_reset_otp", idempotency_key=f"password-reset-otp:{email}:{now.isoformat()}")
         except Exception as exc:
             raise HTTPException(503, "Recovery email could not be sent. Please retry later.") from exc
     return {"accepted": True, "message": "If an active account exists for this address, a reset code will arrive shortly."}
@@ -590,6 +560,9 @@ def password_reset_confirm(payload: ResetConfirmRequest, request: Request, respo
     db.commit()
     response.delete_cookie(SESSION_COOKIE, path="/", secure=settings.session_cookie_secure, httponly=True, samesite="lax")
     response.headers["Cache-Control"] = "no-store"
+    _send_notice_best_effort(email, "Your PesaGuard password was changed",
+        "Your PesaGuard Developer Platform password was changed and all active sessions were revoked. Sign in again on your trusted devices. If you did not make this change, contact support immediately.",
+        template_id="account.password_changed", idempotency_key=f"password-changed:{account.id}:{challenge.id}")
     return {"updated": True, "message": "Password updated. Sign in again."}
 
 
@@ -709,6 +682,10 @@ def request_production_access(payload: ProductionAccessRequestBody, request: Req
     db.commit()
     _queue_workspace_event(background_tasks, workspace.id, "production_access.requested",
         {"request_id": row.id, "status": row.status, "expected_volume": row.expected_volume})
+    background_tasks.add_task(_send_notice_best_effort, account.email,
+        "PesaGuard production access request received",
+        f"We received your production access request for workspace {workspace.name}.\n\nStatus: pending review. Production credentials remain unavailable until the request is approved and the workspace meets verification requirements. Request reference: {row.id}.",
+        template_id="production_access.request_received", idempotency_key=f"production-access-request:{row.id}")
     return {"id": row.id, "status": row.status, "message": "Request submitted for review. Production key issuance remains disabled until the workspace is verified and approved."}
 
 
