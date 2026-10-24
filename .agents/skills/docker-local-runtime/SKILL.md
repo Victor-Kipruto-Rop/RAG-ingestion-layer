@@ -22,3 +22,10 @@ description: Use when building, starting, stopping, or troubleshooting PesaGuard
 Never point local containers at production databases or services. Do not remove health checks or security controls to force startup.
 
 undefined
+
+## Mandatory quality gates
+- Validate effective Compose configuration before building/starting services; do not expose rendered secret values.
+- Check port availability and network paths before changing mappings.
+- Never use destructive volume deletion, database reset, broad prune, or cleanup commands without explicit approval.
+- Distinguish container-running from healthy/readiness-confirmed. Capture service-specific evidence.
+- If a service fails, diagnose the root cause and rerun affected checks after the fix.
