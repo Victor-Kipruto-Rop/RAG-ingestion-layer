@@ -86,13 +86,13 @@ function SettingsGrid({ data }) {
     ['Database', [['database.configured','Database URL configured'],['database.engine','Database engine']]],
     ['Object storage', [['object_storage.configured','Credentials configured']]],
     ['Rate limiting & sessions', [['redis.configured','Redis configured'],['operator_session.distributed_rate_limit_configured','Distributed rate limit'],['operator_session.http_only_cookie','HttpOnly session cookie'],['operator_session.secure_cookie','Secure cookie'],['operator_session.same_site','SameSite policy'],['operator_session.ttl_seconds','Session TTL (seconds)']]],
-    ['Browser access', [['cors_origins','Allowed CORS origins'],['metrics_token_configured','Metrics token configured'],['secrets_exposed','Secrets exposed']]]
+    ['Browser access', [['cors_origins','Allowed CORS origins'],['metrics_token_configured','Metrics token configured'],['secrets_exposed','No secrets exposed']]]
   ];
   const get = path => path.split('.').reduce((v,k)=>v?.[k],data);
-  return <div className="settings-grid">{groups.map(([title,fields])=><section className="panel settings-card" key={title}><div className="card-heading"><div><h2>{title}</h2><p>Live runtime configuration</p></div><ShieldCheck size={18}/></div>{fields.map(([path,label])=>{const value=get(path);const safe=path==='secrets_exposed'? !value : value;return <div className="settings-row" key={path}><span>{label}</span><strong className={typeof safe==='boolean'?(safe?'settings-good':'settings-warn'):''}>{renderValue(safe,Array.isArray(safe)?'join':undefined)}</strong></div>})}</section>)}</div>;
+  return <div className="settings-grid">{groups.map(([title,fields])=><section className="panel settings-card" key={title}><div className="card-heading"><div><h2>{title}</h2><p>Live runtime configuration</p></div><ShieldCheck size={18}/></div>{fields.map(([path,label])=>{const value=get(path);const safe=value;return <div className="settings-row" key={path}><span>{label}</span><strong className={typeof safe==='boolean'?(safe?'settings-good':'settings-warn'):''}>{renderValue(safe,Array.isArray(safe)?'join':undefined)}</strong></div>})}</section>)}</div>;
 }
 
-export default function WorkspaceModulePage({page, onRefreshSignal}) {
+export default function WorkspaceModulePage({page, searchTerm=''}) {
   const config = MODULES[page];
   const [data,setData] = useState(null), [loading,setLoading] = useState(true), [error,setError] = useState(''), [query,setQuery] = useState('');
   const load = useCallback(async () => {
@@ -101,7 +101,8 @@ export default function WorkspaceModulePage({page, onRefreshSignal}) {
     catch (e) { setError(e.message || 'Unable to load this workspace module.'); }
     finally { setLoading(false); }
   }, [config.endpoint]);
-  useEffect(() => { load(); }, [load, onRefreshSignal]);
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => { setQuery(searchTerm || ''); }, [searchTerm]);
   if (!config) return null;
   const Icon = config.icon;
   return <div className="module-page">
