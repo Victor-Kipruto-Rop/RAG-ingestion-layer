@@ -19,13 +19,17 @@ import threading
 import time
 import logging
 import asyncio
+import smtplib
+import uuid
+from datetime import datetime, timedelta, timezone
+from email.message import EmailMessage
 
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from .config import settings
 from .database import get_db
-from .models import RegistrySource, IngestionJob, Organization, AuditLog, WarehouseRawImport, WarehouseAccessLog, FailedImportDLQ, IngestionRowError, AdminProfile, AdminNotificationRead, now_utc
+from .models import RegistrySource, IngestionJob, Organization, AuditLog, WarehouseRawImport, WarehouseAccessLog, FailedImportDLQ, IngestionRowError, AdminProfile, AdminNotificationRead, AdminAccount, AdminAuthChallenge, AdminSession, now_utc
 from sqlalchemy import select, func, or_
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
@@ -93,7 +97,7 @@ def _sign(payload: str) -> str:
 
 def issue_session_token(now: float | None = None, *, email: str | None = None, auth_method: str = 'password') -> tuple[str, dict]:
     issued = int(now if now is not None else time.time())
-    claims = {'sub': 'admin', 'iat': issued, 'exp': issued + max(60, settings.session_ttl_seconds), 'csrf': secrets.token_urlsafe(24), 'auth_method': auth_method}
+    claims = {'sub': 'admin', 'jti': str(uuid.uuid4()), 'iat': issued, 'exp': issued + max(60, settings.session_ttl_seconds), 'csrf': secrets.token_urlsafe(24), 'auth_method': auth_method}
     if email:
         claims['email'] = email.strip().lower()
     payload = _b64(json.dumps(claims, separators=(',', ':')).encode())
@@ -116,7 +120,32 @@ def decode_session_token(token: str | None) -> dict | None:
 
 
 def session_from_request(request: Request) -> dict | None:
-    return decode_session_token(request.cookies.get(COOKIE_NAME))
+    claims = decode_session_token(request.cookies.get(COOKIE_NAME))
+    if not claims or not claims.get('jti'):
+        return None
+    try:
+        with SessionLocal() as db:
+            row = db.get(AdminSession, claims['jti'])
+            if not row or row.revoked_at is not None or row.expires_at <= now_utc():
+                return None
+            row.last_seen_at = now_utc()
+            db.commit()
+    except Exception as exc:
+        _rate_logger.warning('admin_session_store_unavailable', error_type=type(exc).__name__)
+        return None
+    return claims
+
+
+def _persist_session(claims: dict, request: Request | None, *, email: str | None, auth_method: str) -> None:
+    now = now_utc()
+    expires = datetime.fromtimestamp(int(claims['exp']), tz=timezone.utc)
+    ip = request.client.host if request and request.client else ''
+    ip_digest = hashlib.sha256(ip.encode()).hexdigest() if ip else None
+    with SessionLocal() as db:
+        db.add(AdminSession(id=claims['jti'], email=email.strip().lower() if email else None,
+            auth_method=auth_method, created_at=now, last_seen_at=now, expires_at=expires,
+            user_agent=(request.headers.get('user-agent', '')[:500] if request else None), ip_digest=ip_digest))
+        db.commit()
 
 def refresh_session_token(claims: dict, now: float | None = None) -> tuple[str, dict]:
     """Issue a sliding-TTL token while preserving the current CSRF secret."""
@@ -181,6 +210,7 @@ def login(payload: LoginRequest, request: Request, response: Response):
     if not verify_password(payload.password, settings.admin_password_hash):
         raise HTTPException(401, 'Invalid credentials')
     token, claims = issue_session_token()
+    _persist_session(claims, request, email=claims.get('email'), auth_method=claims.get('auth_method', 'password'))
     response.set_cookie(COOKIE_NAME, token, max_age=max(60, settings.session_ttl_seconds), httponly=True,
                         secure=settings.session_cookie_secure, samesite='strict', path='/')
     response.headers['Cache-Control'] = 'no-store'
@@ -201,6 +231,16 @@ def logout(request: Request, response: Response):
     claims = session_from_request(request)
     if claims:
         enforce_session_csrf(request, claims)
+        try:
+            with SessionLocal() as db:
+                row = db.get(AdminSession, claims.get('jti'))
+                if row and row.revoked_at is None:
+                    row.revoked_at = now_utc()
+                    db.commit()
+        except Exception as exc:
+            _rate_logger.warning('admin_session_revoke_failed', error_type=type(exc).__name__)
+            if settings.app_env.lower() == 'production':
+                raise HTTPException(503, 'Could not revoke session; retry sign-out') from exc
     response.delete_cookie(COOKIE_NAME, path='/')
     response.headers['Cache-Control'] = 'no-store'
     return None
@@ -239,6 +279,7 @@ def _issue_admin_oauth_session(response: Response, email: str, provider: str) ->
     if not settings.session_secret:
         raise HTTPException(503, 'Dashboard session signing is not configured')
     token, claims = issue_session_token(email=email, auth_method=provider)
+    _persist_session(claims, None, email=email, auth_method=provider)
     response.set_cookie(COOKIE_NAME, token, max_age=max(60, settings.session_ttl_seconds),
                         httponly=True, secure=settings.session_cookie_secure, samesite='strict', path='/')
     response.headers['Cache-Control'] = 'no-store'
