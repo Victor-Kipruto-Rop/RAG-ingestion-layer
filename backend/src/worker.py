@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from .cache import invalidate_lookup_keys
-from .config import settings
+from .config import settings, validate_runtime_config
 from .database import SessionLocal
 from .entity_resolution import similarity_score
 from .ingestion.normalizer import normalize_record
@@ -460,6 +460,7 @@ if __name__ == '__main__':
     parser.add_argument('--batch', action='store_true', help='Process a bounded batch and exit')
     parser.add_argument('--max-jobs', type=int, default=None, help='Override the batch job limit')
     args = parser.parse_args()
+    validate_runtime_config()
     if args.batch:
         run_batch(args.max_jobs)
     else:
