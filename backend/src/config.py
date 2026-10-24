@@ -56,6 +56,17 @@ class Settings(BaseSettings):
  github_oauth_client_id:str=''
  github_oauth_client_secret:str=''
  admin_oauth_allowed_emails:str=''
+ admin_signup_allowed_emails:str=''
+ auth_otp_ttl_seconds:int=600
+ auth_otp_max_attempts:int=5
+ auth_otp_pepper:str=''
+ smtp_host:str=''
+ smtp_port:int=587
+ smtp_username:str=''
+ smtp_password:str=''
+ smtp_from_email:str=''
+ smtp_use_starttls:bool=True
+ smtp_use_ssl:bool=False
  worker_commit_interval_seconds:int=60
  entity_resolution_max_candidates:int=200
  upload_ttl_grace_seconds:int=900
@@ -67,6 +78,10 @@ class Settings(BaseSettings):
  def api_key_list(self): return [x.strip() for x in self.registry_api_keys.split(',') if x.strip()]
  @property
  def admin_oauth_email_list(self): return [x.strip().lower() for x in self.admin_oauth_allowed_emails.split(',') if x.strip()]
+ @property
+ def admin_signup_email_list(self): return [x.strip().lower() for x in self.admin_signup_allowed_emails.split(',') if x.strip()]
+ @property
+ def auth_email_delivery_configured(self): return bool(self.smtp_host and self.smtp_from_email and self.auth_otp_pepper and (self.smtp_username and self.smtp_password or not self.smtp_username and not self.smtp_password))
 @lru_cache
 def get_settings(): return Settings()
 settings=get_settings()
@@ -75,6 +90,10 @@ settings=get_settings()
 def validate_runtime_config():
  if settings.cors_origin_list and '*' in settings.cors_origin_list:
   raise RuntimeError("Invalid configuration: CORS_ORIGINS must list explicit origins; '*' is not allowed because the dashboard uses credentialed requests")
+ if settings.auth_otp_ttl_seconds < 60 or settings.auth_otp_ttl_seconds > 1800 or settings.auth_otp_max_attempts < 1 or settings.auth_otp_max_attempts > 10:
+  raise RuntimeError('Invalid configuration: AUTH_OTP_TTL_SECONDS must be 60-1800 and AUTH_OTP_MAX_ATTEMPTS must be 1-10')
+ if settings.app_env.lower() == 'production' and settings.admin_signup_email_list and not settings.auth_email_delivery_configured:
+  raise RuntimeError('Invalid configuration: SMTP_HOST, SMTP_FROM_EMAIL and AUTH_OTP_PEPPER are required for operator sign-up')
  if settings.admin_password_hash and len(settings.session_secret)<32:
   raise RuntimeError('Invalid configuration: SESSION_SECRET must be at least 32 characters when ADMIN_PASSWORD_HASH is set')
  # Validate worker safety limits in every environment, not only production.
