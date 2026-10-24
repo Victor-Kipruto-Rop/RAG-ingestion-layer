@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { api, setCsrfToken } from './api.js';
 import ApiKeysPanel from './ApiKeysPanel.jsx';
+import DataSourcesPanel from './DataSourcesPanel.jsx';
 
 const NAV = [
   { name: 'Overview', icon: LayoutDashboard, group: 'WORKSPACE' },
@@ -58,7 +59,7 @@ function Sidebar({ page, setPage, mobile, setMobile }) {
           {showGroup && <div className="nav-group-label">{item.group}</div>}
           <button className={`nav-item ${page === item.name ? 'active' : ''}`} onClick={() => { setPage(item.name); setMobile(false); }}>
             <item.icon size={18} strokeWidth={1.8} /><span>{item.name}</span>
-            {item.name === 'Ingestion Jobs' && <span className="nav-count">Live</span>}
+            
           </button>
         </React.Fragment>;
       })}
@@ -199,9 +200,9 @@ export default function App() {
     setLoading(true); setError('');
     try {
       const [metricsResponse, orgResponse, jobsResponse] = await Promise.all([
-        request('/api/v1/metrics/summary'),
-        request(`/api/v1/organizations?page=${orgPage}&page_size=100${search ? `&q=${encodeURIComponent(search)}` : ''}`),
-        request('/api/v1/ingestion/jobs?page_size=50')
+        request('/api/v1/admin/metrics/summary'),
+        request(`/api/v1/admin/organizations?page=${orgPage}&page_size=100${search ? `&q=${encodeURIComponent(search)}` : ''}`),
+        request('/api/v1/admin/ingestion/jobs?page_size=50')
       ]);
       const metrics = await metricsResponse.json();
       const orgResult = await orgResponse.json();
@@ -255,7 +256,7 @@ export default function App() {
         result = await completeResponse.json();
       } else {
         const form = new FormData(); form.append('file', file);
-        const response = await request('/api/v1/ingestion/uploads', { method: 'POST', body: form });
+        const response = await request('/api/v1/admin/ingestion/uploads', { method: 'POST', body: form });
         result = await response.json();
       }
       setMessage(`Queued job ${String(result.job_id || '').slice(0, 8)}. Processing runs asynchronously; refresh the jobs list for the outcome.`);
@@ -266,7 +267,7 @@ export default function App() {
 
   const metrics = summary || {};
   const navToUpload = () => setPage('Upload center');
-  const knownPage = ['Overview', 'Registry Records', 'Ingestion Jobs', 'Upload center', 'API Keys'].includes(page);
+  const knownPage = ['Overview', 'Data Sources', 'Registry Records', 'Ingestion Jobs', 'Upload center', 'API Keys'].includes(page);
 
   return <div className="app-shell">
     {mobile && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setMobile(false)} />}
@@ -294,6 +295,7 @@ export default function App() {
           <section className="infra-section"><div className="section-title"><div><h2>Infrastructure health</h2><p>Connection state reported by the current datasource session</p></div><span className="health-summary"><i /> {connected ? 'API reachable' : 'Awaiting connection'}</span></div><div className="service-grid"><ServiceStatus label="Registry API" detail="Datasource application" value={connected ? 'Connected' : 'Not connected'} connected={connected} icon={Server} /><ServiceStatus label="Database metrics" detail="Registry data access" value={summary ? 'Available' : 'Unknown'} connected={!!summary} icon={Database} /><ServiceStatus label="External verification" detail="KRA / BRS integrations" value="Not configured" connected={false} icon={ShieldCheck} /></div></section>
         </>}
 
+        {page === 'Data Sources' && <DataSourcesPanel onUpload={() => setPage('Upload center')} />}
         {page === 'Ingestion Jobs' && <section className="panel full-panel"><div className="panel-heading"><div><h2>Ingestion jobs</h2><p>Inspect persisted import outcomes and processing counts.</p></div><button className="button-secondary" onClick={refresh} disabled={loading}><RefreshCw size={15} className={loading ? 'spin' : ''} /> Refresh</button></div><JobsTable jobs={jobs} search={search} /></section>}
         {page === 'Registry Records' && <section className="panel full-panel"><div className="panel-heading"><div><h2>Registry records</h2><p>Search imported organizations and inspect source information.</p></div><span className="record-count">{number(orgTotal)} records</span></div><OrganizationsTable rows={orgs} total={orgTotal} page={orgPage} pageSize={100} onPageChange={setOrgPage} /></section>}
         {page === 'API Keys' && <ApiKeysPanel />}
