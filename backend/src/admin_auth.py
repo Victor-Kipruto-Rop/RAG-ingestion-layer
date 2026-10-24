@@ -30,7 +30,9 @@ from sqlalchemy import select, func, or_
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from fastapi import Depends, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, RedirectResponse
+from urllib.parse import urlencode
+import httpx
 from .database import SessionLocal
 
 COOKIE_NAME = 'pg_admin_session'
@@ -200,6 +202,152 @@ def logout(request: Request, response: Response):
     response.delete_cookie(COOKIE_NAME, path='/')
     response.headers['Cache-Control'] = 'no-store'
     return None
+
+
+OAUTH_STATE_TTL_SECONDS = 600
+
+
+def _oauth_callback_url(request: Request, provider: str) -> str:
+    base = settings.public_base_url.strip().rstrip('/')
+    if not base:
+        if settings.app_env.lower() == 'production':
+            raise HTTPException(503, 'PUBLIC_BASE_URL must be configured for production OAuth')
+        base = str(request.base_url).rstrip('/')
+    return f"{base}/api/v1/admin/oauth/{provider}/callback"
+
+
+def _oauth_provider_config(provider: str):
+    if provider == 'google':
+        return settings.google_oauth_client_id, settings.google_oauth_client_secret
+    if provider == 'github':
+        return settings.github_oauth_client_id, settings.github_oauth_client_secret
+    raise HTTPException(404, 'Unsupported OAuth provider')
+
+
+def _oauth_state_cookie(provider: str) -> str:
+    return f"pg_oauth_state_{provider}"
+
+
+def _issue_admin_oauth_session(response: Response, email: str) -> None:
+    allowed = settings.admin_oauth_email_list
+    if not allowed:
+        raise HTTPException(503, 'Social sign-in is not enabled: configure ADMIN_OAUTH_ALLOWED_EMAILS')
+    if email.strip().lower() not in allowed:
+        raise HTTPException(403, 'This identity is not authorized for operator access')
+    if not settings.session_secret:
+        raise HTTPException(503, 'Dashboard session signing is not configured')
+    token, claims = issue_session_token()
+    response.set_cookie(COOKIE_NAME, token, max_age=max(60, settings.session_ttl_seconds),
+                        httponly=True, secure=settings.session_cookie_secure, samesite='strict', path='/')
+    response.headers['Cache-Control'] = 'no-store'
+
+
+@router.get('/oauth/providers')
+def oauth_providers():
+    return {
+        'google': bool(settings.google_oauth_client_id and settings.google_oauth_client_secret and settings.admin_oauth_email_list),
+        'github': bool(settings.github_oauth_client_id and settings.github_oauth_client_secret and settings.admin_oauth_email_list),
+    }
+
+
+@router.get('/oauth/{provider}/start')
+def oauth_start(provider: str, request: Request, response: Response):
+    client_id, client_secret = _oauth_provider_config(provider)
+    if not client_id or not client_secret or not settings.admin_oauth_email_list:
+        raise HTTPException(503, f"{provider.title()} sign-in is not configured for an explicitly allowlisted operator")
+    state = secrets.token_urlsafe(32)
+    response = RedirectResponse(url='/', status_code=303)
+    callback = _oauth_callback_url(request, provider)
+    if provider == 'google':
+        params = {'client_id': client_id, 'redirect_uri': callback, 'response_type': 'code',
+                  'scope': 'openid email profile', 'state': state, 'prompt': 'select_account'}
+        destination = 'https://accounts.google.com/o/oauth2/v2/auth?' + urlencode(params)
+    else:
+        params = {'client_id': client_id, 'redirect_uri': callback, 'response_type': 'code',
+                  'scope': 'read:user user:email', 'state': state}
+        destination = 'https://github.com/login/oauth/authorize?' + urlencode(params)
+    response.headers['Location'] = destination
+    response.set_cookie(_oauth_state_cookie(provider), state, max_age=OAUTH_STATE_TTL_SECONDS,
+                        httponly=True, secure=settings.session_cookie_secure, samesite='lax', path='/api/v1/admin/oauth/')
+    response.headers['Cache-Control'] = 'no-store'
+    return response
+
+
+async def _oauth_identity(provider: str, code: str, callback: str) -> str:
+    client_id, client_secret = _oauth_provider_config(provider)
+    async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
+        if provider == 'google':
+            token_response = await client.post('https://oauth2.googleapis.com/token', data={
+                'code': code, 'client_id': client_id, 'client_secret': client_secret,
+                'redirect_uri': callback, 'grant_type': 'authorization_code',
+            }, headers={'Accept': 'application/json'})
+            if token_response.status_code != 200:
+                raise HTTPException(401, 'Google authorization could not be completed')
+            token = token_response.json().get('access_token')
+            if not token:
+                raise HTTPException(401, 'Google did not return an access token')
+            profile = await client.get('https://openidconnect.googleapis.com/v1/userinfo',
+                                       headers={'Authorization': f'Bearer {token}'})
+            if profile.status_code != 200:
+                raise HTTPException(401, 'Google identity could not be verified')
+            identity = profile.json()
+            if identity.get('email_verified') is not True:
+                raise HTTPException(403, 'Google email must be verified')
+            email = identity.get('email', '')
+        else:
+            token_response = await client.post('https://github.com/login/oauth/access_token', data={
+                'code': code, 'client_id': client_id, 'client_secret': client_secret,
+                'redirect_uri': callback,
+            }, headers={'Accept': 'application/json'})
+            if token_response.status_code != 200:
+                raise HTTPException(401, 'GitHub authorization could not be completed')
+            token = token_response.json().get('access_token')
+            if not token:
+                raise HTTPException(401, 'GitHub did not return an access token')
+            headers = {'Authorization': f'Bearer {token}', 'Accept': 'application/vnd.github+json',
+                       'X-GitHub-Api-Version': '2022-11-28'}
+            profile_response = await client.get('https://api.github.com/user', headers=headers)
+            emails_response = await client.get('https://api.github.com/user/emails', headers=headers)
+            if profile_response.status_code != 200 or emails_response.status_code != 200:
+                raise HTTPException(401, 'GitHub identity could not be verified')
+            emails = emails_response.json()
+            primary = next((item for item in emails if item.get('primary') and item.get('verified')), None)
+            email = primary.get('email', '') if primary else ''
+    if not isinstance(email, str) or '@' not in email:
+        raise HTTPException(403, 'The provider did not supply a verified email address')
+    return email.strip().lower()
+
+
+async def _oauth_callback(provider: str, request: Request):
+    expected = request.cookies.get(_oauth_state_cookie(provider), '')
+    supplied = request.query_params.get('state', '')
+    code = request.query_params.get('code', '')
+    if not expected or not supplied or not hmac.compare_digest(expected, supplied):
+        raise HTTPException(400, 'OAuth state validation failed; restart sign-in')
+    if not code:
+        raise HTTPException(400, 'OAuth provider did not return an authorization code')
+    callback = _oauth_callback_url(request, provider)
+    try:
+        email = await _oauth_identity(provider, code, callback)
+    except httpx.HTTPError as exc:
+        _rate_logger.warning('oauth_provider_unavailable', provider=provider, error_type=type(exc).__name__)
+        raise HTTPException(502, 'Identity provider is temporarily unavailable') from exc
+    if email not in settings.admin_oauth_email_list:
+        raise HTTPException(403, 'This identity is not authorized for operator access')
+    response = RedirectResponse(url='/', status_code=303)
+    _issue_admin_oauth_session(response, email)
+    response.delete_cookie(_oauth_state_cookie(provider), path='/api/v1/admin/oauth/')
+    return response
+
+
+@router.get('/oauth/google/callback', name='google_oauth_callback')
+async def google_oauth_callback(request: Request):
+    return await _oauth_callback('google', request)
+
+
+@router.get('/oauth/github/callback', name='github_oauth_callback')
+async def github_oauth_callback(request: Request):
+    return await _oauth_callback('github', request)
 
 
 if __name__ == '__main__':
