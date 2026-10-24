@@ -126,7 +126,12 @@ def session_from_request(request: Request) -> dict | None:
     try:
         with SessionLocal() as db:
             row = db.get(AdminSession, claims['jti'])
-            if not row or row.revoked_at is not None or row.expires_at <= now_utc():
+            if not row or row.revoked_at is not None:
+                return None
+            expires = row.expires_at
+            if expires.tzinfo is None:
+                expires = expires.replace(tzinfo=timezone.utc)
+            if expires <= datetime.now(timezone.utc):
                 return None
             row.last_seen_at = now_utc()
             db.commit()
@@ -1008,6 +1013,7 @@ def signup_request_otp(payload: SignupRequest, request: Request):
             return {'accepted': True, 'message': 'If this address is eligible, a verification code will be sent.'}
         _create_auth_challenge(db, email=email, purpose='signup', password_hash=password_hash,
                                display_name=payload.display_name.strip())
+    return {'accepted': True, 'message': 'If this address is eligible, a verification code will be sent.'}
 
 
 @router.post('/auth/signup/verify-otp')
@@ -1043,6 +1049,7 @@ def password_reset_request_otp(payload: PasswordResetRequest, request: Request):
             AdminAccount.disabled_at.is_(None)))
         if account:
             _create_auth_challenge(db, email=email, purpose='password_reset')
+    return {'accepted': True, 'message': 'If an active account exists, a reset code will be sent.'}
 
 
 @router.post('/auth/password-reset/confirm')
