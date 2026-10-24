@@ -298,9 +298,8 @@ def dashboard_organizations(request: Request, page: int = 1, page_size: int = 25
     stmt=select(Organization)
     if q and q.strip():
         from sqlalchemy import or_
-        pattern='%'+q.strip().replace('%','\\%').replace('_','\\_')+'%'
-        stmt=stmt.where(or_(Organization.legal_name.ilike(pattern,escape='\\\\'),
-                            Organization.registration_number.ilike(pattern,escape='\\\\')))
+        pattern='%' + q.strip() + '%'
+        stmt=stmt.where(Organization.legal_name.ilike(pattern) | Organization.registration_number.ilike(pattern))
     total=db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     rows=db.scalars(stmt.order_by(Organization.legal_name).offset((page-1)*page_size).limit(page_size)).all()
     return {'items':[{'id':o.id,'legal_name':o.legal_name,'registration_number':o.registration_number,
