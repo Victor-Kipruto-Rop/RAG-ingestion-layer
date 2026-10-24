@@ -18,7 +18,6 @@ import ProfilePage from './ProfilePage.jsx';
 import AuthFlowPage from './AuthFlowPage.jsx';
 import SessionManagementPage from './SessionManagementPage.jsx';
 import DeveloperAccessReviewPage from './DeveloperAccessReviewPage.jsx';
-import DeveloperPortal from './DeveloperPortal.jsx';
 
 const NAV = [
   { name: 'Overview', icon: LayoutDashboard, group: 'WORKSPACE' },
@@ -191,7 +190,7 @@ function ServiceStatus({ label, detail, icon: Icon, value, connected }) {
   return <div className="service-card"><div className="service-icon"><Icon size={19} /></div><div className="service-copy"><strong>{label}</strong><span>{detail}</span></div><StatusPill value={value || (connected ? 'Connected' : 'Unknown')} /></div>;
 }
 
-function AdminApp() {
+export default function App() {
   const [page, setPage] = useState('Overview');
   const [authed, setAuthed] = useState(false);
   const [password, setPassword] = useState('');
@@ -406,13 +405,4 @@ function AdminApp() {
       </div>
     </main>
   </div>;
-}
-
-
-// The public root is the developer-facing website. Keep the existing internal datasource
-// operator console available at /admin rather than presenting it as the developer product.
-export default function App() {
-  const path = typeof window === 'undefined' ? '/' : window.location.pathname;
-  if (path === '/admin' || path.startsWith('/admin/')) return <AdminApp />;
-  return <DeveloperPortal />;
 }
