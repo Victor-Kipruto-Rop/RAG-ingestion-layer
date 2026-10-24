@@ -74,5 +74,44 @@ describe('DeveloperPlatformApp account onboarding', () => {
     const request = requests.find(r => r.url.includes('/auth/signup/request-otp'));
     expect(JSON.parse(request.body)).toMatchObject({ email: 'developer@example.com', display_name: 'Test Developer', workspace_name: 'Test Workspace' });
     expect(screen.getByLabelText(/6-digit email code/i)).toBeTruthy();
+    const successToast = screen.getByRole('status');
+    expect(successToast.textContent).toContain('Success');
+    expect(successToast.querySelector('time')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /dismiss message/i })).toBeTruthy();
+  });
+
+  it('renders API failures as a red-styled dismissible popup with a timestamp', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input, options = {}) => {
+      const url = String(input);
+      if (url.includes('/api/v1/developer/auth/config')) return new Response(JSON.stringify({
+        signup_enabled: true, password_reset_enabled: true, password_min_length: 12,
+        google_enabled: false, github_enabled: false
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      if (url.includes('/api/v1/developer/platform/config')) return new Response(JSON.stringify({
+        sandbox_base_url: 'https://sandbox-api.pesaguard.co.ke',
+        production_base_url: 'https://api.pesaguard.co.ke',
+        key_prefixes: { sandbox: 'pg_sandbox_', production: 'pg_live_' }
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      if (url.includes('/api/v1/developer/auth/session')) return new Response(JSON.stringify({ detail: 'No session' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+      if (url.includes('/api/v1/developer/auth/signup/request-otp') && options.method === 'POST') return new Response(JSON.stringify({ detail: 'Email delivery is unavailable' }), { status: 503, headers: { 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ detail: 'Not found' }), { status: 404, headers: { 'Content-Type': 'application/json' } });
+    }));
+
+    render(<DeveloperPlatformApp />);
+    fireEvent.click(await screen.findByRole('button', { name: /start building/i }));
+    fireEvent.change(screen.getByLabelText(/full name/i), { target: { value: 'Test Developer' } });
+    fireEvent.change(screen.getByLabelText(/workspace name/i), { target: { value: 'Test Workspace' } });
+    fireEvent.change(screen.getByLabelText(/email address/i), { target: { value: 'developer@example.com' } });
+    fireEvent.change(screen.getByLabelText(/^password$/i), { target: { value: 'A-long-unique-password-42' } });
+    fireEvent.change(screen.getByLabelText(/confirm password/i), { target: { value: 'A-long-unique-password-42' } });
+    fireEvent.click(screen.getByRole('button', { name: /send verification code/i }));
+
+    const errorToast = await screen.findByRole('alert');
+    expect(errorToast.className).toContain('dp-toast-popup');
+    expect(errorToast.className).toContain('error');
+    expect(errorToast.textContent).toContain('Email delivery is unavailable');
+    expect(errorToast.querySelector('time')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /dismiss message/i }));
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
   });
 });
