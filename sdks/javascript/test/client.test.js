@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { PesaGuardClient, PesaGuardError } from "../src/index.js";
+import { PesaGuardClient, PesaGuardError, verifyWebhookSignature } from "../src/index.js";
+import { createHmac } from "node:crypto";
 
 test("rejects key/environment mismatch before making a request", () => {
   assert.throws(() => new PesaGuardClient({ apiKey: "pg_live_example", environment: "sandbox" }), /must start/);
@@ -29,4 +30,16 @@ test("lookup requires exactly one identifier", () => {
 test("HTTP failures preserve a typed status and body", async () => {
   const client = new PesaGuardClient({ apiKey: "pg_sandbox_test", fetchImpl: async () => new Response(JSON.stringify({ detail: "forbidden" }), { status: 403 }) });
   await assert.rejects(() => client.search("example"), error => error instanceof PesaGuardError && error.statusCode === 403 && error.responseBody.detail === "forbidden");
+});
+
+
+test("webhook signature verifier accepts valid signatures and rejects tampering/replay", () => {
+  const payload = Buffer.from('{"id":"evt_1"}');
+  const secret = "whsec_test_secret";
+  const timestamp = 1800000000;
+  const signature = createHmac("sha256", secret).update(String(timestamp)).update(".").update(payload).digest("hex");
+  const header = `t=${timestamp},v1=${signature}`;
+  assert.equal(verifyWebhookSignature(payload, header, secret, { now: timestamp }), true);
+  assert.equal(verifyWebhookSignature(Buffer.concat([payload, Buffer.from(" ")]), header, secret, { now: timestamp }), false);
+  assert.equal(verifyWebhookSignature(payload, header, secret, { now: timestamp + 1000 }), false);
 });
