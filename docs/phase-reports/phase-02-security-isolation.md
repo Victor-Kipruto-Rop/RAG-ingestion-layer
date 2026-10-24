@@ -26,5 +26,11 @@
 - Run all security tests against disposable SQLite and PostgreSQL.
 - Document residual risks and do not represent the system as production-ready before the exit gate passes.
 
+## Additional hardening in the current tranche
+- Added recursive customer-response redaction for common personal, tax, and credential fields in nested imported payloads.
+- Added a dedicated rate-limit bucket for paginated organization enumeration as well as registry lookup/search.
+- Added regression tests for redaction and the enumerated rate-limit path contract.
+- These are defense-in-depth changes; imported payloads still require a documented field-classification/allowlist policy for every supported provider schema.
+
 ## Decision
-The targeted API-key authorization change is implemented but unverified. Phase 2 remains open.
+The targeted API-key authorization and response-hardening changes are implemented but unverified. Phase 2 remains open.
