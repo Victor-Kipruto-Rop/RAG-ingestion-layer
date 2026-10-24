@@ -6,4 +6,5 @@ import './index.css';
 import './datasources.css';
 import './login.css';
 import './workspace-modules.css';
+import './glass-theme.css';
 createRoot(document.getElementById('root')).render(<React.StrictMode><AppErrorBoundary><App/></AppErrorBoundary></React.StrictMode>);
