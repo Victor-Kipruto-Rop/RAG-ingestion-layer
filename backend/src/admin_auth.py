@@ -467,10 +467,10 @@ async def workspace_stream(request: Request):
                             'error_summary': j.error_summary, 'source_name': j.source_name} for j in jobs],
                         'generated_at': __import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat()
                     }
-                yield 'event: workspace\\ndata: ' + json.dumps(payload, separators=(',', ':')) + '\\n\\n'
+                yield 'event: workspace\ndata: ' + json.dumps(payload, separators=(',', ':')) + '\n\n'
             except Exception:
                 _rate_logger.exception('workspace_sse_snapshot_failed')
-                yield 'event: error\\ndata: {"message":"Workspace snapshot temporarily unavailable"}\\n\\n'
+                yield 'event: error\ndata: {"message":"Workspace snapshot temporarily unavailable"}\\n\\n'
             await asyncio.sleep(5)
 
     return StreamingResponse(events(), media_type='text/event-stream',
