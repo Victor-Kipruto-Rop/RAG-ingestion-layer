@@ -76,3 +76,41 @@ describe('DeveloperPlatformApp account onboarding', () => {
     expect(screen.getByLabelText(/6-digit email code/i)).toBeTruthy();
   });
 });
+
+
+describe('DeveloperPlatformApp password recovery', () => {
+  it('requests a password-reset OTP and advances to code verification', async () => {
+    const requests = [];
+    vi.stubGlobal('fetch', vi.fn(async (input, options = {}) => {
+      const url = String(input);
+      requests.push({ url, method: options.method || 'GET', body: options.body });
+      if (url.includes('/api/v1/developer/auth/config')) return new Response(JSON.stringify({
+        signup_enabled: true, password_reset_enabled: true, password_min_length: 12,
+        social_auth_enabled: false, google_enabled: false, github_enabled: false
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      if (url.includes('/api/v1/developer/platform/config')) return new Response(JSON.stringify({
+        sandbox_base_url: 'https://sandbox-api.pesaguard.co.ke',
+        production_base_url: 'https://api.pesaguard.co.ke',
+        key_prefixes: { sandbox: 'pg_sandbox_', production: 'pg_live_' },
+        sdk_languages: ['cURL', 'JavaScript', 'Python', 'PHP', 'Go', 'Java', 'Ruby', 'C#']
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      if (url.includes('/api/v1/developer/auth/session')) return new Response(JSON.stringify({
+        detail: 'Developer session is missing or expired'
+      }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+      if (url.includes('/api/v1/developer/auth/password-reset/request-otp')) return new Response(JSON.stringify({
+        accepted: true, message: 'If an active account exists for this address, a reset code will arrive shortly.'
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ detail: 'Not found' }), { status: 404, headers: { 'Content-Type': 'application/json' } });
+    }));
+
+    render(<DeveloperPlatformApp />);
+    fireEvent.click(await screen.findByRole('button', { name: /^sign in$/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /forgot password/i }));
+    fireEvent.change(screen.getByLabelText(/email address/i), { target: { value: 'developer@example.com' } });
+    fireEvent.click(screen.getByRole('button', { name: /continue securely/i }));
+
+    expect(await screen.findByRole('heading', { name: /verify reset code/i })).toBeTruthy();
+    await waitFor(() => expect(requests.some(r => r.url.includes('/auth/password-reset/request-otp') && r.method === 'POST')).toBe(true));
+    expect(screen.getByLabelText(/6-digit email code/i)).toBeTruthy();
+  });
+});
