@@ -19,3 +19,9 @@ description: Use when working on organization-scoped endpoints, PesaGuard authen
 A user in tenant A must not read or mutate tenant B's organization or evidence.
 
 undefined
+
+## Mandatory quality gates
+- Add tests for unauthenticated, insufficient-permission, same-tenant allowed, and cross-tenant denied cases.
+- Establish organization ownership from trusted server-side tenant context before making the upstream call.
+- Avoid leaking whether a foreign organization's record exists in error messages.
+- Any tenant-isolation failure is a release blocker; do not waive it for local convenience.
