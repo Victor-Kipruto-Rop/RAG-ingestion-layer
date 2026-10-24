@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field
 from .config import settings
 from .database import get_db
 from .models import RegistrySource, IngestionJob, Organization, AuditLog, WarehouseRawImport, WarehouseAccessLog, FailedImportDLQ, IngestionRowError
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from fastapi import Depends, UploadFile
@@ -318,12 +318,15 @@ def dashboard_delete_source(source_id: str, request: Request, db: Session = Depe
 
 
 @router.get('/ingestion/jobs')
-def dashboard_ingestion_jobs(request: Request, page: int = 1, page_size: int = 50, status: str | None = None,
+def dashboard_ingestion_jobs(request: Request, page: int = 1, page_size: int = 50, status: str | None = None, q: str | None = None,
                              db: Session = Depends(get_db)):
     require_admin(request)
     page = max(1,page); page_size = max(1,min(page_size,100))
     stmt = select(IngestionJob)
     if status: stmt = stmt.where(IngestionJob.status == status.upper())
+    if q and q.strip():
+        pattern = '%' + q.strip()[:200] + '%'
+        stmt = stmt.where(or_(IngestionJob.file_name.ilike(pattern), IngestionJob.source_name.ilike(pattern), IngestionJob.status.ilike(pattern), IngestionJob.id.ilike(pattern)))
     total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     rows = db.scalars(stmt.order_by(IngestionJob.created_at.desc()).offset((page-1)*page_size).limit(page_size)).all()
     return {'items':[{'id':j.id,'file_name':j.file_name,'source_id':j.source_id,'source_name':j.source_name,'status':j.status,
