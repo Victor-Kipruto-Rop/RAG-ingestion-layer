@@ -17,3 +17,5 @@ description: Use when implementing or testing the organization registry lookup e
 
 ## Acceptance
 Contract tests must prove the request shape, response validation, safe error mapping, sensitive-field filtering, and no verification-state mutation.
+
+undefined
