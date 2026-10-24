@@ -215,7 +215,7 @@ export default function App() {
         request('/api/v1/admin/registry/overview').then(r => r.json()),
         request('/api/v1/admin/ingestion/activity?limit=50').then(r => r.json()),
         request('/api/v1/admin/organizations?page=' + orgPage + '&page_size=100' + (search ? '&q=' + encodeURIComponent(search) : '')).then(r => r.json()),
-        request('/api/v1/admin/ingestion/jobs?page=' + jobsPage + '&page_size=25').then(r => r.json())
+        request('/api/v1/admin/ingestion/jobs?page=' + jobsPage + '&page_size=25' + (search ? '&q=' + encodeURIComponent(search) : '')).then(r => r.json())
       ]);
       const [metricsResult, registryResult, activityResult, orgResult, jobsResult] = results;
       if (metricsResult.status === 'fulfilled') {
