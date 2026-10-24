@@ -1,6 +1,6 @@
 import React,{useState} from 'react';
-import {ArrowRight,Database,Eye,EyeOff,LockKeyhole,ShieldCheck,Activity} from 'lucide-react';
-export default function LoginPage({password,setPassword,onSubmit,error,busy=false}){
+import {ArrowRight,Database,Eye,EyeOff,LockKeyhole,ShieldCheck,Activity,Github,Globe} from 'lucide-react';
+export default function LoginPage({password,setPassword,onSubmit,error,busy=false,oauthProviders={}}){
  const [visible,setVisible]=useState(false);
  return <main className="login-screen">
   <section className="login-story"><div className="login-brand"><img className="login-logo" src="/pesaguard-logo.svg" alt="PesaGuard" /></div>
@@ -13,7 +13,9 @@ export default function LoginPage({password,setPassword,onSubmit,error,busy=fals
    {error&&<div className="login-error" role="alert"><ShieldCheck size={16}/><span>{error}</span></div>}
    <form className="login-form" onSubmit={onSubmit}><label htmlFor="admin-password">Admin password</label><div className="login-password"><LockKeyhole size={16}/><input id="admin-password" type={visible?'text':'password'} value={password} onChange={e=>setPassword(e.target.value)} autoComplete="current-password" placeholder="Enter your admin password" required autoFocus/><button type="button" aria-label={visible?'Hide password':'Show password'} onClick={()=>setVisible(v=>!v)}>{visible?<EyeOff size={17}/>:<Eye size={17}/>}</button></div>
     <p className="login-hint"><ShieldCheck size={14}/> Password is verified by the backend. Session cookies are HttpOnly.</p><button className="login-submit" disabled={busy||!password}>{busy?'Signing in…':<>Sign in to workspace <ArrowRight size={17}/></>}</button>
-   </form><div className="login-help"><strong>Need access?</strong><p>Contact your PesaGuard workspace administrator to obtain an authorized admin credential.</p></div><div className="login-legal">Access is monitored. Sign in only if you are authorized to use this workspace.</div>
+   </form>
+   {(oauthProviders.google || oauthProviders.github) && <div className="login-social-group"><div className="login-social-divider"><span>OR CONTINUE WITH</span></div><div className="login-social-buttons">{oauthProviders.google && <a className="login-social" href={`${import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.DEV ? 'http://localhost:8000' : '')}/api/v1/admin/oauth/google/start`}><Globe size={17}/> Continue with Google</a>}{oauthProviders.github && <a className="login-social" href={`${import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.DEV ? 'http://localhost:8000' : '')}/api/v1/admin/oauth/github/start`}><Github size={17}/> Continue with GitHub</a>}</div></div>}
+   <div className="login-help"><strong>Need access?</strong><p>Contact your PesaGuard workspace administrator to obtain an authorized admin credential.</p></div><div className="login-legal">Access is monitored. Sign in only if you are authorized to use this workspace.</div>
   </div></section>
  </main>;
 }
