@@ -13,6 +13,8 @@ from sqlalchemy.orm import Session
 from .config import settings
 from .database import get_db, SessionLocal
 from .models import ApiKey, ApiKeyAuditEvent, DeveloperAccount, DeveloperWorkspace, DeveloperSession, DeveloperWebhook
+from .email_service import send_transactional_email
+import logging
 
 router = APIRouter(prefix="/api/v1/keys", tags=["API key management"])
 
@@ -215,6 +217,21 @@ def _serialize(row: ApiKey):
             "last_used_at": row.last_used_at.isoformat() if row.last_used_at else None,
             "expires_at": row.expires_at.isoformat() if row.expires_at else None}
 
+def _queue_key_email(background_tasks: BackgroundTasks, claims: dict, *, template_id: str, subject: str, body: str, event_id: str):
+    email = claims.get("email")
+    if not isinstance(email, str) or "@" not in email:
+        return
+    background_tasks.add_task(_send_key_email_best_effort, email, subject, body, template_id, event_id)
+
+
+def _send_key_email_best_effort(email: str, subject: str, body: str, template_id: str, event_id: str):
+    try:
+        send_transactional_email(email, subject, body, template_id=template_id, idempotency_key=event_id)
+    except Exception as exc:
+        logging.getLogger(__name__).warning("api_key_notice_failed template=%s error_type=%s",
+                                            template_id, type(exc).__name__)
+
+
 def _queue_workspace_webhook_event(background_tasks: BackgroundTasks, workspace_id: str, event_type: str, payload: dict):
     """Queue signed event deliveries only for endpoints owned by this workspace."""
     # Local import avoids a module-import cycle with the developer platform router.
@@ -256,6 +273,10 @@ def create_api_key(payload: CreateApiKey, background_tasks: BackgroundTasks, cla
     _queue_workspace_webhook_event(background_tasks, str(claims["org_id"]), "api_key.created",
         {"id": result["id"], "name": result["name"], "environment": result["environment"],
          "key_prefix": result["key_prefix"], "scopes": result["scopes"], "expires_at": result["expires_at"]})
+    _queue_key_email(background_tasks, claims, template_id="api_key.created",
+        subject=f"PesaGuard {result['environment']} API key created",
+        body=f"An API key named {result['name']} was created for the {result['environment']} environment.\n\nKey prefix: {result['key_prefix']}\nScopes: {', '.join(result['scopes'])}\n\nFor security, PesaGuard will never email the full secret. If you did not create this key, revoke it immediately and review your audit events.",
+        event_id=f"api-key-created:{result['id']}")
     return result
 
 @router.post("/{key_id}/rotate", status_code=201)
@@ -283,6 +304,10 @@ def rotate_api_key(key_id: str, background_tasks: BackgroundTasks, claims: dict 
     _queue_workspace_webhook_event(background_tasks, str(claims["org_id"]), "api_key.rotated",
         {"id": result["id"], "name": result["name"], "environment": result["environment"],
          "key_prefix": result["key_prefix"], "scopes": result["scopes"], "expires_at": result["expires_at"]})
+    _queue_key_email(background_tasks, claims, template_id="api_key.rotated",
+        subject=f"PesaGuard {env} API key rotated",
+        body=f"The API key named {name} was rotated in the {env} environment.\n\nNew key prefix: {result['key_prefix']}\nThe old key has been revoked. Update your integration using the new secret shown once in the dashboard; it is not included in this email. If you did not request this rotation, review your workspace audit events.",
+        event_id=f"api-key-rotated:{old_id}:{result['id']}")
     return result
 
 
@@ -298,6 +323,10 @@ def revoke_api_key(key_id: str, background_tasks: BackgroundTasks, claims: dict 
         db.commit()
         _queue_workspace_webhook_event(background_tasks, str(claims["org_id"]), "api_key.revoked",
             {"id": row.id, "name": row.name, "environment": row.environment, "key_prefix": row.key_prefix})
+        _queue_key_email(background_tasks, claims, template_id="api_key.revoked",
+            subject=f"PesaGuard {row.environment} API key revoked",
+            body=f"The API key named {row.name} ({row.key_prefix}) was revoked in the {row.environment} environment. Requests using this key should now fail authentication. If you did not revoke it, review your audit events and rotate any other potentially exposed credentials.",
+            event_id=f"api-key-revoked:{row.id}")
     return None
 
 @router.get("/audit/events")
