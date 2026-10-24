@@ -61,6 +61,8 @@ class Settings(BaseSettings):
  auth_otp_ttl_seconds:int=600
  auth_otp_max_attempts:int=5
  auth_otp_pepper:str=''
+ resend_api_key:str=''
+ resend_from_email:str=''
  smtp_host:str=''
  smtp_port:int=587
  smtp_username:str=''
@@ -92,7 +94,10 @@ class Settings(BaseSettings):
  @property
  def admin_signup_email_list(self): return [x.strip().lower() for x in self.admin_signup_allowed_emails.split(',') if x.strip()]
  @property
- def auth_email_delivery_configured(self): return bool(self.smtp_host and self.smtp_from_email and self.auth_otp_pepper and (self.smtp_username and self.smtp_password or not self.smtp_username and not self.smtp_password))
+ def auth_email_delivery_configured(self):
+  resend_ready = bool(self.resend_api_key and self.resend_from_email)
+  smtp_ready = bool(self.smtp_host and self.smtp_from_email and (self.smtp_username and self.smtp_password or not self.smtp_username and not self.smtp_password))
+  return bool(self.auth_otp_pepper and (resend_ready or smtp_ready))
 @lru_cache
 def get_settings(): return Settings()
 settings=get_settings()
