@@ -1,5 +1,5 @@
 from src.api import _mask_payload, _mask_pin
-from src.security import requires_lookup_rate_limit
+from src.security import _customer_rate_limit_identity, requires_lookup_rate_limit
 
 
 def test_customer_payload_redaction_handles_nested_personal_and_credential_fields():
@@ -42,3 +42,14 @@ def test_registry_record_enumeration_paths_are_rate_limited():
 def test_non_enumeration_paths_do_not_use_lookup_rate_limit_bucket():
     assert not requires_lookup_rate_limit("/api/v1/health")
     assert not requires_lookup_rate_limit("/api/v1/sources")
+
+
+def test_customer_rate_limit_bucket_is_shared_by_keys_in_the_same_tenant():
+    first_key_identity = _customer_rate_limit_identity("org-1")
+    second_key_identity = _customer_rate_limit_identity("org-1")
+    other_tenant_identity = _customer_rate_limit_identity("org-2")
+
+    assert first_key_identity == second_key_identity
+    assert first_key_identity != other_tenant_identity
+    assert first_key_identity.startswith("customer-api-key:")
+    assert "org-1" not in first_key_identity
