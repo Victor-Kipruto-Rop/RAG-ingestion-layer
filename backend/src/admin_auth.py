@@ -470,7 +470,7 @@ async def workspace_stream(request: Request):
                 yield 'event: workspace\ndata: ' + json.dumps(payload, separators=(',', ':')) + '\n\n'
             except Exception:
                 _rate_logger.exception('workspace_sse_snapshot_failed')
-                yield 'event: error\ndata: {"message":"Workspace snapshot temporarily unavailable"}\\n\\n'
+                yield 'event: error\ndata: {"message":"Workspace snapshot temporarily unavailable"}\n\n'
             await asyncio.sleep(5)
 
     return StreamingResponse(events(), media_type='text/event-stream',
