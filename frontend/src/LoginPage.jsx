@@ -1,5 +1,5 @@
 import React,{useState} from 'react';
-import {ArrowRight,Eye,EyeOff,LockKeyhole,ShieldCheck,Activity} from 'lucide-react';
+import {ArrowRight,Database,Eye,EyeOff,LockKeyhole,ShieldCheck,Activity} from 'lucide-react';
 export default function LoginPage({password,setPassword,onSubmit,error,busy=false}){
  const [visible,setVisible]=useState(false);
  return <main className="login-screen">
