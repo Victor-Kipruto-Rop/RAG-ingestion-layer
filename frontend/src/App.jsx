@@ -60,7 +60,7 @@ function Sidebar({ page, setPage, mobile, setMobile, connected }) {
         group = item.group;
         return <React.Fragment key={item.name}>
           {showGroup && <div className="nav-group-label">{item.group}</div>}
-          <button className={`nav-item ${page === item.name ? 'active' : ''}`} onClick={() => { setPage(item.name); setMobile(false); }}>
+          <button className={`nav-item ${page === item.name ? 'active' : ''}`} aria-current={page === item.name ? "page" : undefined} onClick={() => { setPage(item.name); setMobile(false); }}>
             <item.icon size={18} strokeWidth={1.8} /><span>{item.name}</span>
             
           </button>
