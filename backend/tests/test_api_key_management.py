@@ -9,7 +9,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from src import api_keys
-from src.api_keys import CreateApiKey, _create_key, require_user_claims, rotate_api_key
+from src.api_keys import CreateApiKey, _create_key, require_user_claims, rotate_api_key, list_api_keys, list_key_audit, current_identity
 from src.config import settings
 from src.database import Base
 from src.models import ApiKey, ApiKeyAuditEvent
@@ -137,4 +137,24 @@ def test_pesaguard_rotating_jwt_key_id_is_honoured(monkeypatch):
 def test_refresh_token_is_not_accepted_as_customer_identity(jwt_settings):
     with pytest.raises(HTTPException) as refused:
         require_user_claims(_token(type='refresh'))
+    assert refused.value.status_code == 401
+
+
+def test_key_and_audit_lists_are_scoped_to_authenticated_tenant(db):
+    first = _create_key(db, _claims(org_id='tenant-a'), CreateApiKey(name='Tenant A', environment='sandbox'))
+    _create_key(db, _claims(org_id='tenant-b', sub='user-b'), CreateApiKey(name='Tenant B', environment='sandbox'))
+    assert [item['id'] for item in list_api_keys(claims=_claims(org_id='tenant-a'), db=db)['items']] == [first['id']]
+    audit = list_key_audit(claims=_claims(org_id='tenant-a'), db=db, limit=100)
+    assert audit['items'] and all(item.get('action') == 'api_key.created' for item in audit['items'])
+    assert current_identity(claims=_claims(org_id='tenant-a', tenant_id='tenant-a'))['organization_id'] == 'tenant-a'
+
+
+def test_pesaguard_organization_id_claim_is_used_as_key_partition(jwt_settings):
+    token = _token(org_id=None, organization_id='org-from-pesaguard')
+    assert require_user_claims(token)['org_id'] == 'org-from-pesaguard'
+
+
+def test_access_token_without_organization_or_tenant_is_rejected(jwt_settings):
+    with pytest.raises(HTTPException) as refused:
+        require_user_claims(_token(org_id=None, tenant_id=None))
     assert refused.value.status_code == 401
