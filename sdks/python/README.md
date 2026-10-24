@@ -37,3 +37,19 @@ The client rejects a key prefix that does not match its selected environment, an
 - `PesaGuardError` — API/network errors, with `status_code` and `response_body` where available.
 
 This client uses the public read-only lookup/search surface. It does not create payments, certify government records, or grant access to internal ingestion or warehouse operations.
+
+
+## Webhook signature verification
+
+Verify the exact raw request body before parsing JSON. The timestamped HMAC verifier uses a constant-time comparison and a default five-minute replay window:
+
+```python
+from pesaguard import verify_webhook_signature
+
+raw_body = request.get_data(cache=True, as_text=False)  # Flask example
+signature = request.headers.get("PesaGuard-Signature", "")
+if not verify_webhook_signature(raw_body, signature, webhook_secret):
+    abort(401)
+```
+
+Run SDK tests with `python -m pip install -e ".[test]" && pytest`.
