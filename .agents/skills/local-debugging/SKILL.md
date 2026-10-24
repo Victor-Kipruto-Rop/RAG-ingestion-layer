@@ -21,3 +21,9 @@ description: Use when local services fail to start, cannot connect, return unhea
 Never disable auth, TLS enforcement, validation, health checks, or rate limiting as a shortcut. Do not dump full environment variables or sensitive request bodies.
 
 undefined
+
+## Mandatory quality gates
+- Redact tokens, cookies, API keys, PINs, personal data, and sensitive payloads before sharing logs.
+- Do not dump the full environment or run destructive cleanup to clear a symptom.
+- Verify connectivity from the actual process/container network namespace.
+- Make one narrow fix at a time and rerun the failing reproduction plus regression checks.
