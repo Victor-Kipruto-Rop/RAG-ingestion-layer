@@ -17,7 +17,7 @@ from . import models
 from .api import router
 from .api_keys import router as api_keys_router
 from .admin_auth import router as admin_router, COOKIE_NAME, session_from_request, refresh_session_token
-from .models import WarehouseAccessLog
+from .models import WarehouseAccessLog, AdminSession, now_utc
 from . import storage as storage_module
 from .security import _redis_client
 structlog.configure(processors=[structlog.processors.TimeStamper(fmt='iso'),structlog.processors.add_log_level,structlog.processors.format_exc_info,structlog.processors.JSONRenderer()],logger_factory=structlog.stdlib.LoggerFactory())
@@ -79,6 +79,15 @@ async def sliding_admin_session(request: Request, call_next):
   claims = session_from_request(request)
   if claims:
    token, renewed = refresh_session_token(claims)
+   try:
+    with SessionLocal() as db:
+     session_row = db.get(AdminSession, claims.get('jti'))
+     if session_row and session_row.revoked_at is None:
+      session_row.expires_at = datetime.fromtimestamp(int(renewed['exp']), tz=timezone.utc)
+      session_row.last_seen_at = now_utc()
+      db.commit()
+   except Exception as exc:
+    log.warning('admin_session_refresh_persist_failed', error_type=type(exc).__name__)
    response.set_cookie(COOKIE_NAME, token, max_age=max(60, settings.session_ttl_seconds),
                        httponly=True, secure=settings.session_cookie_secure, samesite='strict', path='/')
    response.headers['Cache-Control'] = 'no-store'
