@@ -38,8 +38,36 @@ def _mask_pin(value):
     return '*' * max(0, len(value) - 2) + value[-2:]
 
 
+_CUSTOMER_REDACTED_KEY_PARTS = (
+    "pin", "tax", "nationalid", "passport", "phone", "mobile", "email",
+    "birth", "dob", "director", "shareholder", "beneficialowner",
+    "bankaccount", "accountnumber", "password", "secret", "token",
+    "credential", "residentialaddress", "personaladdress", "contactperson",
+)
+
+
+def _mask_payload_value(value):
+    """Recursively redact common personal, tax, and credential fields in imported payloads."""
+    if isinstance(value, dict):
+        result = {}
+        for key, item in value.items():
+            normalized_key = re.sub(r"[^a-z0-9]", "", str(key).lower())
+            if any(part in normalized_key for part in _CUSTOMER_REDACTED_KEY_PARTS):
+                result[key] = "[REDACTED]"
+            else:
+                result[key] = _mask_payload_value(item)
+        return result
+    if isinstance(value, list):
+        return [_mask_payload_value(item) for item in value]
+    if isinstance(value, tuple):
+        return [_mask_payload_value(item) for item in value]
+    return value
+
+
 def _mask_payload(payload):
-    return {k: ('[REDACTED]' if ('pin' in k.lower() or 'tax' in k.lower()) else v) for k, v in (payload or {}).items()}
+    if isinstance(payload, dict):
+        return _mask_payload_value(payload)
+    return {}
 
 
 def org_out(o, mask=False):
