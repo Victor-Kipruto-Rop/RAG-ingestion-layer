@@ -15,6 +15,8 @@ import WorkspaceModulePage from './WorkspaceModulePage.jsx';
 import DocumentationPage from './DocumentationPage.jsx';
 import NotificationsPage from './NotificationsPage.jsx';
 import ProfilePage from './ProfilePage.jsx';
+import AuthFlowPage from './AuthFlowPage.jsx';
+import SessionManagementPage from './SessionManagementPage.jsx';
 
 const NAV = [
   { name: 'Overview', icon: LayoutDashboard, group: 'WORKSPACE' },
@@ -28,6 +30,7 @@ const NAV = [
   { name: 'API Keys', icon: KeyRound, group: 'ADMINISTRATION' },
   { name: 'Settings', icon: Settings, group: 'ADMINISTRATION' },
   { name: 'Profile', icon: UserRound, group: 'ACCOUNT' },
+  { name: 'Sessions', icon: ShieldCheck, group: 'ACCOUNT' },
   { name: 'Notifications', icon: BellRing, group: 'ACCOUNT' },
   { name: 'Documentation', icon: BookOpen, group: 'RESOURCES' },
 ];
@@ -189,6 +192,9 @@ export default function App() {
   const [page, setPage] = useState('Overview');
   const [authed, setAuthed] = useState(false);
   const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('');
+  const [authMode, setAuthMode] = useState('login');
+  const [authConfig, setAuthConfig] = useState({ signup_enabled: false, password_reset_enabled: false, password_min_length: 12, otp_ttl_seconds: 600 });
   const [checking, setChecking] = useState(true);
   const [signingIn, setSigningIn] = useState(false);
   const [connected, setConnected] = useState(false);
@@ -292,6 +298,7 @@ export default function App() {
 
   useEffect(() => {
     api('/api/v1/admin/oauth/providers').then(r => r.json()).then(setOauthProviders).catch(() => setOauthProviders({ google: false, github: false }));
+    api('/api/v1/admin/auth/config').then(r => r.json()).then(setAuthConfig).catch(() => setAuthConfig({ signup_enabled: false, password_reset_enabled: false, password_min_length: 12, otp_ttl_seconds: 600 }));
   }, []);
 
   useEffect(() => {
@@ -306,9 +313,10 @@ export default function App() {
     event.preventDefault();
     setError(''); setSigningIn(true);
     try {
-      const response = await api('/api/v1/admin/login', { method: 'POST', body: JSON.stringify({ password }) });
+      const credentials = email.trim() ? { email: email.trim(), password } : { password };
+      const response = await api('/api/v1/admin/login', { method: 'POST', body: JSON.stringify(credentials) });
       setCsrfToken((await response.json()).csrf_token);
-      setPassword(''); setAuthed(true);
+      setPassword(''); setAuthMode('login'); setAuthed(true);
     } catch (e) { setError(e.message || 'Sign-in failed.'); }
     finally { setSigningIn(false); }
   };
@@ -347,9 +355,11 @@ export default function App() {
 
   const metrics = summary || {};
   const navToUpload = () => setPage('Upload center');
-  const knownPage = ['Overview', 'Data Sources', 'Registry Records', 'Ingestion Jobs', 'Upload center', 'API Keys', 'Data Quality', 'Warehouse', 'Validation Rules', 'Audit Logs', 'Settings', 'Profile', 'Notifications', 'Documentation'].includes(page);
+  const knownPage = ['Overview', 'Data Sources', 'Registry Records', 'Ingestion Jobs', 'Upload center', 'API Keys', 'Data Quality', 'Warehouse', 'Validation Rules', 'Audit Logs', 'Settings', 'Profile', 'Sessions', 'Notifications', 'Documentation'].includes(page);
 
-  if (!authed && !checking) return <LoginPage password={password} setPassword={setPassword} onSubmit={signIn} error={error} busy={signingIn} oauthProviders={oauthProviders} />;
+  const completeAuthFlow = result => { setCsrfToken(result.csrf_token); setPassword(''); setEmail(result.identity_email || email); setAuthMode('login'); setError(''); setAuthed(true); };
+  if (!authed && !checking && authMode !== 'login') return <AuthFlowPage mode={authMode} config={authConfig} onBack={() => { setAuthMode('login'); setError(''); }} onAuthenticated={completeAuthFlow} />;
+  if (!authed && !checking) return <LoginPage email={email} setEmail={setEmail} password={password} setPassword={setPassword} onSubmit={signIn} error={error} busy={signingIn} oauthProviders={oauthProviders} authConfig={authConfig} onAuthMode={setAuthMode} />;
 
   return <div className="app-shell">
     {mobile && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setMobile(false)} />}
@@ -383,6 +393,9 @@ export default function App() {
         {page === 'API Keys' && <WidgetErrorBoundary label="API Keys"><ApiKeysPanel readOnly={previewMode} searchTerm={search} /></WidgetErrorBoundary>}
         {['Data Quality', 'Warehouse', 'Validation Rules', 'Audit Logs', 'Settings'].includes(page) && <WidgetErrorBoundary label={page}><WorkspaceModulePage page={page} searchTerm={search} /></WidgetErrorBoundary>}
         {page === 'Documentation' && <WidgetErrorBoundary label="Documentation"><DocumentationPage /></WidgetErrorBoundary>}
+        {page === 'Profile' && <WidgetErrorBoundary label="Profile"><ProfilePage /></WidgetErrorBoundary>}
+        {page === 'Sessions' && <WidgetErrorBoundary label="Sessions"><SessionManagementPage onCurrentSessionRevoked={signOut} /></WidgetErrorBoundary>}
+        {page === 'Notifications' && <WidgetErrorBoundary label="Notifications"><NotificationsPage onViewJobs={() => setPage('Ingestion Jobs')} /></WidgetErrorBoundary>
         {page === 'Notifications' && <WidgetErrorBoundary label="Notifications"><NotificationsPage onViewJobs={() => setPage('Ingestion Jobs')} /></WidgetErrorBoundary>}
         {page === 'Profile' && <WidgetErrorBoundary label="Profile"><ProfilePage /></WidgetErrorBoundary>}
         {page === 'Upload center' && <WidgetErrorBoundary label="Upload center"><section className="panel upload-panel"><div className="panel-heading"><div><h2>Upload dataset</h2><p>Submit registry files for asynchronous ingestion.</p></div><div className="heading-icon"><Upload size={18} /></div></div><form onSubmit={upload} className="upload-form"><label className="dropzone"><input type="file" accept=".csv,.pdf" onChange={e => setFile(e.target.files?.[0] || null)} /><span className="dropzone-icon"><Upload size={25} /></span><strong>{file ? file.name : 'Choose a dataset to upload'}</strong><span>{file ? `${(file.size / 1048576).toFixed(2)} MB · ready to submit` : 'Drag a file here or browse from your device'}</span><small>CSV and PDF · backend size limits apply</small></label><div className="upload-actions"><p>Only upload datasets you are authorized to process. PDF files may be stored even where structured extraction is not yet enabled.</p><button className="button-primary" disabled={!file || loading || previewMode}>{loading ? 'Submitting…' : <><Upload size={16} /> Queue import</>}</button></div></form></section></WidgetErrorBoundary>}
