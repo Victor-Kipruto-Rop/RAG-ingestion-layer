@@ -479,6 +479,8 @@ def admin_review_developer_production_request(
         raise HTTPException(409, "Only pending requests can be reviewed")
     if payload.status == "approved" and workspace.verified is not True:
         raise HTTPException(409, "Verify the workspace with authoritative evidence before approving production access")
+    requester = db.get(DeveloperAccount, row.requested_by_user_id)
+    requester_email = requester.email if requester and requester.email_verified_at and not requester.disabled_at else None
     now = now_utc()
     row.status = payload.status
     row.reviewer_note = payload.reviewer_note.strip()
@@ -496,9 +498,18 @@ def admin_review_developer_production_request(
             db.add(ApiKeyAuditEvent(organization_id=workspace.id, actor_user_id=actor, api_key_id=key.id,
                 action="api_key.revoked", details={"reason": "production_access_rejected"}, created_at=now))
     db.commit()
-    from .developer_platform import _queue_workspace_event
+    from .developer_platform import _queue_workspace_event, _send_notice_best_effort
     _queue_workspace_event(background_tasks, workspace.id, "production_access.reviewed",
         {"request_id": row.id, "status": row.status, "reviewer_note": row.reviewer_note})
+    if requester_email:
+        subject = "PesaGuard production access " + ("approved" if row.status == "approved" else "review update")
+        body = (f"Your production access request for {workspace.name} was {row.status}.\\n\\n"
+                f"Reviewer note: {row.reviewer_note or 'No additional note was provided.'}\\n"
+                f"Request reference: {row.id}.\\n\\n"
+                + ("Production access is approved. You can now create production keys if all other eligibility checks pass. Use the production API base URL documented in the developer portal." if row.status == "approved"
+                   else "Production access remains unavailable. Address the review note and submit a new request when ready."))
+        background_tasks.add_task(_send_notice_best_effort, requester_email, subject, body,
+            template_id="production_access.reviewed", idempotency_key=f"production-access-reviewed:{row.id}:{row.status}")
     return {"id": row.id, "status": row.status, "workspace_verified": workspace.verified,
             "production_access_approved": workspace.production_access_approved}
 
