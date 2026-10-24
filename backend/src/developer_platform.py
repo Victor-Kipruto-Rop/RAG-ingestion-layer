@@ -53,8 +53,10 @@ EVENT_TYPES = {
 def _require_platform_config():
     if not settings.developer_access_token_secret or len(settings.developer_access_token_secret.encode()) < 32:
         raise HTTPException(503, "Developer account authentication is not configured")
-    if not settings.auth_email_delivery_configured:
-        raise HTTPException(503, "Email verification and recovery are unavailable until Resend (or SMTP fallback) and AUTH_OTP_PEPPER are configured")
+    if not settings.session_secret or len(settings.session_secret.encode()) < 32:
+        raise HTTPException(503, "Developer session signing is not configured")
+    if not settings.auth_email_delivery_configured or len(settings.auth_otp_pepper.encode()) < 32:
+        raise HTTPException(503, "Email verification and recovery are unavailable until email delivery and a 32-character AUTH_OTP_PEPPER are configured")
 
 
 def _email(email: str) -> str:
@@ -243,12 +245,14 @@ def _active_challenge(db: Session, email: str, purpose: str):
 
 @router.get("/auth/config")
 def auth_config():
-    configured = bool(len(settings.developer_access_token_secret.encode()) >= 32 and len(settings.session_secret.encode()) >= 32 and settings.auth_email_delivery_configured)
+    configured = bool(len(settings.developer_access_token_secret.encode()) >= 32 and len(settings.session_secret.encode()) >= 32 and settings.auth_email_delivery_configured and len(settings.auth_otp_pepper.encode()) >= 32)
+    google = bool(configured and settings.google_oauth_client_id and settings.google_oauth_client_secret)
+    github = bool(configured and settings.github_oauth_client_id and settings.github_oauth_client_secret)
     return {"signup_enabled": configured, "password_reset_enabled": configured, "password_min_length": 12,
             "otp_ttl_seconds": settings.auth_otp_ttl_seconds,
-            "social_auth_enabled": bool(settings.google_oauth_client_id and settings.google_oauth_client_secret or settings.github_oauth_client_id and settings.github_oauth_client_secret),
-            "google_enabled": bool(settings.google_oauth_client_id and settings.google_oauth_client_secret),
-            "github_enabled": bool(settings.github_oauth_client_id and settings.github_oauth_client_secret)}
+            "social_auth_enabled": bool(google or github),
+            "google_enabled": google,
+            "github_enabled": github}
 
 
 @router.get("/platform/config")
@@ -272,7 +276,15 @@ def _oauth_provider(provider: str):
 
 
 def _oauth_callback_url(request: Request, provider: str) -> str:
-    base = (settings.developer_oauth_callback_base_url or settings.developer_public_base_url or str(request.base_url)).rstrip("/")
+    base = (settings.developer_oauth_callback_base_url or "").strip().rstrip("/")
+    if settings.app_env.lower() == "production" and not base:
+        raise HTTPException(503, "DEVELOPER_OAUTH_CALLBACK_BASE_URL must be explicitly configured for production OAuth")
+    if not base:
+        base = str(request.base_url).rstrip("/")
+    parsed = urlparse(base)
+    allowed_schemes = {"https"} if settings.app_env.lower() == "production" else {"http", "https"}
+    if parsed.scheme not in allowed_schemes or not parsed.hostname or parsed.username or parsed.password:
+        raise HTTPException(503, "OAuth callback base URL must be absolute and use HTTPS in production")
     return f"{base}/api/v1/developer/auth/oauth/{provider}/callback"
 
 
@@ -284,6 +296,7 @@ def developer_oauth_providers():
 
 @router.get("/auth/oauth/{provider}/start")
 def developer_oauth_start(provider: str, request: Request):
+    _require_platform_config()
     client_id, client_secret = _oauth_provider(provider)
     if not client_id or not client_secret:
         raise HTTPException(503, f"{provider.title()} sign-in is not configured")
