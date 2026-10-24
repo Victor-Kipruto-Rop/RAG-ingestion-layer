@@ -270,7 +270,7 @@ def signup_request_otp(payload: SignupRequest, request: Request, db: Session = D
         old.consumed_at = now
     challenge = DeveloperAuthChallenge(
         email=email, purpose=OTP_PURPOSE_SIGNUP, otp_hash=_otp_digest(email, OTP_PURPOSE_SIGNUP, code),
-        password_hash=hash_password(payload.password), display_name=payload.display_name.strip(),
+        password_hash=hash_password(payload.password), display_name=payload.display_name.strip(), workspace_name=payload.workspace_name.strip(),
         expires_at=now + timedelta(seconds=settings.auth_otp_ttl_seconds), created_at=now,
     )
     db.add(challenge)
@@ -305,9 +305,7 @@ def signup_verify_otp(payload: VerifyOtpRequest, request: Request, response: Res
                                password_hash=challenge.password_hash or "", email_verified_at=now_utc())
     db.add(account)
     db.flush()
-    workspace_name = "Developer workspace"
-    # Workspace name is kept in the signup challenge to avoid storing unverified workspace records.
-    # Older challenge rows may have no metadata; default is safe and user-editable after signup.
+    workspace_name = (challenge.workspace_name or "Developer workspace").strip()
     workspace = DeveloperWorkspace(name=workspace_name, owner_user_id=account.id, verified=False, production_access_approved=False)
     db.add(workspace)
     db.flush()
