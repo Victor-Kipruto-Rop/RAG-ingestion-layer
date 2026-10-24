@@ -9,6 +9,8 @@
 - Added a retry-delay helper that caps exponential backoff and applies equal jitter, reducing synchronized retry storms while ensuring retry delays remain bounded.
 - Replaced unbounded deterministic exponential retry scheduling in the ingestion worker with the helper.
 - Added focused tests for exponential growth, cap behavior, jitter lower bound and non-positive configuration handling.
+- Added startup validation for retry ordering, worker polling/attempt/staleness limits, ingestion batch size, upload limits, HMAC timing, rate-limit values, and cache TTLs; added parameterized regression tests.
+- Production startup now requires Redis for distributed rate limiting and shared coordination.
 
 ## Validation
 - Source and test definitions were inspected through the repository API.
