@@ -18,6 +18,7 @@ import sys
 import threading
 import time
 import logging
+import asyncio
 
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
@@ -29,6 +30,8 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from fastapi import Depends, UploadFile
+from fastapi.responses import StreamingResponse
+from .database import SessionLocal
 
 COOKIE_NAME = 'pg_admin_session'
 SAFE_METHODS = {'GET', 'HEAD', 'OPTIONS'}
@@ -436,3 +439,37 @@ def registry_overview(request: Request, db: Session = Depends(get_db)):
             'unreviewed_records':total-reviewed,'source':'database',
             'generated_at':__import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat()}
 
+
+@router.get('/workspace/stream')
+async def workspace_stream(request: Request):
+    """Cookie-authenticated SSE snapshots for the live workspace; no credentials in the URL."""
+    require_admin(request)
+
+    async def events():
+        while not await request.is_disconnected():
+            try:
+                with SessionLocal() as db:
+                    total_orgs = db.scalar(select(func.count()).select_from(Organization)) or 0
+                    total_jobs = db.scalar(select(func.count()).select_from(IngestionJob)) or 0
+                    completed = db.scalar(select(func.count()).select_from(IngestionJob).where(IngestionJob.status.in_(['COMPLETED','COMPLETED_WITH_ERRORS']))) or 0
+                    failed = db.scalar(select(func.count()).select_from(IngestionJob).where(IngestionJob.status.in_(['FAILED','ERROR']))) or 0
+                    source_count = db.scalar(select(func.count()).select_from(RegistrySource).where(RegistrySource.enabled.is_(True))) or 0
+                    jobs = db.scalars(select(IngestionJob).order_by(IngestionJob.created_at.desc()).limit(50)).all()
+                    payload = {
+                        'metrics': {'indexed_organizations': total_orgs, 'ingestion_jobs': total_jobs,
+                            'completed_jobs': completed, 'failed_jobs': failed,
+                            'connected_sources_count': source_count, 'source': 'database'},
+                        'jobs': [{'id': j.id, 'job_id': j.id, 'file_name': j.file_name, 'status': j.status,
+                            'records_processed': int(j.records_processed or 0), 'records_inserted': int(j.records_inserted or 0),
+                            'created_at': j.created_at.isoformat() if j.created_at else None,
+                            'error_summary': j.error_summary, 'source_name': j.source_name} for j in jobs],
+                        'generated_at': __import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat()
+                    }
+                yield 'event: workspace\\ndata: ' + json.dumps(payload, separators=(',', ':')) + '\\n\\n'
+            except Exception:
+                _rate_logger.exception('workspace_sse_snapshot_failed')
+                yield 'event: error\\ndata: {"message":"Workspace snapshot temporarily unavailable"}\\n\\n'
+            await asyncio.sleep(5)
+
+    return StreamingResponse(events(), media_type='text/event-stream',
+        headers={'Cache-Control':'no-cache, no-transform', 'X-Accel-Buffering':'no'})
