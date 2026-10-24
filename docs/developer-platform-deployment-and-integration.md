@@ -13,7 +13,7 @@ Configure and deploy separate API origins. Do not point both DNS names at the sa
 | API key prefix | `pg_sandbox_` | `pg_live_` |
 | Intended use | Development and test data | Approved live integrations |
 
-Set `DEVELOPER_PUBLIC_BASE_URL` and `DEVELOPER_PRODUCTION_BASE_URL` to those public origins. Production startup validates HTTPS and rejects the same hostname being configured for both environments. API-key validation checks the key prefix and persisted key environment against the running API environment. A sandbox key sent to the production origin receives an environment-mismatch response.
+Set `DEVELOPER_PUBLIC_BASE_URL` and `DEVELOPER_PRODUCTION_BASE_URL` to those public origins. Production startup validates HTTPS and rejects the same hostname being configured for both environments. API-key validation checks the key prefix and persisted key environment against the running API environment. A sandbox key sent to the production origin receives an environment-mismatch response. Both API deployments must validate against the same authoritative API-key registry (or a securely synchronized registry), because key hashes and revocation state are persisted there. Keep sandbox and production datasets, permissions and operational resources isolated even if the credential registry is shared. If the deployments use unrelated key databases, key creation in the portal will not automatically provision credentials into the other database; do not go live until that trust/replication design is implemented and tested.
 
 ## 2. Authentication configuration
 
