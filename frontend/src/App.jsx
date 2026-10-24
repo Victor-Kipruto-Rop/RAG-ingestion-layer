@@ -17,6 +17,7 @@ import NotificationsPage from './NotificationsPage.jsx';
 import ProfilePage from './ProfilePage.jsx';
 import AuthFlowPage from './AuthFlowPage.jsx';
 import SessionManagementPage from './SessionManagementPage.jsx';
+import DeveloperAccessReviewPage from './DeveloperAccessReviewPage.jsx';
 
 const NAV = [
   { name: 'Overview', icon: LayoutDashboard, group: 'WORKSPACE' },
@@ -28,6 +29,7 @@ const NAV = [
   { name: 'Validation Rules', icon: ShieldCheck, group: 'GOVERNANCE' },
   { name: 'Audit Logs', icon: ScrollText, group: 'ADMINISTRATION' },
   { name: 'API Keys', icon: KeyRound, group: 'ADMINISTRATION' },
+  { name: 'Developer Access', icon: ShieldCheck, group: 'ADMINISTRATION' },
   { name: 'Settings', icon: Settings, group: 'ADMINISTRATION' },
   { name: 'Profile', icon: UserRound, group: 'ACCOUNT' },
   { name: 'Sessions', icon: ShieldCheck, group: 'ACCOUNT' },
@@ -391,6 +393,7 @@ export default function App() {
         {page === 'Ingestion Jobs' && <section className="panel full-panel"><div className="panel-heading"><div><h2>Ingestion jobs</h2><p>{number(jobsTotal)} persisted jobs · page {jobsPage} of {Math.max(1, Math.ceil(jobsTotal / 25))}.</p></div><div className="heading-actions"><button className="button-secondary" onClick={refresh} disabled={loading}><RefreshCw size={15} className={loading ? 'spin' : ''} /> Refresh</button><button className="button-primary" onClick={navToUpload} disabled={previewMode} title={previewMode ? "Disable Preview mode to upload data" : undefined}><Upload size={15}/> Upload dataset</button></div></div><WidgetErrorBoundary label="Ingestion jobs"><JobsTable jobs={jobs} search={search} /><div className="pagination"><span>Showing {jobsTotal ? ((jobsPage - 1) * 25 + 1) : 0}–{Math.min(jobsPage * 25, jobsTotal)} of {number(jobsTotal)} jobs</span><div><button className="button-secondary" disabled={loading || jobsPage <= 1} onClick={() => setJobsPage(p => Math.max(1, p - 1))}>Previous</button><button className="button-secondary" disabled={loading || jobsPage >= Math.max(1, Math.ceil(jobsTotal / 25))} onClick={() => setJobsPage(p => p + 1)}>Next</button></div></div></WidgetErrorBoundary></section>}
         {page === 'Registry Records' && <WidgetErrorBoundary label="Registry Records"><section className="panel full-panel"><div className="panel-heading"><div><h2>Registry records</h2><p>Search imported organizations and inspect source information.</p></div><span className="record-count">{number(orgTotal)} records</span></div><OrganizationsTable rows={orgs} total={orgTotal} page={orgPage} pageSize={100} onPageChange={setOrgPage} /></section></WidgetErrorBoundary>}
         {page === 'API Keys' && <WidgetErrorBoundary label="API Keys"><ApiKeysPanel readOnly={previewMode} searchTerm={search} /></WidgetErrorBoundary>}
+        {page === 'Developer Access' && <WidgetErrorBoundary label="Developer Access"><DeveloperAccessReviewPage /></WidgetErrorBoundary>}
         {['Data Quality', 'Warehouse', 'Validation Rules', 'Audit Logs', 'Settings'].includes(page) && <WidgetErrorBoundary label={page}><WorkspaceModulePage page={page} searchTerm={search} /></WidgetErrorBoundary>}
         {page === 'Documentation' && <WidgetErrorBoundary label="Documentation"><DocumentationPage /></WidgetErrorBoundary>}
         {page === 'Profile' && <WidgetErrorBoundary label="Profile"><ProfilePage /></WidgetErrorBoundary>}
