@@ -29,6 +29,21 @@ def test_workspace_overview_endpoints_require_operator_session(monkeypatch):
         quality = client.get("/api/v1/admin/registry/overview").json()
         assert "completeness_percentage" in quality
         assert quality["source"] == "database"
+        data_quality = client.get("/api/v1/admin/data-quality/overview")
+        assert data_quality.status_code == 200
+        assert "required_fields" in data_quality.json()
+        warehouse = client.get("/api/v1/admin/warehouse/overview")
+        assert warehouse.status_code == 200
+        assert isinstance(warehouse.json().get("imports"), list)
+        rules = client.get("/api/v1/admin/validation/rules")
+        assert rules.status_code == 200
+        assert rules.json()["editable"] is False
+        audit = client.get("/api/v1/admin/audit/logs")
+        assert audit.status_code == 200
+        assert isinstance(audit.json().get("items"), list)
+        settings_response = client.get("/api/v1/admin/settings/overview")
+        assert settings_response.status_code == 200
+        assert settings_response.json()["secrets_exposed"] is False
         with client.stream("GET", "/api/v1/admin/workspace/stream") as stream:
             assert stream.status_code == 200
             assert "text/event-stream" in stream.headers["content-type"]
