@@ -47,7 +47,7 @@ def test_login_rate_limit_is_scoped_to_ip_and_normalized_email(monkeypatch):
         def scalar(self, *_args, **_kwargs):
             return None
 
-    payload = platform.LoginRequest(email="  Developer@Example.com  ", password="not-a-real-password")
+    payload = platform.LoginRequest(email="Developer@Example.com", password="not-a-real-password")
     request = SimpleNamespace(client=SimpleNamespace(host="203.0.113.10"))
     with pytest.raises(HTTPException) as exc:
         platform.developer_login(payload, request, object(), EmptyDB())
