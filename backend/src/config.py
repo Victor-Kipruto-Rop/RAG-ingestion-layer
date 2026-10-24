@@ -105,10 +105,11 @@ def validate_runtime_config():
   missing.append('R2_ACCOUNT_ID/R2_ACCESS_KEY_ID/R2_SECRET_ACCESS_KEY/R2_BUCKET_NAME')
  if settings.require_hmac and not settings.hmac_shared_secret:
   missing.append('HMAC_SHARED_SECRET')
- if settings.require_hmac and not settings.redis_url:
-  missing.append('REDIS_URL (required for distributed HMAC replay protection)')
  if not settings.redis_url:
-  missing.append('REDIS_URL (required for distributed production rate limiting and shared coordination)')
+  redis_reason = 'distributed production rate limiting and shared coordination'
+  if settings.require_hmac:
+   redis_reason += ' and HMAC replay protection'
+  missing.append('REDIS_URL (required for ' + redis_reason + ')')
  if not (settings.api_key_auth_jwt_secret or settings.api_key_auth_jwt_keys_json):
   missing.append('API_KEY_AUTH_JWT_KEYS_JSON or API_KEY_AUTH_JWT_SECRET (PesaGuard identity signing keys)')
  if not (settings.api_key_auth_jwt_issuer and settings.api_key_auth_jwt_audience):
