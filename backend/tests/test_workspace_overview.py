@@ -29,6 +29,12 @@ def test_workspace_overview_endpoints_require_operator_session(monkeypatch):
         quality = client.get("/api/v1/admin/registry/overview").json()
         assert "completeness_percentage" in quality
         assert quality["source"] == "database"
+        with client.stream("GET", "/api/v1/admin/workspace/stream") as stream:
+            assert stream.status_code == 200
+            assert "text/event-stream" in stream.headers["content-type"]
+            first_event = next(stream.iter_text())
+            assert "event: workspace" in first_event
+            assert "data: " in first_event
 
 
 def test_sliding_session_renews_cookie_and_preserves_csrf(monkeypatch):
