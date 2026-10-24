@@ -147,6 +147,25 @@ def lookup(reg_no: str | None = None, tax_pin: str | None = None, db: Session = 
     result = _lookup_identifier(db, 'reg' if reg_no else 'pin', ident)
     return _present_lookup(result, is_customer_identity(caller))
 
+@router.post('/api/v1/registry/lookup')
+def lookup_post(payload: dict, db: Session = Depends(get_db), caller: str = Depends(require_api_key)):
+    """POST variant keeps registration numbers and tax PINs out of URL/access logs."""
+    reg_no = payload.get('reg_no')
+    tax_pin = payload.get('tax_pin')
+    if reg_no is not None and not isinstance(reg_no, str):
+        raise HTTPException(422, 'reg_no must be a string')
+    if tax_pin is not None and not isinstance(tax_pin, str):
+        raise HTTPException(422, 'tax_pin must be a string')
+    if bool((reg_no or '').strip()) == bool((tax_pin or '').strip()):
+        raise HTTPException(422, 'Provide exactly one of reg_no or tax_pin')
+    ident = normalize_identifier(reg_no or tax_pin)
+    if not ident:
+        raise HTTPException(422, 'Identifier must contain letters or digits')
+    if len(ident) > 128:
+        raise HTTPException(422, 'Identifier is too long')
+    result = _lookup_identifier(db, 'reg' if reg_no else 'pin', ident)
+    return _present_lookup(result, is_customer_identity(caller))
+
 
 def _search(db, q, limit, mask):
     norm = normalize_legal_name(q) or ''
