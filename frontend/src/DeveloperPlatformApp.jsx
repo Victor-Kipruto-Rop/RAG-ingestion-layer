@@ -81,14 +81,19 @@ export default function DeveloperPlatformApp() {
     if (!authed) return;
     setBusy(true); setError('');
     try {
+      // Refresh the short-lived control-plane token from the persisted HttpOnly session.
+      const fresh = await readJson('/api/v1/developer/auth/session');
+      setCsrfToken(fresh.csrf_token || ''); setCsrf(fresh.csrf_token || '');
+      setAccessToken(fresh.access_token || '');
+      setUser(fresh.user); setWorkspace(fresh.workspace);
       const [p,k,w,r,s] = await Promise.all([
-        readJson('/api/v1/developer/projects'), readJson('/api/v1/keys',{headers:{Authorization:`Bearer ${accessToken}`}}),
+        readJson('/api/v1/developer/projects'), readJson('/api/v1/keys',{headers:{Authorization:`Bearer ${fresh.access_token}`}}),
         readJson('/api/v1/developer/webhooks'), readJson('/api/v1/developer/production-access/requests'), readJson('/api/v1/developer/sessions')
       ]);
       setProjects(p.items || []); setKeys(k.items || []); setWebhooks(w.items || []); setProductionRequests(r.items || []); setSessions((s.items || []).filter(x=>!x.revoked));
     } catch(e) { setError(e.message || 'Could not load developer workspace data.'); }
     finally { setBusy(false); }
-  },[authed,accessToken]);
+  },[authed]);
   useEffect(()=>{if(authed)refreshData();},[authed,refreshData]);
 
   const finishAuth = result => {
@@ -148,7 +153,8 @@ export default function DeveloperPlatformApp() {
   const revokeSession = async item => {
     if(!window.confirm(item.current?'Sign out and revoke this session?':'Revoke this session?'))return;
     setBusy(true);setError('');
-    try{await readJson(`/api/v1/developer/sessions/${encodeURIComponent(item.id)}`,{method:'DELETE'});if(item.current){await signOut();return;}setSessions(v=>v.filter(x=>x.id!==item.id));setNotice('Session revoked.');}
+    if(item.current){await signOut();return;}
+    try{await readJson(`/api/v1/developer/sessions/${encodeURIComponent(item.id)}`,{method:'DELETE'});setSessions(v=>v.filter(x=>x.id!==item.id));setNotice('Session revoked.');}
     catch(e){setError(e.message||'Could not revoke session.');}finally{setBusy(false);}
   };
   const saveProfile = async e => {
