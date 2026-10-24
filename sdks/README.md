@@ -13,8 +13,8 @@ The backend deployment must set `API_ENVIRONMENT=sandbox` or `API_ENVIRONMENT=pr
 
 ## Available starters
 
-- JavaScript / Node: `javascript/client.js` (Node 18+)
-- Python: `python/pesaguard_client.py` (Python 3.10+, `requests`)
+- JavaScript / Node package: `javascript/src/index.js` (Node 18+; `cd sdks/javascript && npm test`)
+- Python package: `python/pesaguard/client.py` (Python 3.10+; `cd sdks/python && python -m pip install -e '.[test]' && pytest`)
 - PHP: `php/PesaGuardClient.php` (PHP 8.1+, cURL)
 - Go: `go/client.go` (Go 1.21+)
 - Java: `java/PesaGuardClient.java` (Java 17+)
@@ -23,7 +23,7 @@ The backend deployment must set `API_ENVIRONMENT=sandbox` or `API_ENVIRONMENT=pr
 
 The dashboard's SDKs & Testing page also provides copyable cURL, JavaScript, Python, PHP, Go, Java, Ruby, and C# request examples and a sandbox-only API Explorer. The API's live OpenAPI document remains authoritative: `/openapi.json`, `/docs`, and `/redoc`.
 
-## Contract
+## Webhook verification\n\nThe Python and JavaScript SDKs include timestamped HMAC verification helpers. Verify the exact raw request bytes before JSON parsing, compare signatures in constant time, reject timestamps outside the replay window, and deduplicate delivery IDs. Do not use the signing secret as an API key.\n\n## Contract
 
 Each client must:
 1. Require the API key from a server-side environment variable or secret manager.
