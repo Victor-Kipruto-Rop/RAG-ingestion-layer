@@ -22,6 +22,9 @@ REQUIRED_TABLES = {
     "registry_sources",
     "warehouse_raw_imports",
     "warehouse_access_logs",
+    "failed_imports_dlq",
+    "api_keys",
+    "api_key_audit_events",
 }
 
 

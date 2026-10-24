@@ -1,21 +1,47 @@
+# Connected local stack: API + worker share one SQLite database and one upload volume, with Redis for
+# rate limiting and caching. For production use PostgreSQL and private object storage instead.
 services:
+  registry-redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
   registry-api:
     build: ./backend
     env_file: .env
+    environment:
+      DATABASE_URL: sqlite:////app/data/registry.db
+      REDIS_URL: redis://registry-redis:6379/0
+      LOCAL_STORAGE_PATH: /app/.registry-uploads
+    command: ["sh", "-c", "python -m alembic -c alembic.ini upgrade head && uvicorn src.main:app --host 0.0.0.0 --port 8000"]
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
+      - registry_data:/app/data
       - registry_uploads:/app/.registry-uploads
+    depends_on:
+      registry-redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=3)"]
       interval: 30s
       timeout: 5s
       retries: 3
   registry-worker:
-    build: ./backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.worker
     env_file: .env
-    command: ["python", "-m", "src.worker"]
+    environment:
+      DATABASE_URL: sqlite:////app/data/registry.db
+      REDIS_URL: redis://registry-redis:6379/0
+      LOCAL_STORAGE_PATH: /app/.registry-uploads
     volumes:
+      - registry_data:/app/data
       - registry_uploads:/app/.registry-uploads
     depends_on:
       registry-api:
@@ -27,12 +53,13 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules
-    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    command: sh -c "npm ci --no-audit --no-fund && npm run dev -- --host 0.0.0.0"
     ports:
-      - "5173:5173"
+      - "127.0.0.1:5173:5173"
     environment:
       VITE_API_BASE_URL: http://localhost:8000
     depends_on:
       - registry-api
 volumes:
+  registry_data:
   registry_uploads:

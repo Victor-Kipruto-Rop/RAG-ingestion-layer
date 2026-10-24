@@ -1,7 +1,7 @@
 """Bounded-memory CSV parsing helpers."""
 import csv
 import io
-from .storage import download_spooled_file
+from ..storage import download_spooled_file
 
 
 def iter_csv_file(file_obj, max_records: int):

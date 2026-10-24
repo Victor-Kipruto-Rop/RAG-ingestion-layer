@@ -9,3 +9,10 @@ node_modules/
 dist/
 .pytest_cache/
 .coverage
+*.db
+*.db-journal
+.registry-uploads/
+frontend/.vite/
+# Registry exports and source documents can contain personal data: never commit them.
+sample-data/*
+!sample-data/README.md

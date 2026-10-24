@@ -1,9 +1,12 @@
 """User API-key management. Requires a trusted PesaGuard-issued HS256 access token.
 The dashboard must never receive the datasource's internal REGISTRY_API_KEYS secret.
 """
-import base64, hashlib, hmac, json, secrets, time, uuid
+import hashlib, secrets, uuid
+from datetime import timedelta
+
+import jwt
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
@@ -13,45 +16,34 @@ from .models import ApiKey, ApiKeyAuditEvent
 
 router = APIRouter(prefix="/api/v1/keys", tags=["API key management"])
 
-def _b64url_decode(value: str) -> bytes:
-    return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
-
 def require_user_claims(authorization: str | None = Header(default=None, alias="Authorization")):
     secret = settings.api_key_auth_jwt_secret
     if not secret:
         raise HTTPException(503, "API key management authentication is not configured")
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(401, "A valid PesaGuard user access token is required")
-    token = authorization[7:].strip()
-    parts = token.split(".")
-    if len(parts) != 3:
-        raise HTTPException(401, "Invalid access token")
-    try:
-        header = json.loads(_b64url_decode(parts[0]))
-        claims = json.loads(_b64url_decode(parts[1]))
-        signature = _b64url_decode(parts[2])
-    except Exception:
-        raise HTTPException(401, "Invalid access token")
-    if header.get("alg") != "HS256" or header.get("typ", "JWT") != "JWT":
-        raise HTTPException(401, "Unsupported access token")
-    expected = hmac.new(secret.encode(), f"{parts[0]}.{parts[1]}".encode(), hashlib.sha256).digest()
-    if not hmac.compare_digest(signature, expected):
-        raise HTTPException(401, "Invalid access token signature")
-    if not isinstance(claims.get("exp"), (int, float)) or claims["exp"] <= time.time():
-        raise HTTPException(401, "Access token has expired")
-    if isinstance(claims.get("nbf"), (int, float)) and claims["nbf"] > time.time():
-        raise HTTPException(401, "Access token is not valid yet")
-    if not claims.get("sub") or not claims.get("org_id"):
-        raise HTTPException(403, "Access token must identify a user and organization")
     expected_issuer = settings.api_key_auth_jwt_issuer
     expected_audience = settings.api_key_auth_jwt_audience
     if settings.app_env.lower() == 'production' and (not expected_issuer or not expected_audience):
         raise HTTPException(503, 'API key management requires configured JWT issuer and audience')
-    if expected_issuer and claims.get("iss") != expected_issuer:
+    options = {"require": ["exp", "sub"], "verify_aud": bool(expected_audience), "verify_iss": bool(expected_issuer)}
+    try:
+        claims = jwt.decode(
+            authorization[7:].strip(), secret, algorithms=["HS256"], options=options,
+            audience=expected_audience or None, issuer=expected_issuer or None,
+        )
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(401, "Access token has expired")
+    except jwt.ImmatureSignatureError:
+        raise HTTPException(401, "Access token is not valid yet")
+    except jwt.InvalidIssuerError:
         raise HTTPException(401, "Invalid access token issuer")
-    audience = claims.get("aud")
-    if expected_audience and not (audience == expected_audience or isinstance(audience, list) and expected_audience in audience):
+    except jwt.InvalidAudienceError:
         raise HTTPException(401, "Invalid access token audience")
+    except jwt.InvalidTokenError:
+        raise HTTPException(401, "Invalid access token")
+    if not claims.get("sub") or not claims.get("org_id"):
+        raise HTTPException(403, "Access token must identify a user and organization")
     return claims
 
 def _roles(claims: dict) -> set[str]:
@@ -76,7 +68,12 @@ class CreateApiKey(BaseModel):
     expires_in_days: int | None = Field(default=None, ge=1, le=365)
     scopes: list[str] = Field(default_factory=lambda: ["registry:read"])
 
-def _create_key(db: Session, claims: dict, payload: CreateApiKey):
+# Customer-issued keys are read-only lookup credentials. Ingestion scopes are internal-only
+# because ingestion writes into the shared canonical registry and job data is not tenant-scoped.
+ALLOWED_SCOPES = {"registry:read", "sources:read"}
+
+
+def _create_key(db: Session, claims: dict, payload: CreateApiKey, commit: bool = True):
     env = payload.environment.lower().strip()
     if env not in {"sandbox", "production"}:
         raise HTTPException(422, "environment must be sandbox or production")
@@ -90,15 +87,13 @@ def _create_key(db: Session, claims: dict, payload: CreateApiKey):
         raise HTTPException(422, "Production API keys must have an expiry date (maximum 365 days)")
     if env == "production" and not (claims.get("organization_verified") is True and ({"owner", "admin"} & set(roles))):
         raise HTTPException(403, "Production keys require a verified organization and an owner/admin role")
-    allowed_scopes = {"registry:read", "ingestion:read", "ingestion:write", "sources:read"}
-    if not payload.scopes or not set(payload.scopes).issubset(allowed_scopes):
+    if not payload.scopes or not set(payload.scopes).issubset(ALLOWED_SCOPES):
         raise HTTPException(422, "One or more requested scopes are not allowed")
     prefix = "pg_sandbox_" if env == "sandbox" else "pg_live_"
     secret = prefix + secrets.token_urlsafe(36)
     now = datetime.now(timezone.utc)
     expires = None
     if payload.expires_in_days:
-        from datetime import timedelta
         expires = now + timedelta(days=payload.expires_in_days)
     row = ApiKey(
         id=str(uuid.uuid4()), organization_id=str(claims["org_id"])[:200],
@@ -108,7 +103,8 @@ def _create_key(db: Session, claims: dict, payload: CreateApiKey):
     )
     db.add(row)
     _audit(db, org_id=row.organization_id, actor=row.created_by_user_id, action="api_key.created", key_id=row.id, details={"environment": env, "name": row.name, "scopes": payload.scopes})
-    db.commit()
+    if commit:
+        db.commit()
     return {"id": row.id, "name": row.name, "environment": row.environment, "key_prefix": row.key_prefix,
             "secret": secret, "scopes": row.scopes, "status": row.status, "created_at": now.isoformat(),
             "expires_at": expires.isoformat() if expires else None,
@@ -137,11 +133,22 @@ def rotate_api_key(key_id: str, claims: dict = Depends(require_user_claims), db:
         raise HTTPException(404, "API key not found")
     if row.status != "active":
         raise HTTPException(409, "Only active API keys can be rotated")
-    old_id, env, name, scopes = row.id, row.environment, row.name, row.scopes or ["registry:read"]
+    old_id, env, name = row.id, row.environment, row.name
+    scopes = [scope for scope in (row.scopes or []) if scope in ALLOWED_SCOPES] or ["registry:read"]
+    expires_in_days = 90 if (env == "production" or row.expires_at) else None
+    # Revoke and re-issue in ONE transaction: if the new key is refused (verification, limits)
+    # nothing is committed and the existing key keeps working.
     row.status = "revoked"; row.revoked_at = datetime.now(timezone.utc)
+    db.flush()
     _audit(db, org_id=row.organization_id, actor=str(claims["sub"]), action="api_key.rotated_revoked", key_id=old_id, details={"environment": env})
-    db.commit()
-    return _create_key(db, claims, CreateApiKey(name=name, environment=env, scopes=scopes, expires_in_days=90))
+    try:
+        result = _create_key(db, claims, CreateApiKey(name=name, environment=env, scopes=scopes, expires_in_days=expires_in_days), commit=False)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return result
+
 
 @router.delete("/{key_id}", status_code=204)
 def revoke_api_key(key_id: str, claims: dict = Depends(require_user_claims), db: Session = Depends(get_db)):

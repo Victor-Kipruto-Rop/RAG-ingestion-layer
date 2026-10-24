@@ -1,7 +1,6 @@
 """Focused contract tests for environment isolation helpers."""
 import hashlib
 from datetime import datetime, timezone
-from unittest.mock import MagicMock
 
 from src.models import ApiKey
 

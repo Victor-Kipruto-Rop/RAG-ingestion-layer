@@ -34,3 +34,18 @@ Production and sandbox should be separate deployments. Setting a frontend dropdo
 6. Only then expose key management in the customer dashboard.
 
 The legacy static `REGISTRY_API_KEYS` remain internal service credentials and are not managed by this feature. Rotate/migrate them separately; do not treat them as customer-issued keys.
+
+## Customer key scope model (updated)
+
+Customer-issued keys are **read-only lookup credentials**. The only scopes that can be granted are
+`registry:read` (lookup, search and organization listing) and `sources:read` (source catalogue).
+
+Customer keys can never reach ingestion, uploads, bulk export, metrics, warehouse telemetry or source
+writes, whatever scopes a legacy key row carries: those endpoints return `403 API_KEY_ENDPOINT_NOT_AVAILABLE`.
+Ingestion writes into the shared canonical registry and job data is not tenant-scoped, so it stays internal.
+Responses to customer keys mask tax PINs (last two characters only) and redact PIN/tax fields in
+`registry_payload`.
+
+Rotation is atomic: the old key is revoked and the replacement issued in one transaction. If the
+replacement is refused (for example the organization is no longer verified) the old key keeps working.
+Rotation drops any legacy scope outside the allowed set.

@@ -66,3 +66,29 @@ describe('API client', () => {
     });
   });
 });
+
+describe('session handling', () => {
+  it('sends credentials and the in-memory CSRF token on unsafe requests only', async () => {
+    const {setCsrfToken} = await import('./api.js');
+    const fetchMock = vi.fn().mockResolvedValue({ok: true, status: 200});
+    vi.stubGlobal('fetch', fetchMock);
+    setCsrfToken('csrf-123');
+
+    await api('/api/v1/sources', {method: 'POST', body: JSON.stringify({a: 1})});
+    await api('/api/v1/organizations');
+
+    const [, post] = fetchMock.mock.calls[0];
+    const [, get] = fetchMock.mock.calls[1];
+    expect(post.credentials).toBe('include');
+    expect(post.headers.get('X-CSRF-Token')).toBe('csrf-123');
+    expect(get.headers.has('X-CSRF-Token')).toBe(false);
+    setCsrfToken('');
+  });
+
+  it('never attaches a service API key header', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ok: true, status: 200});
+    vi.stubGlobal('fetch', fetchMock);
+    await api('/api/v1/organizations');
+    expect(fetchMock.mock.calls[0][1].headers.has('X-API-Key')).toBe(false);
+  });
+});

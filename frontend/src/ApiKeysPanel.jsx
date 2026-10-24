@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { api } from './api.js';
 import { AlertTriangle, Check, Copy, KeyRound, Plus, RefreshCw, ShieldCheck, Trash2, Eye, EyeOff } from 'lucide-react';
 
-const TOKEN_SLOT = 'pesaguard.datasource.user_access_token';
 const dateLabel = value => value ? new Date(value).toLocaleString() : 'Never';
 async function request(path, token, options = {}) {
   const response = await api(path, { ...options, headers: { ...(options.headers || {}), Authorization: `Bearer ${token}` } });
@@ -14,7 +13,7 @@ function friendlyError(error) {
 }
 
 export default function ApiKeysPanel() {
-  const [token, setToken] = useState(() => sessionStorage.getItem(TOKEN_SLOT) || '');
+  const [token, setToken] = useState('');
   const [connected, setConnected] = useState(false);
   const [items, setItems] = useState([]);
   const [events, setEvents] = useState([]);
@@ -37,7 +36,6 @@ export default function ApiKeysPanel() {
         request('/api/v1/keys/audit/events?limit=50', token),
       ]);
       setItems(keyResult.items || []); setEvents(auditResult.items || []);
-      sessionStorage.setItem(TOKEN_SLOT, token.trim());
       setConnected(true);
     } catch (e) { setConnected(false); setError(friendlyError(e)); }
     finally { setBusy(false); }

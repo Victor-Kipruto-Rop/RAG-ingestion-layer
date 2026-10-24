@@ -1,6 +1,4 @@
-import os,uuid
-os.environ.setdefault('REGISTRY_API_KEYS','test-secret-key')
-os.environ.setdefault('DATABASE_URL','sqlite:///./test_registry.db')
+import uuid
 from fastapi.testclient import TestClient
 from src.main import app
 from src.database import Base, engine

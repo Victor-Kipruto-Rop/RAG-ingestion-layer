@@ -42,6 +42,15 @@ class Settings(BaseSettings):
  db_max_overflow:int=5
  db_pool_timeout_seconds:int=30
  db_pool_recycle_seconds:int=1800
+ session_secret:str=''
+ admin_password_hash:str=''
+ session_ttl_seconds:int=28800
+ session_cookie_secure:bool=True
+ admin_login_max_attempts_per_minute:int=10
+ worker_commit_interval_seconds:int=60
+ entity_resolution_max_candidates:int=200
+ upload_ttl_grace_seconds:int=900
+ ingestion_row_savepoints:bool=True
  model_config=SettingsConfigDict(env_file='.env',extra='ignore',case_sensitive=False)
  @property
  def cors_origin_list(self): return [x.strip() for x in self.cors_origins.split(',') if x.strip()]
@@ -53,10 +62,14 @@ settings=get_settings()
 
 
 def validate_runtime_config():
+ if settings.cors_origin_list and '*' in settings.cors_origin_list:
+  raise RuntimeError("Invalid configuration: CORS_ORIGINS must list explicit origins; '*' is not allowed because the dashboard uses credentialed requests")
+ if settings.admin_password_hash and len(settings.session_secret)<32:
+  raise RuntimeError('Invalid configuration: SESSION_SECRET must be at least 32 characters when ADMIN_PASSWORD_HASH is set')
  if settings.app_env.lower()!='production':
   return
  missing=[]
- if not settings.api_key_list or 'change-this-local-only-key-before-use' in settings.api_key_list:
+ if not settings.api_key_list or {'change-this-local-only-key-before-use','replace-with-a-long-random-secret'} & set(settings.api_key_list):
   missing.append('REGISTRY_API_KEYS')
  if settings.database_url.startswith('sqlite'):
   missing.append('DATABASE_URL (PostgreSQL required in production)')
@@ -66,5 +79,11 @@ def validate_runtime_config():
   missing.append('HMAC_SHARED_SECRET')
  if settings.require_hmac and not settings.redis_url:
   missing.append('REDIS_URL (required for distributed HMAC replay protection)')
+ if settings.api_key_auth_jwt_secret and not (settings.api_key_auth_jwt_issuer and settings.api_key_auth_jwt_audience):
+  missing.append('API_KEY_AUTH_JWT_ISSUER/API_KEY_AUTH_JWT_AUDIENCE (required when API_KEY_AUTH_JWT_SECRET is set)')
+ if settings.api_environment.lower().strip() not in {'sandbox','production'}:
+  missing.append('API_ENVIRONMENT (must be sandbox or production)')
+ if settings.admin_password_hash and not settings.session_cookie_secure:
+  missing.append('SESSION_COOKIE_SECURE=true (required for dashboard sessions in production)')
  if missing:
   raise RuntimeError('Invalid production configuration: '+', '.join(missing))
