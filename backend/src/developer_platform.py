@@ -565,6 +565,41 @@ def password_reset_confirm(payload: ResetConfirmRequest, request: Request, respo
     return {"updated": True, "message": "Password updated. Sign in again."}
 
 
+@router.get("/notifications")
+def developer_notifications(request: Request, db: Session = Depends(get_db), limit: int = 50):
+    claims = _session_claims(request, db)
+    workspace = _workspace(db, claims["sub"])
+    limit = max(1, min(limit, 100))
+    items = []
+    key_events = db.scalars(select(ApiKeyAuditEvent).where(
+        ApiKeyAuditEvent.organization_id == workspace.id
+    ).order_by(ApiKeyAuditEvent.created_at.desc()).limit(limit)).all()
+    for row in key_events:
+        action = row.action.replace(".", " ").replace("_", " ").strip().capitalize()
+        items.append({"id": "key:" + row.id, "type": row.action, "title": action,
+            "message": (row.details or {}).get("reason") or (row.details or {}).get("environment") or "API credential activity recorded.",
+            "created_at": row.created_at.isoformat(), "source": "api_keys"})
+    requests = db.scalars(select(DeveloperProductionAccessRequest).where(
+        DeveloperProductionAccessRequest.workspace_id == workspace.id
+    ).order_by(DeveloperProductionAccessRequest.created_at.desc()).limit(limit)).all()
+    for row in requests:
+        items.append({"id": "production:" + row.id, "type": "production_access." + row.status,
+            "title": "Production access " + row.status,
+            "message": row.reviewer_note or "Production access request status: " + row.status + ".",
+            "created_at": (row.reviewed_at or row.created_at).isoformat(), "source": "production_access"})
+    deliveries = db.scalars(select(DeveloperWebhookDelivery).join(
+        DeveloperWebhook, DeveloperWebhookDelivery.webhook_id == DeveloperWebhook.id
+    ).where(DeveloperWebhook.workspace_id == workspace.id
+    ).order_by(DeveloperWebhookDelivery.created_at.desc()).limit(limit)).all()
+    for row in deliveries:
+        items.append({"id": "webhook:" + row.id, "type": "webhook." + row.status,
+            "title": "Webhook delivery " + row.status,
+            "message": f"{row.event_type} · HTTP {row.response_status if row.response_status is not None else 'no response'}",
+            "created_at": row.created_at.isoformat(), "source": "webhooks"})
+    items.sort(key=lambda item: item["created_at"], reverse=True)
+    return {"items": items[:limit], "count": min(len(items), limit)}
+
+
 @router.get("/profile")
 def developer_profile(request: Request, db: Session = Depends(get_db)):
     claims = _session_claims(request, db)
