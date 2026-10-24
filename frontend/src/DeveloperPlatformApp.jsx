@@ -21,7 +21,7 @@ const LANG_CODE = {
 };
 const NAV = [
   {group:'BUILD',items:[['Overview',Rocket],['Projects',Layers3],['API Keys',KeyRound],['Webhooks',Webhook],['API Explorer',FlaskConical],['SDKs & Testing',Code2]]},
-  {group:'SHIP',items:[['Production access',ShieldCheck],['Documentation',BookOpen],['Account',UserRound]]}
+  {group:'SHIP',items:[['Production access',ShieldCheck],['Documentation',BookOpen],['Account',UserRound],['Sessions',ShieldCheck]]}
 ];
 async function readJson(path, options={}) { const r=await api(path,options); return r.status===204 ? null : r.json(); }
 function CodeBlock({children}) { return <pre className="dp-code"><code>{children}</code></pre>; }
@@ -41,6 +41,7 @@ export default function DeveloperPlatformApp() {
   const [notice,setNotice] = useState('');
   const [mobileNav,setMobileNav] = useState(false);
   const [projects,setProjects] = useState([]);
+  const [sessions,setSessions] = useState([]);
   const [keys,setKeys] = useState([]);
   const [webhooks,setWebhooks] = useState([]);
   const [deliveries,setDeliveries] = useState([]);
@@ -53,7 +54,7 @@ export default function DeveloperPlatformApp() {
   const [showSecret,setShowSecret] = useState(false);
   const [hookForm,setHookForm] = useState({name:'Production events',endpoint_url:'',events:['webhook.test','registry.lookup.completed']});
   const [lang,setLang] = useState('JavaScript');
-  const [tester,setTester] = useState({environment:'sandbox',path:'/health',method:'GET',apiKey:'',body:'{}'});
+  const [tester,setTester] = useState({environment:'sandbox',path:'/api/v1/registry/search?q=example',method:'GET',apiKey:'',body:'{}'});
   const [testResult,setTestResult] = useState(null);
   const [search,setSearch] = useState('');
   const [apiDocs,setApiDocs] = useState(null);
@@ -80,11 +81,11 @@ export default function DeveloperPlatformApp() {
     if (!authed) return;
     setBusy(true); setError('');
     try {
-      const [p,k,w,r] = await Promise.all([
+      const [p,k,w,r,s] = await Promise.all([
         readJson('/api/v1/developer/projects'), readJson('/api/v1/keys',{headers:{Authorization:`Bearer ${accessToken}`}}),
-        readJson('/api/v1/developer/webhooks'), readJson('/api/v1/developer/production-access/requests')
+        readJson('/api/v1/developer/webhooks'), readJson('/api/v1/developer/production-access/requests'), readJson('/api/v1/developer/sessions')
       ]);
-      setProjects(p.items || []); setKeys(k.items || []); setWebhooks(w.items || []); setProductionRequests(r.items || []);
+      setProjects(p.items || []); setKeys(k.items || []); setWebhooks(w.items || []); setProductionRequests(r.items || []); setSessions((s.items || []).filter(x=>!x.revoked));
     } catch(e) { setError(e.message || 'Could not load developer workspace data.'); }
     finally { setBusy(false); }
   },[authed,accessToken]);
@@ -144,6 +145,12 @@ export default function DeveloperPlatformApp() {
     try{const r=await readJson(`/api/v1/developer/webhooks/${encodeURIComponent(hook.id)}/deliveries`);setDeliveries(r.items || []);}
     catch(e){setError(e.message || 'Delivery history unavailable.');}
   };
+  const revokeSession = async item => {
+    if(!window.confirm(item.current?'Sign out and revoke this session?':'Revoke this session?'))return;
+    setBusy(true);setError('');
+    try{await readJson(`/api/v1/developer/sessions/${encodeURIComponent(item.id)}`,{method:'DELETE'});if(item.current){await signOut();return;}setSessions(v=>v.filter(x=>x.id!==item.id));setNotice('Session revoked.');}
+    catch(e){setError(e.message||'Could not revoke session.');}finally{setBusy(false);}
+  };
   const saveProfile = async e => {
     e.preventDefault();setBusy(true);setError('');
     try{const r=await readJson('/api/v1/developer/profile',{method:'PUT',body:JSON.stringify(profile)});setUser(v=>({...v,display_name:r.display_name}));setWorkspace(v=>({...v,name:r.workspace_name}));setProfile(v=>({...v,display_name:r.display_name,workspace_name:r.workspace_name}));setNotice('Profile saved.');}
@@ -186,7 +193,8 @@ export default function DeveloperPlatformApp() {
         {page==='SDKs & Testing'&&<SdkPage lang={lang} setLang={setLang} copy={copy} baseUrls={baseUrls}/>}
         {page==='Production access'&&<ProductionAccessPage workspace={workspace} requests={productionRequests} submit={requestProduction} busy={busy} baseUrls={baseUrls}/>}
         {page==='Documentation'&&<DeveloperDocsPage baseUrls={baseUrls} apiDocs={apiDocs} setPage={setPage}/>}
-        {page==='Account'&&<AccountPage user={user} workspace={workspace} profile={profile} setProfile={setProfile} saveProfile={saveProfile} sessionsRefresh={syncSession} busy={busy}/>}
+        {page==='Account'&&<AccountPage user={user} workspace={workspace} profile={profile} setProfile={setProfile} saveProfile={saveProfile} busy={busy}/>}
+        {page==='Sessions'&&<SessionsPage items={sessions} revoke={revokeSession} busy={busy}/>} 
       </div>
       <footer className="dp-footer"><span>© {new Date().getFullYear()} PesaGuard Developer Platform</span><span><span className="dp-status-dot"/> Service state is read from the API</span><a href={`${API_BASE}/health`} target="_blank" rel="noreferrer">API health <ExternalLink size={13}/></a></footer>
     </main>
@@ -281,3 +289,7 @@ function AccountPage({user,workspace,profile,setProfile,saveProfile,busy}){
  return <><PageHeading eyebrow="ACCOUNT & SECURITY" title="Account settings" description="Manage your developer identity and workspace profile. Authentication sessions remain server-controlled."/><div className="dp-two-col"><section className="dp-panel"><div className="dp-panel-head"><div><h3>Profile</h3><p>Changes are saved to your developer account.</p></div><UserRound size={18}/></div><form className="dp-form" onSubmit={saveProfile}><label>Display name<input value={profile.display_name} onChange={e=>setProfile(v=>({...v,display_name:e.target.value}))} minLength={2} maxLength={120} required/></label><label>Workspace name<input value={profile.workspace_name} onChange={e=>setProfile(v=>({...v,workspace_name:e.target.value}))} minLength={2} maxLength={160} required/></label><label>Email address<input value={user.email} disabled readOnly/><small>Email is verified identity metadata and cannot be changed from this profile form.</small></label><button className="dp-button primary" disabled={busy}>Save profile</button></form></section><section className="dp-panel"><div className="dp-panel-head"><div><h3>Security posture</h3><p>Current account facts from the API.</p></div><ShieldCheck size={18}/></div><div className="dp-security-facts"><div><span>Email verified</span><strong>{user.email_verified?'Yes':'No'}</strong></div><div><span>Workspace verified</span><strong>{workspace.verified?'Yes':'No'}</strong></div><div><span>Production access</span><strong>{workspace.production_access_approved?'Approved':'Not approved'}</strong></div><div><span>Session cookie</span><strong>HttpOnly · CSRF protected</strong></div></div><p className="dp-muted-note">Password reset revokes all existing developer sessions. You can sign out here to revoke the current session.</p></section></div></>;
 }
 function Empty({title,detail}){return <div className="dp-empty"><span><CircleHelp size={21}/></span><strong>{title}</strong><p>{detail}</p></div>;}
+
+function SessionsPage({items,revoke,busy}){
+ return <><PageHeading eyebrow="ACCOUNT SECURITY" title="Active sessions" description="Review and revoke authenticated developer sessions. Revocation is persisted and checked by the API on every session-authenticated request."/><section className="dp-panel"><div className="dp-panel-head"><div><h3>Session inventory</h3><p>{items.length} active session(s) returned by the backend.</p></div><ShieldCheck size={18}/></div>{items.length?<div className="dp-table-wrap"><table className="dp-table"><thead><tr><th>Device / browser</th><th>Created</th><th>Last seen</th><th>Expires</th><th>State</th><th>Action</th></tr></thead><tbody>{items.map(s=><tr key={s.id}><td><strong>{s.current?'This session':'Other session'}</strong><small>{s.user_agent||'Browser not identified'}</small></td><td>{new Date(s.created_at).toLocaleString()}</td><td>{new Date(s.last_seen_at).toLocaleString()}</td><td>{new Date(s.expires_at).toLocaleString()}</td><td><span className="dp-state good">{s.current?'current':'active'}</span></td><td><button className="dp-button quiet" disabled={busy} onClick={()=>revoke(s)}><LogOut size={14}/>{s.current?'Sign out':'Revoke'}</button></td></tr>)}</tbody></table></div>:<Empty title="No active sessions found" detail="Your current session should appear after a successful refresh. Sign in again if it has expired."/ >}</section></>;
+}
