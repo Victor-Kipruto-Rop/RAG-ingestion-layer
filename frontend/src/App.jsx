@@ -243,7 +243,7 @@ export default function App() {
     try {
       let result;
       if (file.size > 50 * 1024 * 1024) {
-        const presignResponse = await request('/api/v1/ingestion/uploads/presign', { method: 'POST', body: JSON.stringify({ file_name: file.name, size_bytes: file.size }) });
+        const presignResponse = await request('/api/v1/admin/ingestion/uploads/presign', { method: 'POST', body: JSON.stringify({ file_name: file.name, size_bytes: file.size }) });
         const ticket = await presignResponse.json();
         setMessage('Uploading directly to private object storage…');
         const putStatus = await new Promise((resolve, reject) => {
@@ -252,7 +252,7 @@ export default function App() {
           xhr.onload = () => resolve(xhr.status); xhr.onerror = () => reject(new Error('Direct storage upload failed. Check bucket CORS and retry before the upload URL expires.')); xhr.send(file);
         });
         if (putStatus < 200 || putStatus >= 300) throw new Error('Direct storage upload failed. Check bucket CORS and retry before the upload URL expires.');
-        const completeResponse = await request(`/api/v1/ingestion/uploads/${ticket.job_id}/complete`, { method: 'POST' });
+        const completeResponse = await request(`/api/v1/admin/ingestion/uploads/${ticket.job_id}/complete`, { method: 'POST' });
         result = await completeResponse.json();
       } else {
         const form = new FormData(); form.append('file', file);
