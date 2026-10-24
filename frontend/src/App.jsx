@@ -207,27 +207,28 @@ export default function App() {
     if (!authed) return;
     setLoading(true); setError('');
     try {
-      const [metricsResponse, registryResponse, activityResponse, orgResponse, jobsResponse] = await Promise.all([
-        request('/api/v1/admin/workspace/metrics'),
-        request('/api/v1/admin/registry/overview'),
-        request('/api/v1/admin/ingestion/activity?limit=50'),
-        request(`/api/v1/admin/organizations?page=${orgPage}&page_size=100${search ? `&q=${encodeURIComponent(search)}` : ''}`),
-        request('/api/v1/admin/ingestion/jobs?page_size=50')
+      const results = await Promise.allSettled([
+        request('/api/v1/admin/workspace/metrics').then(r => r.json()),
+        request('/api/v1/admin/registry/overview').then(r => r.json()),
+        request('/api/v1/admin/ingestion/activity?limit=50').then(r => r.json()),
+        request('/api/v1/admin/organizations?page=' + orgPage + '&page_size=100' + (search ? '&q=' + encodeURIComponent(search) : '')).then(r => r.json()),
+        request('/api/v1/admin/ingestion/jobs?page_size=50').then(r => r.json())
       ]);
-      const metrics = await metricsResponse.json();
-      const registry = await registryResponse.json();
-      const activityResult = await activityResponse.json();
-      const orgResult = await orgResponse.json();
-      const jobsResult = await jobsResponse.json();
-      setSummary({ ...metrics, total_organizations: metrics.indexed_organizations, total_jobs: metrics.ingestion_jobs,
-        data_quality: registry.completeness_percentage == null ? null : {
-          valid_percentage: registry.null_assertion_pass_percentage,
-          missing_percentage: Math.max(0, 100 - registry.completeness_percentage),
-          duplicate_percentage: null
-        }});
-      setRegistryOverview(registry); setActivity(activityResult.items || []);
-      setOrgs(orgResult.items || []); setOrgTotal(orgResult.total || 0);
-      setJobs(jobsResult.items || []); setConnected(true);
+      const [metricsResult, registryResult, activityResult, orgResult, jobsResult] = results;
+      if (metricsResult.status === 'fulfilled') {
+        const metrics = metricsResult.value;
+        setSummary(current => ({ ...(current || {}), ...metrics, total_organizations: metrics.indexed_organizations, total_jobs: metrics.ingestion_jobs }));
+        setConnected(true);
+      } else { throw metricsResult.reason; }
+      if (registryResult.status === 'fulfilled') {
+        const registry = registryResult.value; setRegistryOverview(registry);
+        setSummary(current => ({ ...(current || {}), data_quality: registry.completeness_percentage == null ? null : { valid_percentage: registry.null_assertion_pass_percentage, missing_percentage: Math.max(0, 100 - registry.completeness_percentage), duplicate_percentage: null } }));
+      }
+      if (activityResult.status === 'fulfilled') setActivity(activityResult.value.items || []);
+      if (orgResult.status === 'fulfilled') { setOrgs(orgResult.value.items || []); setOrgTotal(orgResult.value.total || 0); }
+      if (jobsResult.status === 'fulfilled') setJobs(jobsResult.value.items || []);
+      const failedPanels = results.slice(1).filter(result => result.status === 'rejected').length;
+      if (failedPanels) setError(failedPanels + ' workspace panel(s) could not refresh. Other available panels remain usable.');
     } catch (e) {
       setConnected(false);
       if (e.status === 401) { setAuthed(false); setCsrfToken(''); setError('Your session has expired. Sign in again.'); }
