@@ -1,4 +1,5 @@
 import time
+import json
 
 import jwt
 import pytest
@@ -68,15 +69,19 @@ def test_customers_cannot_request_ingestion_scopes(db, scope):
 @pytest.fixture
 def jwt_settings(monkeypatch):
     monkeypatch.setattr(settings, 'api_key_auth_jwt_secret', SECRET)
+    monkeypatch.setattr(settings, 'api_key_auth_jwt_keys_json', '')
+    monkeypatch.setattr(settings, 'api_key_auth_jwt_active_kid', 'current')
     monkeypatch.setattr(settings, 'api_key_auth_jwt_issuer', 'pesaguard')
     monkeypatch.setattr(settings, 'api_key_auth_jwt_audience', 'datasource')
 
 
 def _token(secret=SECRET, algorithm='HS256', **overrides):
-    claims = {'sub': 'u1', 'org_id': 'o1', 'iss': 'pesaguard', 'aud': 'datasource', 'exp': int(time.time()) + 300}
+    now = int(time.time())
+    claims = {'sub': 'u1', 'org_id': 'o1', 'tenant_id': 'tenant-o1', 'type': 'access', 'jti': 'token-1', 'iat': now, 'nbf': now - 1, 'auth_version': 1, 'scope': 'registry:read', 'iss': 'pesaguard', 'aud': 'datasource', 'exp': now + 300}
     claims.update(overrides)
     claims = {k: v for k, v in claims.items() if v is not None}
-    return 'Bearer ' + jwt.encode(claims, secret, algorithm=algorithm)
+    headers = {'kid': 'current'} if algorithm == 'HS256' else None
+    return 'Bearer ' + jwt.encode(claims, secret, algorithm=algorithm, headers=headers)
 
 
 def test_valid_token_is_accepted(jwt_settings):
@@ -89,7 +94,9 @@ def test_valid_token_is_accepted(jwt_settings):
     (lambda: _token(exp=None), 401),
     (lambda: _token(aud='someone-else'), 401),
     (lambda: _token(iss='attacker'), 401),
-    (lambda: _token(org_id=None), 403),
+    (lambda: _token(org_id=None, tenant_id=None), 403),
+    (lambda: _token(type='refresh'), 401),
+    (lambda: _token(tenant_id=None), 401),
     (lambda: 'Bearer ' + jwt.encode({'sub': 'u', 'org_id': 'o', 'exp': int(time.time()) + 60}, None, algorithm='none'), 401),
     (lambda: 'Bearer not.a.jwt', 401),
     (lambda: None, 401),
@@ -109,3 +116,25 @@ def test_production_requires_issuer_and_audience(monkeypatch):
         require_user_claims(_token())
     assert refused.value.status_code == 503
     assert api_keys.ALLOWED_SCOPES == {'registry:read', 'sources:read'}
+
+
+def test_pesaguard_rotating_jwt_key_id_is_honoured(monkeypatch):
+    active = 'a' * 48
+    previous = 'b' * 48
+    monkeypatch.setattr(settings, 'api_key_auth_jwt_secret', '')
+    monkeypatch.setattr(settings, 'api_key_auth_jwt_keys_json', json.dumps({'active-2026': active, 'previous-2025': previous}))
+    monkeypatch.setattr(settings, 'api_key_auth_jwt_active_kid', 'active-2026')
+    monkeypatch.setattr(settings, 'api_key_auth_jwt_issuer', 'pesaguard')
+    monkeypatch.setattr(settings, 'api_key_auth_jwt_audience', 'datasource')
+    now = int(time.time())
+    claims = {'sub':'u1','organization_id':'org-rotated','tenant_id':'tenant-rotated','type':'access',
+              'jti':'rotated-token','iat':now,'nbf':now-1,'auth_version':1,'scope':'registry:read',
+              'iss':'pesaguard','aud':'datasource','exp':now+300}
+    token = 'Bearer ' + jwt.encode(claims, previous, algorithm='HS256', headers={'kid':'previous-2025'})
+    assert require_user_claims(token)['org_id'] == 'org-rotated'
+
+
+def test_refresh_token_is_not_accepted_as_customer_identity(jwt_settings):
+    with pytest.raises(HTTPException) as refused:
+        require_user_claims(_token(type='refresh'))
+    assert refused.value.status_code == 401
