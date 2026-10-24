@@ -1,5 +1,5 @@
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
+  "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "pesaguard-datasource-staging",
   "pages_build_output_dir": "./dist",
   "compatibility_date": "2026-10-24"
