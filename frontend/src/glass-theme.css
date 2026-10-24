@@ -33,3 +33,15 @@ button,input,select,textarea{color-scheme:dark}button:focus-visible,input:focus-
 .source-empty .button-primary{box-shadow:0 8px 26px rgba(20,185,80,.18)}
 .pagination .button-secondary:disabled{opacity:.35}
 svg{flex-shrink:0}button svg{transition:filter .18s ease,transform .18s ease}button:hover:not(:disabled) svg{filter:drop-shadow(0 0 5px rgba(67,238,139,.23))}
+
+/* Shared page wrappers and key-management forms */
+.source-page,.module-page,.api-keys-page,.api-keys-page>section{background:transparent;color:#e4f2e8}
+.source-editor,.key-create-form,.key-form,.module-section,.settings-card{background:rgba(13,29,19,.68);border:1px solid rgba(139,255,180,.16);border-radius:16px;box-shadow:0 18px 50px rgba(0,0,0,.2),inset 0 1px 0 rgba(255,255,255,.04);backdrop-filter:blur(18px) saturate(135%)}
+.key-create-form input:not([type=checkbox]),.key-create-form select,.key-create-form textarea,.key-auth-panel input,.module-search input,.source-search input{background:rgba(4,18,10,.6);border:1px solid rgba(139,255,179,.17);border-radius:10px;color:#e2f3e8}
+.key-create-form input:focus,.key-create-form select:focus,.key-create-form textarea:focus,.key-auth-panel input:focus{border-color:rgba(74,239,144,.65);box-shadow:0 0 0 3px rgba(46,211,108,.12);outline:none}
+.key-create-form label,.key-auth-panel label{color:#bad3c3}
+.key-create-form h2,.key-create-form h3,.key-auth-panel h2,.key-auth-panel h3{color:#e5f6ea}
+.key-create-form small,.key-auth-panel small,.api-keys-page p{color:#8eaa99}
+.source-table-footer,.key-table-footer{border-top-color:rgba(137,255,179,.12);color:#8eaa99}
+.module-table th,.module-table td{border-color:rgba(135,255,178,.12)}
+button:disabled{cursor:not-allowed;filter:saturate(.65)}
