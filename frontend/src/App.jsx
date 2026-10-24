@@ -207,6 +207,7 @@ export default function App() {
   const [mobile, setMobile] = useState(false);
   const [previewMode, setPreviewMode] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [oauthProviders, setOauthProviders] = useState({ google: false, github: false });
 
   const request = api;
   const refresh = useCallback(async () => {
@@ -279,6 +280,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    api('/api/v1/admin/oauth/providers').then(r => r.json()).then(setOauthProviders).catch(() => setOauthProviders({ google: false, github: false }));
+  }, []);
+
+  useEffect(() => {
     // Restore an existing server-side session after a page reload.
     api('/api/v1/admin/session').then(r => r.json()).then(s => { setCsrfToken(s.csrf_token); setAuthed(true); }).catch(() => {}).finally(() => setChecking(false));
   }, []);
@@ -333,7 +338,7 @@ export default function App() {
   const navToUpload = () => setPage('Upload center');
   const knownPage = ['Overview', 'Data Sources', 'Registry Records', 'Ingestion Jobs', 'Upload center', 'API Keys', 'Data Quality', 'Warehouse', 'Validation Rules', 'Audit Logs', 'Settings', 'Profile', 'Notifications', 'Documentation'].includes(page);
 
-  if (!authed && !checking) return <LoginPage password={password} setPassword={setPassword} onSubmit={signIn} error={error} busy={signingIn} />;
+  if (!authed && !checking) return <LoginPage password={password} setPassword={setPassword} onSubmit={signIn} error={error} busy={signingIn} oauthProviders={oauthProviders} />;
 
   return <div className="app-shell">
     {mobile && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setMobile(false)} />}
