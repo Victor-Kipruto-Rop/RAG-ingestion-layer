@@ -190,7 +190,6 @@ cloudflare-pages-staging:
     - npm ci --no-audit --no-fund
     - npm run build
   script:
-    - cd frontend
     - npm run pages:deploy:staging
   rules:
     - if: '$CI_COMMIT_BRANCH == "chore/production-ci-release-gates"'
