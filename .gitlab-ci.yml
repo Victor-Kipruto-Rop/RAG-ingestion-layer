@@ -189,9 +189,9 @@ cloudflare-pages-staging:
     - cd frontend
     - npm ci --no-audit --no-fund
     - npm run build
-    - cd ..
   script:
-    - npx --yes wrangler pages deploy frontend/dist --project-name=pesaguard-datasource-staging --branch=staging
+    - cd frontend
+    - npm run pages:deploy:staging
   rules:
     - if: '$CI_COMMIT_BRANCH == "chore/production-ci-release-gates"'
       when: manual
