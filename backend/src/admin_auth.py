@@ -111,6 +111,13 @@ def decode_session_token(token: str | None) -> dict | None:
 def session_from_request(request: Request) -> dict | None:
     return decode_session_token(request.cookies.get(COOKIE_NAME))
 
+def refresh_session_token(claims: dict, now: float | None = None) -> tuple[str, dict]:
+    """Issue a sliding-TTL token while preserving the current CSRF secret."""
+    issued = int(now if now is not None else time.time())
+    renewed = {**claims, 'iat': issued, 'exp': issued + max(60, settings.session_ttl_seconds)}
+    payload = _b64(json.dumps(renewed, separators=(',', ':')).encode())
+    return f'{payload}.{_sign(payload)}', renewed
+
 
 def enforce_session_csrf(request: Request, claims: dict) -> None:
     """Cookie-authenticated unsafe requests must prove they came from our dashboard."""
