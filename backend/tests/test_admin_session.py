@@ -89,12 +89,15 @@ def test_session_secret_must_be_long_when_login_is_enabled(monkeypatch):
         validate_runtime_config()
 
 
-def test_production_login_fails_closed_when_redis_is_unavailable(client, monkeypatch):
+@pytest.mark.parametrize('app_env', ['staging', 'production'])
+def test_production_like_login_fails_closed_when_redis_is_unavailable(client, monkeypatch, app_env):
     import redis
-    monkeypatch.setattr(settings, 'app_env', 'production')
+    monkeypatch.setattr(settings, 'app_env', app_env)
     monkeypatch.setattr(settings, 'redis_url', 'redis://unavailable.invalid:6379/0')
+
     def unavailable(*args, **kwargs):
         raise redis.ConnectionError('simulated redis outage')
+
     monkeypatch.setattr(redis.Redis, 'from_url', unavailable)
     response = _login(client)
     assert response.status_code == 503
