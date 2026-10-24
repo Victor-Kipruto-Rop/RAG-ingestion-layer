@@ -261,6 +261,7 @@ class DeveloperAuthChallenge(Base):
  otp_hash:Mapped[str]=mapped_column(String(64),nullable=False)
  password_hash:Mapped[str|None]=mapped_column(String(255),nullable=True)
  display_name:Mapped[str|None]=mapped_column(String(120),nullable=True)
+ workspace_name:Mapped[str|None]=mapped_column(String(160),nullable=True)
  attempts:Mapped[int]=mapped_column(Integer,default=0,nullable=False)
  expires_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
  consumed_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
