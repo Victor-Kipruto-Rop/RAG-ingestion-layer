@@ -24,12 +24,12 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from .config import settings
 from .database import get_db
-from .models import RegistrySource, IngestionJob, Organization, AuditLog, WarehouseRawImport, WarehouseAccessLog, FailedImportDLQ, IngestionRowError, AdminProfile, AdminNotificationRead, AdminAccount, AdminAuthChallenge, AdminSession, now_utc
+from .models import RegistrySource, IngestionJob, Organization, AuditLog, WarehouseRawImport, WarehouseAccessLog, FailedImportDLQ, IngestionRowError, AdminProfile, AdminNotificationRead, AdminAccount, AdminAuthChallenge, AdminSession, DeveloperProductionAccessRequest, DeveloperWorkspace, ApiKey, ApiKeyAuditEvent, now_utc
 from sqlalchemy import select, func, or_
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
@@ -422,6 +422,116 @@ if __name__ == '__main__':
 
 
 # Session-authenticated dashboard endpoints. The internal service API key stays server-side.
+
+class DeveloperProductionReviewRequest(BaseModel):
+    status: str = Field(pattern=r"^(approved|rejected)$")
+    reviewer_note: str = Field(min_length=5, max_length=1000)
+
+
+class DeveloperWorkspaceVerificationRequest(BaseModel):
+    verified: bool
+    evidence_reference: str = Field(min_length=8, max_length=1000)
+    reviewer_note: str = Field(default="", max_length=1000)
+
+
+@router.get("/developer/production-access/requests")
+def admin_list_developer_production_requests(
+    claims: dict = Depends(lambda request: require_admin(request)),
+    db: Session = Depends(get_db),
+):
+    rows = db.scalars(select(DeveloperProductionAccessRequest).order_by(DeveloperProductionAccessRequest.created_at.desc()).limit(500)).all()
+    items = []
+    for row in rows:
+        workspace = db.get(DeveloperWorkspace, row.workspace_id)
+        account = db.get(AdminAccount, claims.get("sub")) if claims.get("sub") else None
+        items.append({
+            "id": row.id, "workspace_id": row.workspace_id, "workspace_name": workspace.name if workspace else None,
+            "workspace_verified": bool(workspace and workspace.verified),
+            "production_access_approved": bool(workspace and workspace.production_access_approved),
+            "requested_by_user_id": row.requested_by_user_id, "use_case": row.use_case,
+            "expected_volume": row.expected_volume, "status": row.status, "reviewer_note": row.reviewer_note,
+            "reviewed_at": row.reviewed_at.isoformat() if row.reviewed_at else None,
+            "created_at": row.created_at.isoformat(),
+        })
+    return {"items": items}
+
+
+@router.post("/developer/production-access/requests/{request_id}/review")
+def admin_review_developer_production_request(
+    request_id: str,
+    payload: DeveloperProductionReviewRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    claims: dict = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    row = db.get(DeveloperProductionAccessRequest, request_id)
+    if not row:
+        raise HTTPException(404, "Production-access request not found")
+    workspace = db.get(DeveloperWorkspace, row.workspace_id)
+    if not workspace:
+        raise HTTPException(409, "Developer workspace no longer exists")
+    if row.status != "pending":
+        raise HTTPException(409, "Only pending requests can be reviewed")
+    if payload.status == "approved" and workspace.verified is not True:
+        raise HTTPException(409, "Verify the workspace with authoritative evidence before approving production access")
+    now = now_utc()
+    row.status = payload.status
+    row.reviewer_note = payload.reviewer_note.strip()
+    row.reviewed_at = now
+    workspace.production_access_approved = payload.status == "approved"
+    actor = str(claims.get("sub") or claims.get("email") or "admin")
+    db.add(ApiKeyAuditEvent(organization_id=workspace.id, actor_user_id=actor,
+        action="production_access.reviewed", details={"request_id": row.id, "status": payload.status,
+        "reviewer_note": row.reviewer_note, "evidence_required": True}, created_at=now))
+    if payload.status != "approved":
+        for key in db.scalars(select(ApiKey).where(ApiKey.organization_id == workspace.id,
+                                                   ApiKey.environment == "production", ApiKey.status == "active")).all():
+            key.status = "revoked"
+            key.revoked_at = now
+            db.add(ApiKeyAuditEvent(organization_id=workspace.id, actor_user_id=actor, api_key_id=key.id,
+                action="api_key.revoked", details={"reason": "production_access_rejected"}, created_at=now))
+    db.commit()
+    from .developer_platform import _queue_workspace_event
+    _queue_workspace_event(background_tasks, workspace.id, "production_access.reviewed",
+        {"request_id": row.id, "status": row.status, "reviewer_note": row.reviewer_note})
+    return {"id": row.id, "status": row.status, "workspace_verified": workspace.verified,
+            "production_access_approved": workspace.production_access_approved}
+
+
+@router.post("/developer/workspaces/{workspace_id}/verification")
+def admin_set_developer_workspace_verification(
+    workspace_id: str,
+    payload: DeveloperWorkspaceVerificationRequest,
+    claims: dict = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    workspace = db.get(DeveloperWorkspace, workspace_id)
+    if not workspace:
+        raise HTTPException(404, "Developer workspace not found")
+    evidence = payload.evidence_reference.strip()
+    if not evidence:
+        raise HTTPException(422, "An evidence reference is required")
+    now = now_utc()
+    previous = workspace.verified
+    workspace.verified = payload.verified
+    actor = str(claims.get("sub") or claims.get("email") or "admin")
+    db.add(ApiKeyAuditEvent(organization_id=workspace.id, actor_user_id=actor,
+        action="workspace.verification.updated", details={"previous": bool(previous), "verified": payload.verified,
+        "evidence_reference": evidence, "reviewer_note": payload.reviewer_note.strip()}, created_at=now))
+    if not payload.verified:
+        workspace.production_access_approved = False
+        for key in db.scalars(select(ApiKey).where(ApiKey.organization_id == workspace.id,
+                                                   ApiKey.environment == "production", ApiKey.status == "active")).all():
+            key.status = "revoked"
+            key.revoked_at = now
+            db.add(ApiKeyAuditEvent(organization_id=workspace.id, actor_user_id=actor, api_key_id=key.id,
+                action="api_key.revoked", details={"reason": "workspace_verification_revoked"}, created_at=now))
+    db.commit()
+    return {"workspace_id": workspace.id, "verified": workspace.verified,
+            "production_access_approved": workspace.production_access_approved}
+
+
 def require_admin(request: Request):
     claims = session_from_request(request)
     if not claims:
