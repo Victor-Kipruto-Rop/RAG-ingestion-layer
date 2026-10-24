@@ -11,7 +11,7 @@ This checklist separates source-level review from checks that require real crede
 - The connected Render workspace lists one Datasource service: `pesaguard-datasource`, on branch `main`, at `https://pesaguard-datasource.onrender.com`. It is on the free plan, has no configured health-check path, and no separate Datasource staging/sandbox service or Key Value instance was identified.
 - Render logs for deploy `dep-dbefg8k9v7es73cff15g` show the image built successfully but application startup failed at production configuration validation because `REDIS_URL` and PesaGuard identity signing configuration (or `DEVELOPER_ACCESS_TOKEN_SECRET`) were missing. The deploy ended `update_failed`; do not interpret a successful image build as a healthy deployment.
 - The application source defines separate sandbox and production API base URL settings and key prefixes (`pg_sandbox_` and `pg_live_`). This source contract does not prove the deployed environment variables or DNS/TLS routing are correct.
-- Google/GitHub OAuth and Resend/SMTP credentials were not provided in this request. Provider applications, verified sender identity, and live delivery therefore cannot be confirmed from source code alone.
+- OAuth provider credentials and Resend/SMTP credentials were not provided in this request. OAuth sign-in is optional if password/OTP operator authentication is selected, but any enabled provider must be configured and allowlisted. Verified sender identity and live email delivery cannot be confirmed from source code alone.
 - Recent GitHub Actions runs (`40121789014`, `40121750185`, and `40121739571`) show all five jobs failing within about one to two seconds with `runner_id=0`, an empty runner name, and `steps=[]`; job-log downloads return `BlobNotFound`. A retry of an earlier run behaved the same way. This indicates the jobs never reached a runner, so no test/build commands are evidenced as executed. The repository cannot diagnose whether runner provisioning is blocked by repository/account Actions settings or a GitHub-side issue; check Actions permissions/usage and GitHub Actions service health. This is **not** evidence that the source tests passed or failed.
 - A staging-only Render Blueprint is provided in `render.staging.yaml`. It defines an isolated PostgreSQL database, private Key Value service, API, worker, and a static frontend with SPA route fallback and security headers. The frontend receives the staging API base URL during its build. The Blueprint has not been applied, so no staging resources or custom DNS records exist yet.
 - No production credentials were read or changed, no staging account was used, and no deployment was triggered.
@@ -42,18 +42,17 @@ Set values through the authorized deployment provider's secret/environment-varia
 
 Required variables:
 - `PUBLIC_BASE_URL` — canonical operator dashboard/API origin used to construct callback URLs.
-- `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`.
-- `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET`.
-- `ADMIN_OAUTH_ALLOWED_EMAILS` — exact, lower-case operator addresses only; never use a public wildcard.
+- Optional OAuth: `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GITHUB_OAUTH_CLIENT_ID`, and `GITHUB_OAUTH_CLIENT_SECRET`.
+- If OAuth is enabled, set `ADMIN_OAUTH_ALLOWED_EMAILS` to exact, lower-case operator addresses only; never use a public wildcard.
 - Preferred: `RESEND_API_KEY` and `RESEND_FROM_EMAIL` on a verified Resend sending domain. Optional SMTP fallback: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, `SMTP_USE_STARTTLS`, `SMTP_USE_SSL`.
 - `AUTH_OTP_PEPPER` — independent high-entropy secret used to hash OTPs.
 - `SESSION_SECRET` — independent high-entropy signing secret.
 - `SESSION_COOKIE_SECURE=true` in HTTPS staging/production.
 - `REDIS_URL` and PostgreSQL `DATABASE_URL` as required by production configuration.
 
-Register exact OAuth callback URLs in provider consoles:
-- `https://<operator-host>/api/v1/admin/oauth/google/callback`
-- `https://<operator-host>/api/v1/admin/oauth/github/callback`
+If OAuth is enabled, register exact callback URLs in provider consoles using the staging API hostname (the callback endpoints are served by the API):
+- `https://<staging-api-host>/api/v1/admin/oauth/google/callback`
+- `https://<staging-api-host>/api/v1/admin/oauth/github/callback`
 
 For the separate public developer account flow, configure provider callback URLs as returned by `GET /api/v1/developer/auth/oauth/providers` or the application's OAuth start/config endpoints. Do not reuse the internal operator allowlist or operator session secret for developer accounts.
 
