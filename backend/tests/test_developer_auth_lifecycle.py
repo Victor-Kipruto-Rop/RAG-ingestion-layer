@@ -1,6 +1,4 @@
 import re
-from datetime import timedelta
-
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
