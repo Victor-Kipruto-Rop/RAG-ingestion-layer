@@ -74,6 +74,8 @@ class Settings(BaseSettings):
  developer_session_ttl_seconds:int=2592000
  developer_webhook_encryption_key:str=''
  developer_public_base_url:str='https://sandbox-api.pesaguard.co.ke'
+ developer_oauth_callback_base_url:str=''
+ developer_frontend_url:str=''
  developer_production_base_url:str='https://api.pesaguard.co.ke'
  worker_commit_interval_seconds:int=60
  entity_resolution_max_candidates:int=200
