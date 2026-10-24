@@ -99,5 +99,25 @@ else {
 }
 
 Write-Host ""
+# Exercise the privacy-preserving POST contract used by PesaGuard. The ID is fictional.
+$postBody = @{ reg_no = $TestRegistrationNumber } | ConvertTo-Json -Compress
+try {
+    $postResponse = Invoke-WebRequest -Uri "$ApiBaseUrl/api/v1/registry/lookup" -Method Post -Headers @{ "X-API-Key" = $ApiKey; "Content-Type" = "application/json" } -Body $postBody -TimeoutSec 8 -UseBasicParsing
+}
+catch {
+    throw "Authenticated POST registry lookup failed. Check that the API branch includes POST /api/v1/registry/lookup."
+}
+Assert-Status -Response $postResponse -Expected 200 -Label "Authenticated POST registry lookup"
+try {
+    $postPayload = $postResponse.Content | ConvertFrom-Json
+}
+catch {
+    throw "Authenticated POST lookup did not return valid JSON."
+}
+if ($null -eq $postPayload.PSObject.Properties["found"] -or $postPayload.found -isnot [bool]) {
+    throw "POST lookup response must include a boolean 'found' field."
+}
+Write-Host "[PASS] POST lookup response shape is valid"
+
 Write-Host "Local datasource smoke test passed."
 Write-Host "This does not prove PesaGuard-to-datasource end-to-end integration or BRS/KRA connectivity."
