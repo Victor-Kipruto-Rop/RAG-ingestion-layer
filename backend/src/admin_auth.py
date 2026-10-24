@@ -200,6 +200,7 @@ def _check_login_rate(client_host: str) -> None:
 
 class LoginRequest(BaseModel):
     password: str = Field(min_length=1, max_length=512)
+    email: str | None = Field(default=None, min_length=3, max_length=320)
 
 
 @router.post('/login')
@@ -207,9 +208,20 @@ def login(payload: LoginRequest, request: Request, response: Response):
     if not settings.admin_password_hash or not settings.session_secret:
         raise HTTPException(503, 'Dashboard sign-in is not configured')
     _check_login_rate(request.client.host if request.client else 'unknown')
-    if not verify_password(payload.password, settings.admin_password_hash):
-        raise HTTPException(401, 'Invalid credentials')
-    token, claims = issue_session_token()
+    account = None
+    if payload.email:
+        email = payload.email.strip().lower()
+        if '@' not in email or len(email) > 320:
+            raise HTTPException(401, 'Invalid credentials')
+        with SessionLocal() as db:
+            account = db.scalar(select(AdminAccount).where(func.lower(AdminAccount.email) == email))
+            if not account or account.disabled_at is not None or not account.email_verified_at or not verify_password(payload.password, account.password_hash):
+                raise HTTPException(401, 'Invalid credentials')
+        token, claims = issue_session_token(email=account.email, auth_method='password')
+    else:
+        if not settings.admin_password_hash or not verify_password(payload.password, settings.admin_password_hash):
+            raise HTTPException(401, 'Invalid credentials')
+        token, claims = issue_session_token(auth_method='legacy_password')
     _persist_session(claims, request, email=claims.get('email'), auth_method=claims.get('auth_method', 'password'))
     response.set_cookie(COOKIE_NAME, token, max_age=max(60, settings.session_ttl_seconds), httponly=True,
                         secure=settings.session_cookie_secure, samesite='strict', path='/')
