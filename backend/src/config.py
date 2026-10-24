@@ -81,8 +81,10 @@ def validate_runtime_config():
   missing.append('HMAC_SHARED_SECRET')
  if settings.require_hmac and not settings.redis_url:
   missing.append('REDIS_URL (required for distributed HMAC replay protection)')
- if settings.api_key_auth_jwt_secret and not (settings.api_key_auth_jwt_issuer and settings.api_key_auth_jwt_audience):
-  missing.append('API_KEY_AUTH_JWT_ISSUER/API_KEY_AUTH_JWT_AUDIENCE (required when API_KEY_AUTH_JWT_SECRET is set)')
+ if not (settings.api_key_auth_jwt_secret or settings.api_key_auth_jwt_keys_json):
+  missing.append('API_KEY_AUTH_JWT_KEYS_JSON or API_KEY_AUTH_JWT_SECRET (PesaGuard identity signing keys)')
+ if not (settings.api_key_auth_jwt_issuer and settings.api_key_auth_jwt_audience):
+  missing.append('API_KEY_AUTH_JWT_ISSUER/API_KEY_AUTH_JWT_AUDIENCE (PesaGuard identity token validation)')
  if settings.api_environment.lower().strip() not in {'sandbox','production'}:
   missing.append('API_ENVIRONMENT (must be sandbox or production)')
  if settings.admin_password_hash and not settings.session_cookie_secure:
