@@ -15,7 +15,25 @@ This checklist separates source-level review from checks that require real crede
 - Latest observed GitHub Actions run for the candidate (run ID `40120907102`) reports all five jobs failed with no step summaries; downloading a job log returns `BlobNotFound`. Earlier runs show the same no-steps pattern. The workflow's actual test commands therefore have not been evidenced as executed, and this is **not** a passing CI result. The cause is still undiagnosed; do not assume it is a source-code test failure.
 - No production credentials were read or changed, no staging account was used, and no deployment was triggered.
 
-## 2. Configure secrets in the deployment control plane
+## 2. Reproducible Render staging environment
+
+A staging-only Blueprint is provided at `render.staging.yaml`. Select that exact Blueprint filename when creating a new Render Blueprint; do not apply it to the existing production service or sync it as a production Blueprint.
+
+The blueprint defines a separate PostgreSQL database, private Key Value service, API web service, background worker, and frontend. It sets `APP_ENV=staging`, `API_ENVIRONMENT=sandbox`, the API readiness health check (`/health/ready`), database migrations, and `autoDeployTrigger: checksPass`. API and worker share staging-only secrets and staging storage credentials; the staging bucket must not be the production R2 bucket. Production API base URL remains a different hostname from the staging sandbox URL.
+
+**Cost and access warning:** creating the Blueprint provisions Render resources and can incur charges. Review the selected plans and expected monthly cost before creating it. No cloud resources are created by committing this file. The Key Value service is configured without public inbound IP access; verify internal connectivity after creation.
+
+During Blueprint creation, provide the prompted values through Render's secure setup flow:
+- A password hash for the staging operator account (generate it with the documented `python -m src.admin_auth hash-password` command in a trusted local environment).
+- A verified staging Resend sender/API key (or configure the documented SMTP alternative manually).
+- Staging-only Cloudflare R2 account credentials and a dedicated staging bucket.
+- The exact operator signup allowlist for staging, if operator signup is enabled.
+
+Do not reuse production database credentials, R2 keys/bucket, mail credentials, or identity signing secrets. Optional Google/GitHub OAuth credentials must use staging callback URLs registered with each provider. The blueprint does not create DNS records or custom domains; it uses Render-managed service hostnames.
+
+The worker now runs the same runtime configuration validation as the API before processing jobs. Staging is treated as production-like for required PostgreSQL, Redis, R2, HTTPS, signing-key, session, and fail-closed rate-limiting checks. The API readiness endpoint must remain unhealthy until database, object storage, and Redis are reachable.
+
+## 3. Configure secrets in the deployment control plane
 
 Set values through the authorized deployment provider's secret/environment-variable UI. Do not commit them to `.env.example`, source control, build args, or logs.
 
@@ -50,7 +68,7 @@ Expected public host contract:
 
 These are expected values from application configuration, not verified evidence of live DNS, TLS, host routing, or deployed environment settings.
 
-## 3. Acceptance tests — staging only
+## 4. Acceptance tests — staging only
 
 Record a run ID, date, tester, deployed commit SHA, service IDs, and redacted evidence for every check.
 
