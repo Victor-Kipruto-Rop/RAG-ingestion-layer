@@ -231,6 +231,19 @@ function AuthScreen({mode,setMode,config,onAuthenticated,busy,error,setError}){
       }
     }catch(err){setLocalError(err.message||'Authentication failed.');}finally{setLocalBusy(false);}
   };
+  const resendCode=async()=>{
+    setLocalError('');setError('');setMessage('');setLocalBusy(true);
+    try{
+      if(reset){
+        const r=await readJson('/api/v1/developer/auth/password-reset/request-otp',{method:'POST',body:JSON.stringify({email})});
+        setMessage(r.message);
+      }else{
+        const r=await readJson('/api/v1/developer/auth/signup/request-otp',{method:'POST',body:JSON.stringify({email,display_name:displayName,workspace_name:workspaceName,password})});
+        setMessage(r.message);
+      }
+    }catch(err){setLocalError(err.message||'A new verification code could not be sent.');}
+    finally{setLocalBusy(false);}
+  };
   const title=reset?(stage==='request'?'Recover your account':'Verify reset code'):mode==='signup'?(stage==='details'?'Build your developer workspace':'Verify your email'):'Welcome back, developer';
   return <div className="dp-auth-shell">
     <div className="dp-auth-visual"><div className="dp-auth-nav"><a className="dp-brand" href="#"><span className="dp-brand-mark"><img src="/pesaguard-mark.svg" alt=""/></span><span><strong>PesaGuard</strong><small>DEVELOPER PLATFORM</small></span></a><span className="dp-open-badge"><i/> API PLATFORM</span></div><WindHero compact/><div className="dp-auth-pitch"><div className="dp-eyebrow">INTEGRATE WITH CONFIDENCE</div><h1>Build once.<br/><em>Move money data</em><br/>with clarity.</h1><p>Environment-isolated keys, signed webhooks, clear contracts and observable API behavior for real integrations.</p><div className="dp-trust-row"><span><ShieldCheck size={15}/> Least privilege</span><span><Zap size={15}/> Fast feedback</span><span><Radio size={15}/> Event-driven</span></div></div><div className="dp-auth-foot">Built for developers shipping production integrations.</div></div>
@@ -243,10 +256,10 @@ function AuthScreen({mode,setMode,config,onAuthenticated,busy,error,setError}){
         <label>Email address<input type="email" autoComplete="email" value={email} onChange={e=>setEmail(e.target.value)} required readOnly={stage==='verify'||stage==='confirm'} placeholder="you@company.com"/></label>
         {(stage==='verify'||stage==='confirm')&&<label>6-digit email code<input inputMode="numeric" autoComplete="one-time-code" value={code} onChange={e=>setCode(e.target.value.replace(/\D/g,'').slice(0,6))} pattern="[0-9]{6}" minLength={6} required placeholder="000000"/></label>}
         {(mode==='login'||stage==='details'&&mode==='signup'||reset&&stage==='confirm')&&<><label>{reset?'New password':'Password'}<input type="password" autoComplete={mode==='login'?'current-password':'new-password'} value={password} onChange={e=>setPassword(e.target.value)} minLength={mode==='login'?1:(config.password_min_length||12)} required placeholder={mode==='login'?'Your password':'At least 12 characters'}/></label>{(mode==='signup'||reset)&&<label>Confirm password<input type="password" autoComplete="new-password" value={confirm} onChange={e=>setConfirm(e.target.value)} minLength={config.password_min_length||12} required placeholder="Repeat password"/></label>}</>}
-        <button className="dp-button primary wide" disabled={loading||(!reset&&mode==='signup'&&!config.signup_enabled)}>{loading?'Please wait…':reset?'Continue securely':mode==='signup'?(stage==='details'?'Send verification code':'Verify email and create account'):'Sign in'}<ArrowRight size={16}/></button>
+        <button className="dp-button primary wide" disabled={loading||(!reset&&mode==='signup'&&!config.signup_enabled)||(reset&&!config.password_reset_enabled)}>{loading?'Please wait…':reset?'Continue securely':mode==='signup'?(stage==='details'?'Send verification code':'Verify email and create account'):'Sign in'}<ArrowRight size={16}/></button>
       </form>
       {(config.google_enabled||config.github_enabled)&&<div className="dp-social-auth"><div className="dp-social-divider"><span>or continue with</span></div><div className="dp-social-buttons">{config.google_enabled&&<button type="button" onClick={()=>window.location.assign(`${API_BASE}/api/v1/developer/auth/oauth/google/start`)}><Globe2 size={16}/> Google</button>}{config.github_enabled&&<button type="button" onClick={()=>window.location.assign(`${API_BASE}/api/v1/developer/auth/oauth/github/start`)}><Github size={16}/> GitHub</button>}</div></div>}
-      <div className="dp-auth-links">{mode==='login'&&!reset&&<><button onClick={()=>{setMode('reset');setStage('request');setLocalError('');}}>Forgot password?</button><span>New here? <button onClick={()=>{setMode('signup');setStage('details');setLocalError('');}}>Create an account</button></span></>}{(mode==='signup'||reset)&&<button onClick={()=>{setMode('login');setStage('details');setLocalError('');setMessage('');}}>Back to sign in</button>}</div>
+      <div className="dp-auth-links">{mode==='login'&&!reset&&<><button onClick={()=>{setMode('reset');setStage('request');setLocalError('');}}>Forgot password?</button><span>New here? <button onClick={()=>{setMode('signup');setStage('details');setLocalError('');}}>Create an account</button></span></>}{(mode==='signup'&&stage==='verify'||reset&&stage==='confirm')&&<button disabled={loading||(!reset&&!config.signup_enabled)||(reset&&!config.password_reset_enabled)} onClick={resendCode}>Resend code</button>}{(mode==='signup'||reset)&&<button onClick={()=>{setMode('login');setStage('details');setLocalError('');setMessage('');}}>Back to sign in</button>}</div>
       {mode==='signup'&&!config.signup_enabled&&<div className="dp-config-warning"><LockKeyhole size={16}/><span>Registration is disabled until email delivery, OTP pepper and developer signing/session secrets are configured on the backend.</span></div>}
       <div className="dp-auth-security"><ShieldCheck size={16}/><span>HttpOnly session cookie · CSRF protection · one-time email codes · session revocation</span></div>
     </div></div>
