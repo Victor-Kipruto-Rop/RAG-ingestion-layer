@@ -100,7 +100,7 @@ Record a run ID, date, tester, deployed commit SHA, service IDs, and redacted ev
 - [ ] Revoke the current session and prove the session cookie is cleared and subsequent requests fail.
 - [ ] Confirm cookie flags, CSRF checks for unsafe requests, expiry enforcement, and Redis-backed distributed login throttling.
 
-## 4. CI, database, and deployment gates
+## 5. CI, database, and deployment gates
 
 - [ ] Restore actionable GitHub Actions runners; require backend, PostgreSQL, frontend, SDK, and Docker/Compose checks to finish with green conclusions.
 - [ ] Run Alembic migrations against a disposable PostgreSQL database and confirm tenant-isolation/RLS checks pass.
@@ -109,7 +109,7 @@ Record a run ID, date, tester, deployed commit SHA, service IDs, and redacted ev
 - [ ] Run smoke tests and the acceptance checks above against staging, not production.
 - [ ] Confirm monitoring, alert routing, rollback plan, backups, and restore test evidence.
 
-## 5. Release decision
+## 6. Release decision
 
 Release status must remain **BLOCKED** until all mandatory staging checks have evidence, CI is green, sandbox and production services are demonstrably isolated, and an authorized reviewer approves the exact commit SHA. Do not deploy to production merely because OAuth buttons render or environment variables exist.
 
