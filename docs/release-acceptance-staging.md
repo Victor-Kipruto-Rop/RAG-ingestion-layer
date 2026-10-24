@@ -12,7 +12,7 @@ This checklist separates source-level review from checks that require real crede
 - Render logs for deploy `dep-dbefg8k9v7es73cff15g` show the image built successfully but application startup failed at production configuration validation because `REDIS_URL` and PesaGuard identity signing configuration (or `DEVELOPER_ACCESS_TOKEN_SECRET`) were missing. The deploy ended `update_failed`; do not interpret a successful image build as a healthy deployment.
 - The application source defines separate sandbox and production API base URL settings and key prefixes (`pg_sandbox_` and `pg_live_`). This source contract does not prove the deployed environment variables or DNS/TLS routing are correct.
 - Google/GitHub OAuth and Resend/SMTP credentials were not provided in this request. Provider applications, verified sender identity, and live delivery therefore cannot be confirmed from source code alone.
-- Latest observed GitHub Actions run for the candidate (run ID `40115338997`) reports all jobs failed before steps were created; no test/build steps or useful job logs were available. This is **not** a passing CI result.
+- Latest observed GitHub Actions run for the candidate (run ID `40120907102`) reports all five jobs failed with no step summaries; downloading a job log returns `BlobNotFound`. Earlier runs show the same no-steps pattern. The workflow's actual test commands therefore have not been evidenced as executed, and this is **not** a passing CI result. The cause is still undiagnosed; do not assume it is a source-code test failure.
 - No production credentials were read or changed, no staging account was used, and no deployment was triggered.
 
 ## 2. Configure secrets in the deployment control plane
