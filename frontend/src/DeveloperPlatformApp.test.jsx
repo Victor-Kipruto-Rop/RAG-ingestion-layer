@@ -30,6 +30,11 @@ describe('DeveloperPlatformApp public landing', () => {
     expect(screen.getByText(/strict environment separation/i)).toBeTruthy();
     expect(container.querySelector('.dp-wind-scene')).toBeTruthy();
     expect(screen.getByText(/signed webhooks/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /start building/i }));
+    const configWarning = await screen.findByRole('alert');
+    expect(configWarning.className).toContain('warning');
+    expect(configWarning.textContent).toContain('Registration is disabled');
+    expect(screen.getByRole('button', { name: /dismiss message/i })).toBeTruthy();
   });
 });
 
