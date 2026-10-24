@@ -334,3 +334,10 @@ button:focus-visible, input:focus-visible { outline: 3px solid #20b87555; outlin
  .secret-value { align-items:flex-start; flex-wrap:wrap; }
  .secret-value code { flex-basis:calc(100% - 36px); }
 }
+
+/* Workspace Overview loading and isolated-widget states */
+.metric-skeleton{display:block;width:88px;height:30px;border-radius:7px;background:linear-gradient(90deg,#161b22 25%,#202833 45%,#161b22 65%);background-size:220% 100%;animation:pg-skeleton 1.4s ease-in-out infinite}
+.widget-error{min-height:160px;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:10px;padding:24px;border:1px solid rgba(220,70,70,.25);border-radius:14px;background:#111820;color:#aab8c5}
+.widget-error strong{color:#e5edf4;font-size:13px}.widget-error span{font-size:12px;line-height:1.6}
+@keyframes pg-skeleton{0%{background-position:100% 0}100%{background-position:-100% 0}}
+@media(prefers-reduced-motion:reduce){.metric-skeleton{animation:none}}
