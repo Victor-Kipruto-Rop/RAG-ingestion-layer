@@ -107,6 +107,8 @@ def validate_runtime_config():
   missing.append('HMAC_SHARED_SECRET')
  if settings.require_hmac and not settings.redis_url:
   missing.append('REDIS_URL (required for distributed HMAC replay protection)')
+ if not settings.redis_url:
+  missing.append('REDIS_URL (required for distributed production rate limiting and shared coordination)')
  if not (settings.api_key_auth_jwt_secret or settings.api_key_auth_jwt_keys_json):
   missing.append('API_KEY_AUTH_JWT_KEYS_JSON or API_KEY_AUTH_JWT_SECRET (PesaGuard identity signing keys)')
  if not (settings.api_key_auth_jwt_issuer and settings.api_key_auth_jwt_audience):
