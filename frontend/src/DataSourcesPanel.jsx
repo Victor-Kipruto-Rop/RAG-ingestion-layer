@@ -4,10 +4,11 @@ import {Database,Plus,RefreshCw,Search,Edit3,Trash2,ToggleLeft,ToggleRight,Exter
 const empty={source_key:'',display_name:'',jurisdiction:'KE',source_type:'IMPORTED_DATASET',authority_url:'',licence_reference:'',freshness_sla_hours:'',precedence:100,enabled:true,notes:''};
 const stamp=v=>v?new Date(v).toLocaleString():'Never';
 function Status({value}){const good=['fresh','no_sla'].includes(value);return <span className={'source-status '+(good?'good':value==='stale'?'bad':'muted')}><i/>{String(value||'unknown').replaceAll('_',' ')}</span>}
-export default function DataSourcesPanel({onUpload,readOnly=false}){
+export default function DataSourcesPanel({onUpload,readOnly=false,searchTerm=''}){
  const [items,setItems]=useState([]),[loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState(''),[query,setQuery]=useState(''),[editing,setEditing]=useState(null),[form,setForm]=useState(empty);
  const refresh=useCallback(async()=>{setLoading(true);setError('');try{const r=await api('/api/v1/admin/sources');const d=await r.json();setItems(d.items||[])}catch(e){setError(e.message||'Could not load sources')}finally{setLoading(false)}},[]);
  useEffect(()=>{refresh()},[refresh]);
+ useEffect(()=>{setQuery(searchTerm||'')},[searchTerm]);
  const startNew=()=>{setEditing('new');setForm(empty);setError('');setMessage('')};
  const edit=s=>{setEditing(s.id);setForm({...s,freshness_sla_hours:s.freshness_sla_hours??'',authority_url:s.authority_url||'',licence_reference:s.licence_reference||'',notes:s.notes||''});setError('');setMessage('')};
  const change=(k,v)=>setForm(f=>({...f,[k]:v}));
