@@ -2,7 +2,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from pesaguard_client import PesaGuardClient
+import hashlib\nimport hmac\n\nfrom pesaguard_client import PesaGuardClient, verify_webhook_signature
 
 
 class EnvironmentIsolationTests(unittest.TestCase):
@@ -19,7 +19,7 @@ class EnvironmentIsolationTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "does not match"):
                 PesaGuardClient(api_key="pg_live_example", environment="production")
 
-    def test_valid_sandbox_configuration_uses_sandbox_origin(self):
+    def test_webhook_signature_validates_raw_body_and_timestamp(self):\n        secret = 'webhook-test-secret'\n        body = b'{\"id\":\"evt_1\",\"type\":\"webhook.test\"}'\n        timestamp = 1_800_000_000\n        digest = hmac.new(secret.encode(), str(timestamp).encode() + b'.' + body, hashlib.sha256).hexdigest()\n        header = f't={timestamp},v1={digest}'\n        self.assertTrue(verify_webhook_signature(secret, body, header, now=timestamp))\n        self.assertFalse(verify_webhook_signature(secret, body + b' ', header, now=timestamp))\n        self.assertFalse(verify_webhook_signature(secret, body, header, now=timestamp + 301))\n\n    def test_valid_sandbox_configuration_uses_sandbox_origin(self):
         with patch.dict(os.environ, {}, clear=True):
             client = PesaGuardClient(api_key="pg_sandbox_example", environment="sandbox")
         self.assertEqual(client.base_url, "https://sandbox-api.pesaguard.co.ke/")
