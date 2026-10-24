@@ -298,6 +298,7 @@ def developer_oauth_providers():
 
 @router.get("/auth/oauth/{provider}/start")
 def developer_oauth_start(provider: str, request: Request):
+    _check_login_rate("developer-oauth-start:" + (request.client.host if request.client else "unknown"))
     if len(settings.developer_access_token_secret.encode()) < 32 or len(settings.session_secret.encode()) < 32:
         raise HTTPException(503, "Developer OAuth signing and session secrets must each contain at least 32 characters")
     if settings.app_env.lower() == "production" and not settings.developer_frontend_url.strip():
@@ -365,6 +366,7 @@ async def _fetch_oauth_email(provider: str, code: str, callback: str) -> tuple[s
 
 
 async def _developer_oauth_callback(provider: str, request: Request, db: Session):
+    _check_login_rate("developer-oauth-callback:" + (request.client.host if request.client else "unknown"))
     expected = request.cookies.get(f"pg_developer_oauth_state_{provider}", "")
     supplied = request.query_params.get("state", "")
     code = request.query_params.get("code", "")
