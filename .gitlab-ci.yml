@@ -10,7 +10,7 @@ workflow:
     # Merge-request validation runs without deployment or operational jobs.
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     # Staging branch supports push, web/manual, and scheduled pipelines.
-    - if: '$CI_COMMIT_BRANCH == "chore/production-ci-release-gates"'
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "chore/production-ci-release-gates" || $CI_COMMIT_BRANCH == "chore/free-tier-staging"'
     - when: never
 
 variables:
@@ -151,10 +151,24 @@ staging-blueprint-validation:
       abort "A separate staging database is required" unless blueprint.fetch("databases").any? { |db| db["name"] == "pesaguard-datasource-staging-db" }
       frontend = services.find { |service| service["name"] == "pesaguard-datasource-staging-frontend" }
       abort "Frontend must use a Render static site build" unless frontend["runtime"] == "static"
-      abort "Frontend must publish built assets" unless frontend["staticPublishPath"] == "./dist"
+      abort "Frontend must build from frontend root" unless frontend["rootDir"] == "frontend"
+      abort "Frontend must publish built assets" unless frontend["staticPublishPath"] == "dist"
       abort "Frontend must provide SPA route fallback" unless frontend.fetch("routes", []).any? { |route| route["type"] == "rewrite" && route["source"] == "/*" && route["destination"] == "/index.html" }
       abort "Staging frontend API URL is not configured as expected" unless frontend.fetch("envVars", []).any? { |entry| entry["key"] == "VITE_API_BASE_URL" }
       puts "Staging blueprint structure and release gates validated."
+
+      free_blueprint = YAML.load_file("render.staging-free.yaml")
+      free_services = free_blueprint.fetch("services")
+      free_api = free_services.find { |service| service["name"] == "pesaguard-datasource-staging-api" }
+      abort "Free-tier profile must contain its staging API" unless free_api
+      abort "Free-tier API must use the free plan" unless free_api["plan"] == "free"
+      abort "Free-tier API must keep auto-deploy disabled until verified" unless free_api["autoDeployTrigger"] == "off"
+      abort "Free-tier profile must not provision a paid worker" if free_services.any? { |service| service["type"] == "worker" }
+      abort "Free-tier profile must not provision a Render database" if free_blueprint.key?("databases")
+      free_env = free_api.fetch("envVars")
+      abort "Free-tier profile must accept a manually configured external staging database URL" unless free_env.any? { |entry| entry["key"] == "DATABASE_URL" && entry["sync"] == false }
+      abort "Free-tier profile must reuse the existing free Redis service" unless free_env.any? { |entry| entry["key"] == "REDIS_URL" && entry.dig("fromService", "name") == "pesaguard-datasource-staging-redis" }
+      puts "Free-tier staging profile validated; asynchronous ingestion remains disabled without a worker."
       RUBY
 
 docker-builds:
@@ -174,7 +188,7 @@ docker-builds:
     - docker build -t pesaguard-datasource-worker:ci -f backend/Dockerfile.worker ./backend
     - docker build --build-arg VITE_API_BASE_URL=https://staging-api.example.invalid -t pesaguard-datasource-frontend:ci ./frontend
   rules:
-    - if: '$CI_COMMIT_BRANCH == "chore/production-ci-release-gates"'
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "chore/production-ci-release-gates" || $CI_COMMIT_BRANCH == "chore/free-tier-staging"'
       when: manual
       allow_failure: true
     - when: never
@@ -198,7 +212,7 @@ cloudflare-pages-staging:
   script:
     - npm run pages:deploy:staging
   rules:
-    - if: '$CI_COMMIT_BRANCH == "chore/production-ci-release-gates"'
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "chore/production-ci-release-gates" || $CI_COMMIT_BRANCH == "chore/free-tier-staging"'
       when: manual
     - when: never
   allow_failure: false
@@ -223,7 +237,7 @@ staging-ingestion-preflight:
     - test -n "$DATABASE_URL" || (echo "Set staging-only DATABASE_URL in GitLab CI/CD variables" && exit 1)
     - python -m src.preflight
   rules:
-    - if: '$CI_COMMIT_BRANCH == "chore/production-ci-release-gates"'
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "chore/production-ci-release-gates" || $CI_COMMIT_BRANCH == "chore/free-tier-staging"'
       when: manual
     - when: never
 
@@ -259,7 +273,7 @@ staging-ingestion-batch:
       done
     - python -m src.worker --batch
   rules:
-    - if: '$CI_COMMIT_BRANCH == "chore/production-ci-release-gates"'
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "chore/production-ci-release-gates" || $CI_COMMIT_BRANCH == "chore/free-tier-staging"'
       when: manual
     - when: never
   allow_failure: false
