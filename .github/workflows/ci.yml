@@ -115,6 +115,31 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - name: Validate staging Render blueprint
+        shell: bash
+        run: |
+          ruby - <<'RUBY'
+          require "yaml"
+          blueprint = YAML.load_file("render.staging.yaml")
+          services = blueprint.fetch("services")
+          required = [
+            "pesaguard-datasource-staging-api",
+            "pesaguard-datasource-staging-worker",
+            "pesaguard-datasource-staging-frontend",
+            "pesaguard-datasource-staging-redis"
+          ]
+          names = services.map { |service| service.fetch("name") }
+          missing = required - names
+          abort "Missing staging services: #{missing.join(', ')}" unless missing.empty?
+          api = services.find { |service| service["name"] == "pesaguard-datasource-staging-api" }
+          abort "API must use /health/ready" unless api["healthCheckPath"] == "/health/ready"
+          abort "Staging must deploy only after CI passes" unless api["autoDeployTrigger"] == "checksPass"
+          env = api.fetch("envVars").select { |entry| entry["key"] }.to_h { |entry| [entry["key"], entry["value"]] }
+          abort "Staging API must use sandbox key validation" unless env["API_ENVIRONMENT"] == "sandbox"
+          abort "Staging API must not reuse production base URL" unless env["DEVELOPER_PUBLIC_BASE_URL"] != env["DEVELOPER_PRODUCTION_BASE_URL"]
+          abort "A separate staging database is required" unless blueprint.fetch("databases").any? { |db| db["name"] == "pesaguard-datasource-staging-db" }
+          puts "Staging blueprint structure and release gates validated."
+          RUBY
       - name: Prepare safe local environment
         run: cp .env.example .env
       - name: Validate connected local Docker stack
