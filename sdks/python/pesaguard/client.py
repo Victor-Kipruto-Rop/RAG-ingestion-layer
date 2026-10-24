@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from typing import Any, Literal
+import hashlib
 import hmac
 import time
 from urllib.parse import urlparse
@@ -48,11 +49,16 @@ class PesaGuardClient:
         self.api_key = api_key
         self.base_url = (base_url or DEFAULT_BASE_URLS[environment]).rstrip("/")
         parsed = urlparse(self.base_url)
-        if parsed.scheme != "https" and parsed.hostname not in {"localhost", "127.0.0.1"}:
+        if not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment or parsed.path not in {"", "/"}:
+            raise ValueError("base_url must be an origin without credentials, path, query or fragment")
+        local_host = parsed.hostname.lower() in {"localhost", "127.0.0.1"}
+        if parsed.scheme != "https" and not local_host:
             raise ValueError("base_url must use HTTPS outside local development")
-        other_host = urlparse(DEFAULT_BASE_URLS["production" if environment == "sandbox" else "sandbox"]).hostname
-        if parsed.hostname == other_host:
-            raise ValueError("API key environment does not match the selected base URL")
+        if local_host and environment != "sandbox":
+            raise ValueError("Local/custom API origins are allowed only with sandbox keys")
+        expected_host = urlparse(DEFAULT_BASE_URLS[environment]).hostname
+        if not local_host and parsed.hostname.lower() != expected_host:
+            raise ValueError("API key environment does not match the approved base URL")
         self.timeout = timeout
         self._session = session or requests.Session()
 
