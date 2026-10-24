@@ -25,3 +25,9 @@ Use before any multi-repository PesaGuard implementation, local integration, or 
 - Report uncertainty and blockers with evidence.
 
 undefined
+
+## Mandatory quality gates
+- Before edits, record branch, commit, dirty status, and relevant diff. Preserve every unrelated change.
+- Trace the actual caller, callee, config, and tests; do not rely on assumptions or prior summaries.
+- Stop before destructive commands, resets, or overwrites. Ask for approval if preservation cannot be guaranteed.
+- After edits, review every changed path and run the narrowest relevant tests. Report actual evidence and blockers.
