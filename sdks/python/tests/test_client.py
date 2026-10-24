@@ -88,3 +88,21 @@ def test_http_error_preserves_status_and_body():
         client.search("Example")
     assert exc.value.status_code == 403
     assert exc.value.response_body == {"detail": "forbidden"}
+
+
+@pytest.mark.parametrize("base_url", [
+    "https://attacker.example",
+    "https://api.pesaguard.co.ke/path",
+    "https://user:password@sandbox-api.pesaguard.co.ke",
+    "https://sandbox-api.pesaguard.co.ke?forward=1",
+])
+def test_sdk_rejects_unapproved_origins_and_non_origin_urls(base_url):
+    with pytest.raises(ValueError):
+        PesaGuardClient("pg_sandbox_test", environment="sandbox", base_url=base_url)
+
+
+def test_local_custom_origin_is_sandbox_only():
+    client = PesaGuardClient("pg_sandbox_test", environment="sandbox", base_url="http://localhost:8000")
+    client.close()
+    with pytest.raises(ValueError, match="only with sandbox keys"):
+        PesaGuardClient("pg_live_test", environment="production", base_url="http://localhost:8000")
