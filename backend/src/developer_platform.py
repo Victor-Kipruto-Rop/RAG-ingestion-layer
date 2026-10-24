@@ -783,32 +783,59 @@ def _deliver_webhook(webhook_id: str, workspace_id: str, event_type: str, payloa
     response_status = None
     excerpt = None
     with SessionLocal() as db:
-        row = db.scalar(select(DeveloperWebhook).where(DeveloperWebhook.id == webhook_id, DeveloperWebhook.workspace_id == workspace_id, DeveloperWebhook.enabled.is_(True)))
+        row = db.scalar(select(DeveloperWebhook).where(
+            DeveloperWebhook.id == webhook_id,
+            DeveloperWebhook.workspace_id == workspace_id,
+            DeveloperWebhook.enabled.is_(True),
+        ))
         if not row or event_type not in (row.events or []):
             return
         delivery_id = str(uuid.uuid4())
         event_id = str(uuid.uuid4())
-        body = json.dumps({"id": event_id, "type": event_type, "created_at": now_utc().isoformat(), "data": payload}, separators=(",", ":")).encode()
-        timestamp = str(int(time.time()))
-        try:
-            # Re-resolve immediately before delivery to reduce DNS-rebinding SSRF risk.
-            # Redirects are disabled below so a public endpoint cannot redirect into a private network.
-            _validate_webhook_url(row.endpoint_url)
-            secret = _fernet().decrypt(row.secret_ciphertext.encode())
-            signature = hmac.new(secret, timestamp.encode() + b"." + body, hashlib.sha256).hexdigest()
-            with httpx.Client(timeout=8.0, follow_redirects=False) as client:
-                response = client.post(row.endpoint_url, content=body, headers={
-                    "Content-Type": "application/json", "User-Agent": "PesaGuard-Webhooks/1.0",
-                    "PesaGuard-Event": event_type, "PesaGuard-Delivery": delivery_id,
-                    "PesaGuard-Signature": f"t={timestamp},v1={signature}",
-                })
-            response_status = response.status_code
-            excerpt = response.text[:500]
-            status = "delivered" if 200 <= response.status_code < 300 else "failed"
-        except (httpx.HTTPError, InvalidToken, OSError, ValueError, HTTPException) as exc:
-            excerpt = type(exc).__name__
-        db.add(DeveloperWebhookDelivery(webhook_id=row.id, event_type=event_type, status=status,
-            response_status=response_status, response_excerpt=excerpt, duration_ms=int((time.perf_counter()-started)*1000)))
+        body = json.dumps(
+            {"id": event_id, "type": event_type, "created_at": now_utc().isoformat(), "data": payload},
+            separators=(",", ":"),
+        ).encode()
+        for attempt in range(3):
+            timestamp = str(int(time.time()))
+            try:
+                # Re-resolve on every attempt and reject private IPs; redirects are disabled to
+                # prevent a public endpoint from redirecting delivery into an internal service.
+                _validate_webhook_url(row.endpoint_url)
+                secret = _fernet().decrypt(row.secret_ciphertext.encode())
+                signature = hmac.new(secret, timestamp.encode() + b"." + body, hashlib.sha256).hexdigest()
+                with httpx.Client(timeout=8.0, follow_redirects=False) as client:
+                    response = client.post(row.endpoint_url, content=body, headers={
+                        "Content-Type": "application/json",
+                        "User-Agent": "PesaGuard-Webhooks/1.0",
+                        "PesaGuard-Event": event_type,
+                        "PesaGuard-Delivery": delivery_id,
+                        "PesaGuard-Signature": f"t={timestamp},v1={signature}",
+                    })
+                response_status = response.status_code
+                excerpt = response.text[:500]
+                if 200 <= response.status_code < 300:
+                    status = "delivered"
+                    break
+                status = "failed"
+                # Retry only transient receiver/gateway responses; most 4xx errors require
+                # customer action and should not be repeatedly sent.
+                if response.status_code not in {408, 425, 429} and response.status_code < 500:
+                    break
+            except (httpx.HTTPError, InvalidToken, OSError, ValueError, HTTPException) as exc:
+                status = "failed"
+                response_status = None
+                excerpt = type(exc).__name__
+            if attempt < 2:
+                time.sleep(0.25 * (2 ** attempt))
+        db.add(DeveloperWebhookDelivery(
+            webhook_id=row.id,
+            event_type=event_type,
+            status=status,
+            response_status=response_status,
+            response_excerpt=excerpt,
+            duration_ms=round((time.perf_counter() - started) * 1000),
+        ))
         db.commit()
 
 
