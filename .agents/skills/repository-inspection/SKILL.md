@@ -23,3 +23,5 @@ Use before any multi-repository PesaGuard implementation, local integration, or 
 - Do not invent endpoints, variables, models, or test outcomes.
 - Do not commit or push unless explicitly requested.
 - Report uncertainty and blockers with evidence.
+
+undefined
