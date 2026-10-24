@@ -93,7 +93,7 @@ function Topbar({ page, connected, onRefresh, loading, search, setSearch, setMob
 function MetricCard({ icon: Icon, label, value, note, accent = 'green' }) {
   return <article className="metric-card">
     <div className="metric-top"><span>{label}</span><span className={`metric-icon ${accent}`}><Icon size={18} strokeWidth={1.8} /></span></div>
-    <div className="metric-value">{value}</div>
+    <div className="metric-value" aria-busy={value === '—'}>{value === '—' ? <span className="metric-skeleton" aria-label="Loading metric" /> : value}</div>
     <div className="metric-note"><span>{note}</span></div>
   </article>;
 }
