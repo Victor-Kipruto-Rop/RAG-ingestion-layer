@@ -194,6 +194,8 @@ export default function App() {
   const [orgPage, setOrgPage] = useState(1);
   const [orgTotal, setOrgTotal] = useState(0);
   const [jobs, setJobs] = useState([]);
+  const [jobsPage, setJobsPage] = useState(1);
+  const [jobsTotal, setJobsTotal] = useState(0);
   const [search, setSearch] = useState('');
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -213,7 +215,7 @@ export default function App() {
         request('/api/v1/admin/registry/overview').then(r => r.json()),
         request('/api/v1/admin/ingestion/activity?limit=50').then(r => r.json()),
         request('/api/v1/admin/organizations?page=' + orgPage + '&page_size=100' + (search ? '&q=' + encodeURIComponent(search) : '')).then(r => r.json()),
-        request('/api/v1/admin/ingestion/jobs?page_size=50').then(r => r.json())
+        request('/api/v1/admin/ingestion/jobs?page=' + jobsPage + '&page_size=25').then(r => r.json())
       ]);
       const [metricsResult, registryResult, activityResult, orgResult, jobsResult] = results;
       if (metricsResult.status === 'fulfilled') {
@@ -227,7 +229,7 @@ export default function App() {
       }
       if (activityResult.status === 'fulfilled') setActivity(activityResult.value.items || []);
       if (orgResult.status === 'fulfilled') { setOrgs(orgResult.value.items || []); setOrgTotal(orgResult.value.total || 0); }
-      if (jobsResult.status === 'fulfilled') setJobs(jobsResult.value.items || []);
+      if (jobsResult.status === 'fulfilled') { setJobs(jobsResult.value.items || []); setJobsTotal(jobsResult.value.total || 0); }
       const failedPanels = results.slice(1).filter(result => result.status === 'rejected').length;
       if (failedPanels) setError(failedPanels + ' workspace panel(s) could not refresh. Other available panels remain usable.');
     } catch (e) {
@@ -236,7 +238,7 @@ export default function App() {
       else setError(e.message || 'Unable to connect to the Registry API.');
     }
     finally { setLoading(false); }
-  }, [authed, request, orgPage, search]);
+  }, [authed, request, orgPage, search, jobsPage]);
 
   useEffect(() => {
     if (!authed) return undefined;
@@ -278,6 +280,8 @@ export default function App() {
     api('/api/v1/admin/session').then(r => r.json()).then(s => { setCsrfToken(s.csrf_token); setAuthed(true); }).catch(() => {}).finally(() => setChecking(false));
   }, []);
   useEffect(() => { if (authed) refresh(); }, [authed, refresh]);
+  useEffect(() => { setOrgPage(1); }, [search]);
+  useEffect(() => { if (page !== 'Ingestion Jobs' && jobsPage !== 1) setJobsPage(1); }, [page, jobsPage]);
 
   const signIn = async (event) => {
     event.preventDefault();
