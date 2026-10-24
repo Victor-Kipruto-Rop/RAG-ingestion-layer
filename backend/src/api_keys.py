@@ -238,7 +238,8 @@ def current_identity(claims: dict = Depends(require_user_claims)):
         "tenant_id": str(claims.get("tenant_id") or claims["org_id"]),
         "roles": roles,
         "organization_verified": claims.get("organization_verified") is True,
-        "production_key_eligible": claims.get("organization_verified") is True and bool({"owner", "admin"} & set(roles)),
+        "production_key_eligible": claims.get("organization_verified") is True and claims.get("production_access_approved") is True and bool({"owner", "admin"} & set(roles)),
+        "production_access_approved": claims.get("production_access_approved") is True,
         "identity_issuer": claims.get("iss"),
         "token_expires_at": int(claims["exp"]),
     }
