@@ -67,6 +67,14 @@ class Settings(BaseSettings):
  smtp_from_email:str=''
  smtp_use_starttls:bool=True
  smtp_use_ssl:bool=False
+ developer_access_token_secret:str=''
+ developer_access_token_issuer:str='pesaguard-developer-platform'
+ developer_access_token_audience:str='pesaguard-developer-api'
+ developer_access_token_ttl_seconds:int=900
+ developer_session_ttl_seconds:int=2592000
+ developer_webhook_encryption_key:str=''
+ developer_public_base_url:str='https://sandbox-api.pesaguard.co.ke'
+ developer_production_base_url:str='https://api.pesaguard.co.ke'
  worker_commit_interval_seconds:int=60
  entity_resolution_max_candidates:int=200
  upload_ttl_grace_seconds:int=900
@@ -98,6 +106,16 @@ def validate_runtime_config():
   raise RuntimeError('Invalid configuration: SMTP_HOST, SMTP_FROM_EMAIL and AUTH_OTP_PEPPER are required for operator sign-up')
  if settings.app_env.lower() == 'production' and settings.admin_signup_email_list and len(settings.auth_otp_pepper) < 32:
   raise RuntimeError('Invalid configuration: AUTH_OTP_PEPPER must contain at least 32 characters')
+ if settings.developer_access_token_secret and len(settings.developer_access_token_secret.encode()) < 32:
+  raise RuntimeError('Invalid configuration: DEVELOPER_ACCESS_TOKEN_SECRET must be at least 32 characters')
+ if settings.developer_access_token_ttl_seconds < 300 or settings.developer_access_token_ttl_seconds > 3600:
+  raise RuntimeError('Invalid configuration: DEVELOPER_ACCESS_TOKEN_TTL_SECONDS must be 300-3600')
+ if settings.developer_session_ttl_seconds < 3600 or settings.developer_session_ttl_seconds > 7776000:
+  raise RuntimeError('Invalid configuration: DEVELOPER_SESSION_TTL_SECONDS must be 3600-7776000')
+ if settings.app_env.lower() == 'production' and settings.developer_access_token_secret and not settings.developer_webhook_encryption_key:
+  raise RuntimeError('Invalid configuration: DEVELOPER_WEBHOOK_ENCRYPTION_KEY is required when the developer platform is enabled in production')
+ if settings.developer_webhook_encryption_key and len(settings.developer_webhook_encryption_key.encode()) < 32:
+  raise RuntimeError('Invalid configuration: DEVELOPER_WEBHOOK_ENCRYPTION_KEY must be at least 32 characters')
  if settings.admin_password_hash and len(settings.session_secret)<32:
   raise RuntimeError('Invalid configuration: SESSION_SECRET must be at least 32 characters when ADMIN_PASSWORD_HASH is set')
  # Validate worker safety limits in every environment, not only production.
@@ -141,9 +159,9 @@ def validate_runtime_config():
   if settings.require_hmac:
    redis_reason += ' and HMAC replay protection'
   missing.append('REDIS_URL (required for ' + redis_reason + ')')
- if not (settings.api_key_auth_jwt_secret or settings.api_key_auth_jwt_keys_json):
-  missing.append('API_KEY_AUTH_JWT_KEYS_JSON or API_KEY_AUTH_JWT_SECRET (PesaGuard identity signing keys)')
- if not (settings.api_key_auth_jwt_issuer and settings.api_key_auth_jwt_audience):
+ if not (settings.api_key_auth_jwt_secret or settings.api_key_auth_jwt_keys_json or settings.developer_access_token_secret):
+  missing.append('PesaGuard identity signing keys or DEVELOPER_ACCESS_TOKEN_SECRET')
+ if (settings.api_key_auth_jwt_secret or settings.api_key_auth_jwt_keys_json) and not (settings.api_key_auth_jwt_issuer and settings.api_key_auth_jwt_audience) and not settings.developer_access_token_secret:
   missing.append('API_KEY_AUTH_JWT_ISSUER/API_KEY_AUTH_JWT_AUDIENCE (PesaGuard identity token validation)')
  if settings.api_environment.lower().strip() not in {'sandbox','production'}:
   missing.append('API_ENVIRONMENT (must be sandbox or production)')
