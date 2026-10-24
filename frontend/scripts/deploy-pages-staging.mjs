@@ -21,6 +21,7 @@ if (
   apiUrl.search ||
   apiUrl.hash ||
   apiUrl.hostname === 'api.datasource.pesaguard.co.ke' ||
+  apiUrl.hostname === 'api.pesaguard.co.ke' ||
   apiUrl.hostname.endsWith('.example.invalid') ||
   apiUrl.hostname === 'localhost' ||
   apiUrl.hostname === '127.0.0.1'
