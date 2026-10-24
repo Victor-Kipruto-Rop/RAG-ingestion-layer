@@ -782,7 +782,7 @@ def _deliver_webhook(webhook_id: str, workspace_id: str, event_type: str, payloa
             response_status = response.status_code
             excerpt = response.text[:500]
             status = "delivered" if 200 <= response.status_code < 300 else "failed"
-        except (httpx.HTTPError, InvalidToken, OSError, ValueError) as exc:
+        except (httpx.HTTPError, InvalidToken, OSError, ValueError, HTTPException) as exc:
             excerpt = type(exc).__name__
         db.add(DeveloperWebhookDelivery(webhook_id=row.id, event_type=event_type, status=status,
             response_status=response_status, response_excerpt=excerpt, duration_ms=int((time.perf_counter()-started)*1000)))
