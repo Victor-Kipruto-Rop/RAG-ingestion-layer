@@ -205,8 +205,8 @@ class LoginRequest(BaseModel):
 
 @router.post('/login')
 def login(payload: LoginRequest, request: Request, response: Response):
-    if not settings.admin_password_hash or not settings.session_secret:
-        raise HTTPException(503, 'Dashboard sign-in is not configured')
+    if not settings.session_secret:
+        raise HTTPException(503, 'Dashboard session signing is not configured')
     _check_login_rate(request.client.host if request.client else 'unknown')
     account = None
     if payload.email:
@@ -510,6 +510,592 @@ def mark_operator_notifications_read(payload: NotificationReadRequest,
     db.commit()
     return {'marked_read': len(keys)}
 
+
+
+# Self-service operator accounts are restricted to ADMIN_SIGNUP_ALLOWED_EMAILS.
+# Email OTP proves mailbox control; it does not bypass the configured signup allowlist.
+def _normalize_email(value: str) -> str:
+    email = value.strip().lower()
+    if len(email) > 320 or '@' not in email or email.startswith('@') or email.endswith('@') or email.count('@') != 1:
+        raise HTTPException(422, 'Enter a valid email address')
+    return email
+
+
+def _require_otp_delivery():
+    if not settings.auth_email_delivery_configured:
+        raise HTTPException(503, 'Email verification is not configured. Contact the workspace administrator.')
+
+
+def _otp_digest(email: str, purpose: str, code: str) -> str:
+    material = f'{purpose}:{email}:{code}'.encode()
+    return hmac.new(settings.auth_otp_pepper.encode(), material, hashlib.sha256).hexdigest()
+
+
+def _send_auth_otp(email: str, code: str, purpose: str) -> None:
+    message = EmailMessage()
+    message['Subject'] = 'PesaGuard Datasource email verification' if purpose == 'signup' else 'PesaGuard Datasource password reset'
+    message['From'] = settings.smtp_from_email
+    message['To'] = email
+    action = 'verify your email and finish creating your operator account' if purpose == 'signup' else 'reset your operator account password'
+    message.set_content(
+        f'Your PesaGuard Datasource verification code is {code}.\n\n'
+        f'Use this code to {action}. It expires in {settings.auth_otp_ttl_seconds // 60} minute(s). '
+        'If you did not request this, you can ignore this message. Do not share this code.\n'
+    )
+    if settings.smtp_use_ssl:
+        with smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, timeout=10) as server:
+            if settings.smtp_username:
+                server.login(settings.smtp_username, settings.smtp_password)
+            server.send_message(message)
+    else:
+        with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=10) as server:
+            server.ehlo()
+            if settings.smtp_use_starttls:
+                server.starttls()
+                server.ehlo()
+            if settings.smtp_username:
+                server.login(settings.smtp_username, settings.smtp_password)
+            server.send_message(message)
+
+
+def _create_auth_challenge(db: Session, *, email: str, purpose: str, password_hash: str | None = None,
+                           display_name: str | None = None) -> str:
+    now = now_utc()
+    for prior in db.scalars(select(AdminAuthChallenge).where(
+        AdminAuthChallenge.email == email, AdminAuthChallenge.purpose == purpose,
+        AdminAuthChallenge.consumed_at.is_(None))).all():
+        prior.consumed_at = now
+    code = f'{secrets.randbelow(1_000_000):06d}'
+    challenge = AdminAuthChallenge(email=email, purpose=purpose, otp_hash=_otp_digest(email, purpose, code),
+        password_hash=password_hash, display_name=display_name,
+        expires_at=now + timedelta(seconds=settings.auth_otp_ttl_seconds), created_at=now)
+    db.add(challenge)
+    db.commit()
+    try:
+        _send_auth_otp(email, code, purpose)
+    except Exception as exc:
+        challenge.consumed_at = now_utc()
+        db.commit()
+        _rate_logger.error('auth_otp_delivery_failed', purpose=purpose, error_type=type(exc).__name__)
+        raise HTTPException(503, 'Verification email could not be sent. Check mail configuration or try later.') from exc
+    return challenge.id
+
+
+def _valid_challenge(db: Session, *, email: str, purpose: str, code: str) -> AdminAuthChallenge:
+    challenge = db.scalar(select(AdminAuthChallenge).where(
+        AdminAuthChallenge.email == email, AdminAuthChallenge.purpose == purpose,
+        AdminAuthChallenge.consumed_at.is_(None)).order_by(AdminAuthChallenge.created_at.desc()))
+    if not challenge:
+        raise HTTPException(400, 'The code is invalid or expired. Request a new code.')
+    expires = challenge.expires_at
+    if expires.tzinfo is None:
+        expires = expires.replace(tzinfo=timezone.utc)
+    if expires <= datetime.now(timezone.utc) or challenge.attempts >= settings.auth_otp_max_attempts:
+        challenge.consumed_at = now_utc()
+        db.commit()
+        raise HTTPException(400, 'The code is invalid or expired. Request a new code.')
+    challenge.attempts += 1
+    expected = _otp_digest(email, purpose, code.strip())
+    if not hmac.compare_digest(challenge.otp_hash, expected):
+        if challenge.attempts >= settings.auth_otp_max_attempts:
+            challenge.consumed_at = now_utc()
+        db.commit()
+        raise HTTPException(400, 'The code is invalid or expired. Request a new code.')
+    return challenge
+
+
+def _set_session_cookie(response: Response, request: Request, *, email: str, auth_method: str) -> dict:
+    token, claims = issue_session_token(email=email, auth_method=auth_method)
+    _persist_session(claims, request, email=email, auth_method=auth_method)
+    response.set_cookie(COOKIE_NAME, token, max_age=max(60, settings.session_ttl_seconds), httponly=True,
+        secure=settings.session_cookie_secure, samesite='strict', path='/')
+    response.headers['Cache-Control'] = 'no-store'
+    return claims
+
+
+class SignupRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+    display_name: str = Field(min_length=2, max_length=120)
+    password: str = Field(min_length=12, max_length=256)
+
+
+class OtpVerifyRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+    code: str = Field(min_length=6, max_length=6, pattern=r'^\\d{6}
+    from datetime import datetime, timezone
+    if source.freshness_sla_hours is None:
+        freshness = 'no_sla'
+    elif last_import is None:
+        freshness = 'never_imported'
+    else:
+        imported = last_import if last_import.tzinfo else last_import.replace(tzinfo=timezone.utc)
+        freshness = 'stale' if (datetime.now(timezone.utc)-imported).total_seconds() > source.freshness_sla_hours*3600 else 'fresh'
+    return {'id':source.id,'source_key':source.source_key,'display_name':source.display_name,'jurisdiction':source.jurisdiction,
+        'source_type':source.source_type,'authority_url':source.authority_url,'licence_reference':source.licence_reference,
+        'freshness_sla_hours':source.freshness_sla_hours,'precedence':source.precedence,'enabled':source.enabled,'notes':source.notes,
+        'last_successful_import_at':last_import.isoformat() if last_import else None,'freshness_status':freshness,
+        'created_at':source.created_at.isoformat() if source.created_at else None,
+        'updated_at':source.updated_at.isoformat() if source.updated_at else None}
+
+
+class DashboardSourcePayload(BaseModel):
+    source_key: str = Field(min_length=1, max_length=100)
+    display_name: str = Field(min_length=1, max_length=200)
+    jurisdiction: str = Field(default='KE', max_length=100)
+    source_type: str = Field(default='IMPORTED_DATASET', max_length=40)
+    authority_url: str | None = Field(default=None, max_length=1000)
+    licence_reference: str | None = Field(default=None, max_length=500)
+    freshness_sla_hours: int | None = Field(default=None, ge=1, le=8760)
+    precedence: int = Field(default=100, ge=0, le=10000)
+    enabled: bool = True
+    notes: str | None = Field(default=None, max_length=10000)
+
+
+def _validate_source(payload):
+    payload.source_key = payload.source_key.strip().lower()
+    payload.display_name = payload.display_name.strip()
+    if not payload.source_key or not all(c.isalnum() or c in '-_' for c in payload.source_key):
+        raise HTTPException(422, 'Source key may contain letters, numbers, hyphens and underscores only')
+    if not payload.display_name:
+        raise HTTPException(422, 'Display name is required')
+    if payload.authority_url and not payload.authority_url.lower().startswith(('https://','http://')):
+        raise HTTPException(422, 'Authority URL must use HTTP or HTTPS')
+
+
+@router.get('/sources')
+def dashboard_sources(request: Request, db: Session = Depends(get_db)):
+    require_admin(request)
+    rows = db.scalars(select(RegistrySource).order_by(RegistrySource.precedence, RegistrySource.display_name)).all()
+    last_imports = dict(db.execute(select(IngestionJob.source_id, func.max(IngestionJob.completed_at))
+        .where(IngestionJob.status.in_(['COMPLETED','COMPLETED_WITH_ERRORS']), IngestionJob.source_id.is_not(None))
+        .group_by(IngestionJob.source_id)).all())
+    return {'items':[_source_json(s,last_imports.get(s.id)) for s in rows], 'count':len(rows)}
+
+
+@router.post('/sources', status_code=201)
+def dashboard_create_source(payload: DashboardSourcePayload, request: Request, db: Session = Depends(get_db)):
+    require_admin(request); _validate_source(payload)
+    if db.scalar(select(RegistrySource).where(RegistrySource.source_key == payload.source_key)):
+        raise HTTPException(409, 'A source with this key already exists')
+    source = RegistrySource(**payload.model_dump())
+    db.add(source)
+    try:
+        db.flush()
+        db.add(AuditLog(action='dashboard_source_created', actor='admin', details={'source_id':source.id,'source_key':source.source_key}))
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, 'A source with this key already exists')
+    db.refresh(source)
+    return _source_json(source)
+
+
+@router.patch('/sources/{source_id}')
+def dashboard_update_source(source_id: str, payload: DashboardSourcePayload, request: Request, db: Session = Depends(get_db)):
+    require_admin(request); _validate_source(payload)
+    source = db.get(RegistrySource, source_id)
+    if not source: raise HTTPException(404, 'Source not found')
+    if db.scalar(select(RegistrySource).where(RegistrySource.source_key == payload.source_key, RegistrySource.id != source_id)):
+        raise HTTPException(409, 'A source with this key already exists')
+    for name, value in payload.model_dump().items(): setattr(source, name, value)
+    db.add(AuditLog(action='dashboard_source_updated', actor='admin', details={'source_id':source.id,'source_key':source.source_key}))
+    db.commit(); db.refresh(source)
+    return _source_json(source)
+
+
+@router.delete('/sources/{source_id}', status_code=204)
+def dashboard_delete_source(source_id: str, request: Request, db: Session = Depends(get_db)):
+    require_admin(request)
+    source = db.get(RegistrySource, source_id)
+    if not source: raise HTTPException(404, 'Source not found')
+    if db.scalar(select(func.count()).select_from(IngestionJob).where(IngestionJob.source_id == source_id)):
+        raise HTTPException(409, 'This source has ingestion history. Disable it instead of deleting it.')
+    db.add(AuditLog(action='dashboard_source_deleted', actor='admin', details={'source_id':source.id,'source_key':source.source_key}))
+    db.delete(source); db.commit()
+    return Response(status_code=204)
+
+
+@router.get('/ingestion/jobs')
+def dashboard_ingestion_jobs(request: Request, page: int = 1, page_size: int = 50, status: str | None = None, q: str | None = None,
+                             db: Session = Depends(get_db)):
+    require_admin(request)
+    page = max(1,page); page_size = max(1,min(page_size,100))
+    stmt = select(IngestionJob)
+    if status: stmt = stmt.where(IngestionJob.status == status.upper())
+    if q and q.strip():
+        pattern = '%' + q.strip()[:200] + '%'
+        stmt = stmt.where(or_(IngestionJob.file_name.ilike(pattern), IngestionJob.source_name.ilike(pattern), IngestionJob.status.ilike(pattern), IngestionJob.id.ilike(pattern)))
+    total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    rows = db.scalars(stmt.order_by(IngestionJob.created_at.desc()).offset((page-1)*page_size).limit(page_size)).all()
+    return {'items':[{'id':j.id,'file_name':j.file_name,'source_id':j.source_id,'source_name':j.source_name,'status':j.status,
+        'records_processed':j.records_processed,'records_inserted':j.records_inserted,'records_updated':j.records_updated,
+        'records_skipped':j.records_skipped,'attempts':j.attempts,'error_summary':j.error_summary,
+        'created_at':j.created_at.isoformat() if j.created_at else None,'started_at':j.started_at.isoformat() if j.started_at else None,
+        'completed_at':j.completed_at.isoformat() if j.completed_at else None,'heartbeat_at':j.heartbeat_at.isoformat() if j.heartbeat_at else None} for j in rows],
+        'total':total,'page':page,'page_size':page_size}
+
+
+@router.get('/metrics/summary')
+def dashboard_summary(request: Request, db: Session = Depends(get_db)):
+    require_admin(request)
+    total_orgs = db.scalar(select(func.count()).select_from(Organization)) or 0
+    total_jobs = db.scalar(select(func.count()).select_from(IngestionJob)) or 0
+    completed = db.scalar(select(func.count()).select_from(IngestionJob).where(IngestionJob.status.in_(['COMPLETED','COMPLETED_WITH_ERRORS']))) or 0
+    failed = db.scalar(select(func.count()).select_from(IngestionJob).where(IngestionJob.status.in_(['FAILED','ERROR']))) or 0
+    return {'total_organizations':total_orgs,'total_jobs':total_jobs,'completed_jobs':completed,'failed_jobs':failed,
+            'data_quality':None,'source':'database','generated_at':__import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat()}
+
+
+@router.get('/organizations')
+def dashboard_organizations(request: Request, page: int = 1, page_size: int = 25, q: str | None = None,
+                            db: Session = Depends(get_db)):
+    require_admin(request)
+    page=max(1,page); page_size=max(1,min(page_size,100))
+    stmt=select(Organization)
+    if q and q.strip():
+        from sqlalchemy import or_
+        pattern='%' + q.strip() + '%'
+        stmt=stmt.where(Organization.legal_name.ilike(pattern) | Organization.registration_number.ilike(pattern))
+    total=db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    rows=db.scalars(stmt.order_by(Organization.legal_name).offset((page-1)*page_size).limit(page_size)).all()
+    return {'items':[{'id':o.id,'legal_name':o.legal_name,'registration_number':o.registration_number,
+        'tax_pin':('•'*(max(0,len(o.tax_pin)-2))+o.tax_pin[-2:]) if o.tax_pin else None,
+        'status':o.status,'data_quality_status':o.data_quality_status,'source_file':o.source_file,
+        'created_at':o.created_at.isoformat() if o.created_at else None,'updated_at':o.updated_at.isoformat() if o.updated_at else None} for o in rows],
+        'total':total,'page':page,'page_size':page_size}
+
+
+@router.post('/ingestion/uploads', status_code=202)
+def dashboard_upload(request: Request, file: UploadFile, db: Session = Depends(get_db)):
+    require_admin(request)
+    from .api import upload as upload_impl
+    return upload_impl(request, file, db, request.headers.get('X-Correlation-ID'),
+                       request.headers.get('Idempotency-Key'), request.headers.get('X-Registry-Source'))
+
+
+@router.post('/ingestion/uploads/presign', status_code=201)
+def dashboard_presign_upload(payload: dict, request: Request, db: Session = Depends(get_db)):
+    require_admin(request)
+    from .api import DirectUploadRequest, presign_direct_upload
+    parsed = DirectUploadRequest.model_validate(payload)
+    return presign_direct_upload(parsed, request, db, request.headers.get('X-Correlation-ID'), request.headers.get('Idempotency-Key'))
+
+
+@router.post('/ingestion/uploads/{job_id}/complete')
+def dashboard_complete_upload(job_id: str, request: Request, db: Session = Depends(get_db)):
+    require_admin(request)
+    from .api import complete_direct_upload
+    return complete_direct_upload(job_id, db)
+
+# Workspace overview endpoints. All counts are computed from persisted datasource records.
+@router.get('/workspace/metrics')
+def workspace_metrics(request: Request, db: Session = Depends(get_db)):
+    require_admin(request)
+    total_orgs = db.scalar(select(func.count()).select_from(Organization)) or 0
+    total_jobs = db.scalar(select(func.count()).select_from(IngestionJob)) or 0
+    completed = db.scalar(select(func.count()).select_from(IngestionJob).where(IngestionJob.status.in_(['COMPLETED','COMPLETED_WITH_ERRORS']))) or 0
+    failed = db.scalar(select(func.count()).select_from(IngestionJob).where(IngestionJob.status.in_(['FAILED','ERROR']))) or 0
+    source_count = db.scalar(select(func.count()).select_from(RegistrySource).where(RegistrySource.enabled.is_(True))) or 0
+    return {'indexed_organizations':total_orgs,'ingestion_jobs':total_jobs,'completed_jobs':completed,
+            'failed_jobs':failed,'enabled_sources_count':source_count,'connected_sources_count':None,'generated_at':__import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat(),
+            'source':'database'}
+
+
+@router.get('/ingestion/activity')
+def ingestion_activity(request: Request, limit: int = 50, db: Session = Depends(get_db)):
+    require_admin(request)
+    limit = max(1, min(limit, 200))
+    rows = db.scalars(select(IngestionJob).order_by(IngestionJob.created_at.desc()).limit(limit)).all()
+    events = []
+    chronological = list(reversed(rows))
+    volumes = [max(0, int(j.records_processed or 0)) for j in chronological]
+    for i, job in enumerate(chronological):
+        # Compare this job only with preceding observations; flag only with at least five baselines.
+        history = volumes[max(0, i - 7):i]
+        volume = volumes[i]
+        anomaly = None
+        if len(history) >= 5:
+            mean = sum(history) / len(history)
+            variance = sum((v - mean) ** 2 for v in history) / len(history)
+            std = variance ** 0.5
+            if std > 0 and abs(volume - mean) / std >= 3:
+                anomaly = {'type':'volume_spike' if volume > mean else 'volume_drop', 'z_score':round((volume-mean)/std, 2)}
+        events.append({'job_id':job.id,'created_at':job.created_at.isoformat() if job.created_at else None,
+            'status':job.status,'records_processed':volume,'records_inserted':int(job.records_inserted or 0),
+            'anomaly':anomaly})
+    events.reverse()
+    return {'items':events,'count':len(events),'generated_at':__import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat(),
+            'source':'database'}
+
+
+@router.get('/registry/overview')
+def registry_overview(request: Request, db: Session = Depends(get_db)):
+    require_admin(request)
+    total = db.scalar(select(func.count()).select_from(Organization)) or 0
+    if not total:
+        return {'total_records':0,'completeness_percentage':None,'null_assertion_pass_percentage':None,
+                'unreviewed_records':0,'source':'database','generated_at':__import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat()}
+    rows = db.execute(select(Organization.legal_name, Organization.registration_number, Organization.tax_pin,
+                             Organization.status, Organization.data_quality_status)).all()
+    total_fields = len(rows) * 4
+    present_fields = sum(sum(value is not None and str(value).strip() != '' for value in row[:4]) for row in rows)
+    completeness = round((present_fields / total_fields) * 100, 2) if total_fields else None
+    reviewed = sum(1 for row in rows if str(row[4] or '').upper() not in {'UNREVIEWED', 'UNKNOWN', ''})
+    return {'total_records':total,'completeness_percentage':completeness,
+            'null_assertion_pass_percentage':round(present_fields / total_fields * 100, 2) if total_fields else None,
+            'unreviewed_records':total-reviewed,'source':'database',
+            'generated_at':__import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat()}
+
+
+
+@router.get('/data-quality/overview')
+def admin_data_quality_overview(request: Request, db: Session = Depends(get_db)):
+    require_admin(request)
+    total = db.scalar(select(func.count()).select_from(Organization)) or 0
+    rows = db.execute(select(Organization.legal_name, Organization.registration_number,
+                             Organization.tax_pin, Organization.status,
+                             Organization.data_quality_status)).all()
+    required_fields = 4
+    field_slots = len(rows) * required_fields
+    present = sum(sum(value is not None and str(value).strip() != '' for value in row[:required_fields]) for row in rows)
+    complete_rows = sum(all(value is not None and str(value).strip() != '' for value in row[:required_fields]) for row in rows)
+    row_errors = db.scalar(select(func.count()).select_from(IngestionRowError)) or 0
+    unreviewed = sum(1 for row in rows if str(row[4] or '').upper() in {'UNREVIEWED', 'UNKNOWN', ''})
+    return {'total_records': total, 'complete_records': complete_rows,
+            'incomplete_records': max(0, total - complete_rows),
+            'completeness_percentage': round(present / field_slots * 100, 2) if field_slots else None,
+            'complete_record_percentage': round(complete_rows / total * 100, 2) if total else None,
+            'unreviewed_records': unreviewed, 'ingestion_row_errors': row_errors,
+            'required_fields': ['legal_name', 'registration_number', 'tax_pin', 'status'],
+            'source': 'database', 'generated_at': __import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat()}
+
+
+@router.get('/warehouse/overview')
+def admin_warehouse_overview(request: Request, db: Session = Depends(get_db)):
+    require_admin(request)
+    import_count = db.scalar(select(func.count()).select_from(WarehouseRawImport)) or 0
+    total_bytes = db.scalar(select(func.coalesce(func.sum(WarehouseRawImport.byte_size), 0))) or 0
+    access_count = db.scalar(select(func.count()).select_from(WarehouseAccessLog)) or 0
+    dlq_count = db.scalar(select(func.count()).select_from(FailedImportDLQ).where(FailedImportDLQ.resolved_at.is_(None))) or 0
+    imports = db.scalars(select(WarehouseRawImport).order_by(WarehouseRawImport.created_at.desc()).limit(50)).all()
+    access = db.scalars(select(WarehouseAccessLog).order_by(WarehouseAccessLog.created_at.desc()).limit(20)).all()
+    return {'raw_imports': import_count, 'stored_bytes': int(total_bytes), 'warehouse_access_events': access_count,
+            'unresolved_dead_letter_rows': dlq_count,
+            'imports': [{'id': x.id, 'job_id': x.ingestion_job_id, 'file_name': x.original_filename,
+                         'content_type': x.content_type, 'byte_size': int(x.byte_size or 0),
+                         'source_name': x.source_name, 'status': x.import_status,
+                         'created_at': x.created_at.isoformat() if x.created_at else None} for x in imports],
+            'access_events': [{'id': x.id, 'request_id': x.request_id, 'caller_service': x.caller_service,
+                               'endpoint': x.endpoint, 'method': x.http_method, 'status_code': x.response_status,
+                               'duration_ms': x.duration_ms, 'outcome': x.outcome,
+                               'created_at': x.created_at.isoformat() if x.created_at else None} for x in access],
+            'source': 'database', 'generated_at': __import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat()}
+
+
+@router.get('/validation/rules')
+def admin_validation_rules(request: Request):
+    require_admin(request)
+    # These are application-level checks, not user-configurable rules stored in the database.
+    rules = [
+        {'id': 'legal-name-required', 'name': 'Legal name required', 'field': 'legal_name',
+         'severity': 'error', 'status': 'enforced', 'description': 'Every registry organization must have a non-empty legal name.'},
+        {'id': 'registration-number-unique', 'name': 'Registration number uniqueness', 'field': 'normalized_registration_number',
+         'severity': 'error', 'status': 'enforced', 'description': 'A normalized registration number cannot belong to two registry records.'},
+        {'id': 'tax-pin-presence', 'name': 'Tax PIN presence', 'field': 'tax_pin',
+         'severity': 'review', 'status': 'measured', 'description': 'Presence is measured for completeness; this does not verify a PIN with KRA.'},
+        {'id': 'registration-number-presence', 'name': 'Registration number presence', 'field': 'registration_number',
+         'severity': 'review', 'status': 'measured', 'description': 'Presence is measured for completeness; this does not verify BRS registration.'},
+        {'id': 'source-provenance', 'name': 'Source provenance', 'field': 'source_name/source_file/source_row',
+         'severity': 'review', 'status': 'partially-tracked', 'description': 'Ingestion records retain available source provenance metadata.'},
+    ]
+    return {'items': rules, 'total': len(rules), 'editable': False, 'source': 'application-defined',
+            'note': 'Rules are defined by application behavior. There is no persisted rule-management model in this deployment.',
+            'generated_at': __import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat()}
+
+
+@router.get('/audit/logs')
+def admin_audit_logs(request: Request, limit: int = 100, db: Session = Depends(get_db)):
+    require_admin(request)
+    limit = max(1, min(limit, 200))
+    rows = db.scalars(select(AuditLog).order_by(AuditLog.created_at.desc()).limit(limit)).all()
+    return {'items': [{'id': x.id, 'action': x.action, 'actor': x.actor, 'file_name': x.file_name,
+                       'detail_fields': sorted(list((x.details or {}).keys())) if isinstance(x.details, dict) else [],
+                       'created_at': x.created_at.isoformat() if x.created_at else None} for x in rows],
+            'count': len(rows), 'source': 'database',
+            'generated_at': __import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat()}
+
+
+@router.get('/settings/overview')
+def admin_settings_overview(request: Request):
+    require_admin(request)
+    origins = settings.cors_origin_list
+    return {'environment': settings.app_env, 'api_environment': settings.api_environment,
+            'database': {'configured': bool(settings.database_url), 'engine': 'postgresql' if 'postgres' in settings.database_url.lower() else ('sqlite/local' if settings.database_url.lower().startswith('sqlite') else 'unknown')},
+            'object_storage': {'configured': all([settings.r2_account_id, settings.r2_access_key_id, settings.r2_secret_access_key, settings.r2_bucket_name])},
+            'redis': {'configured': bool(settings.redis_url), 'required_for_distributed_admin_rate_limit': bool(settings.admin_password_hash)},
+            'operator_session': {'http_only_cookie': True, 'secure_cookie': settings.session_cookie_secure,
+                                 'same_site': 'strict', 'ttl_seconds': settings.session_ttl_seconds,
+                                 'distributed_rate_limit_configured': bool(settings.redis_url)},
+            'cors_origins': origins, 'metrics_token_configured': bool(settings.metrics_token),
+            'secrets_exposed': False, 'editable': False,
+            'note': 'Read-only diagnostic summary. Secret values are never returned by this endpoint.',
+            'source': 'runtime-configuration'}
+
+@router.get('/workspace/stream')
+async def workspace_stream(request: Request):
+    """Cookie-authenticated SSE snapshots for the live workspace; no credentials in the URL."""
+    require_admin(request)
+
+    async def events():
+        while not await request.is_disconnected():
+            try:
+                with SessionLocal() as db:
+                    total_orgs = db.scalar(select(func.count()).select_from(Organization)) or 0
+                    total_jobs = db.scalar(select(func.count()).select_from(IngestionJob)) or 0
+                    completed = db.scalar(select(func.count()).select_from(IngestionJob).where(IngestionJob.status.in_(['COMPLETED','COMPLETED_WITH_ERRORS']))) or 0
+                    failed = db.scalar(select(func.count()).select_from(IngestionJob).where(IngestionJob.status.in_(['FAILED','ERROR']))) or 0
+                    source_count = db.scalar(select(func.count()).select_from(RegistrySource).where(RegistrySource.enabled.is_(True))) or 0
+                    jobs = db.scalars(select(IngestionJob).order_by(IngestionJob.created_at.desc()).limit(50)).all()
+                    payload = {
+                        'metrics': {'indexed_organizations': total_orgs, 'ingestion_jobs': total_jobs,
+                            'completed_jobs': completed, 'failed_jobs': failed,
+                            'enabled_sources_count': source_count, 'connected_sources_count': None, 'source': 'database'},
+                        'jobs': [{'id': j.id, 'job_id': j.id, 'file_name': j.file_name, 'status': j.status,
+                            'records_processed': int(j.records_processed or 0), 'records_inserted': int(j.records_inserted or 0),
+                            'created_at': j.created_at.isoformat() if j.created_at else None,
+                            'error_summary': j.error_summary, 'source_name': j.source_name} for j in jobs],
+                        'generated_at': __import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat()
+                    }
+                yield 'event: workspace\ndata: ' + json.dumps(payload, separators=(',', ':')) + '\n\n'
+            except Exception:
+                _rate_logger.exception('workspace_sse_snapshot_failed')
+                yield 'event: error\ndata: {"message":"Workspace snapshot temporarily unavailable"}\n\n'
+            await asyncio.sleep(5)
+
+    return StreamingResponse(events(), media_type='text/event-stream',
+        headers={'Cache-Control':'no-cache, no-transform', 'X-Accel-Buffering':'no'})
+)
+
+
+class PasswordResetRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+
+
+class PasswordResetConfirmRequest(OtpVerifyRequest):
+    new_password: str = Field(min_length=12, max_length=256)
+
+
+@router.get('/auth/config')
+def auth_config():
+    return {'signup_enabled': bool(settings.admin_signup_email_list and settings.auth_email_delivery_configured),
+            'password_reset_enabled': bool(settings.auth_email_delivery_configured),
+            'otp_ttl_seconds': settings.auth_otp_ttl_seconds,
+            'password_min_length': 12,
+            'signup_requires_allowlisted_email': True}
+
+
+@router.post('/auth/signup/request-otp', status_code=202)
+def signup_request_otp(payload: SignupRequest, request: Request):
+    email = _normalize_email(payload.email)
+    _check_login_rate(request.client.host if request.client else 'unknown')
+    if email not in settings.admin_signup_email_list:
+        # Do not reveal whether an email is eligible for operator access.
+        return {'accepted': True, 'message': 'If this address is eligible, a verification code will be sent.'}
+    _require_otp_delivery()
+    password_hash = hash_password(payload.password)
+    with SessionLocal() as db:
+        if db.scalar(select(AdminAccount.id).where(func.lower(AdminAccount.email) == email)):
+            return {'accepted': True, 'message': 'If this address is eligible, a verification code will be sent.'}
+        _create_auth_challenge(db, email=email, purpose='signup', password_hash=password_hash,
+                               display_name=payload.display_name.strip())
+
+
+@router.post('/auth/signup/verify-otp')
+def signup_verify_otp(payload: OtpVerifyRequest, request: Request, response: Response):
+    email = _normalize_email(payload.email)
+    if email not in settings.admin_signup_email_list:
+        raise HTTPException(400, 'The code is invalid or expired. Request a new code.')
+    with SessionLocal() as db:
+        challenge = _valid_challenge(db, email=email, purpose='signup', code=payload.code)
+        if not challenge.password_hash or not challenge.display_name:
+            raise HTTPException(400, 'The code is invalid or expired. Request a new code.')
+        account = AdminAccount(email=email, display_name=challenge.display_name,
+            password_hash=challenge.password_hash, email_verified_at=now_utc())
+        db.add(account)
+        challenge.consumed_at = now_utc()
+        try:
+            db.commit()
+        except IntegrityError as exc:
+            db.rollback()
+            raise HTTPException(409, 'An operator account already exists for this email.') from exc
+    claims = _set_session_cookie(response, request, email=email, auth_method='password')
+    return {'authenticated': True, 'csrf_token': claims['csrf'], 'expires_at': claims['exp'],
+            'auth_method': claims['auth_method'], 'identity_email': email}
+
+
+@router.post('/auth/password-reset/request-otp', status_code=202)
+def password_reset_request_otp(payload: PasswordResetRequest, request: Request):
+    email = _normalize_email(payload.email)
+    _check_login_rate(request.client.host if request.client else 'unknown')
+    _require_otp_delivery()
+    with SessionLocal() as db:
+        account = db.scalar(select(AdminAccount).where(func.lower(AdminAccount.email) == email,
+            AdminAccount.disabled_at.is_(None)))
+        if account:
+            _create_auth_challenge(db, email=email, purpose='password_reset')
+
+
+@router.post('/auth/password-reset/confirm')
+def password_reset_confirm(payload: PasswordResetConfirmRequest):
+    email = _normalize_email(payload.email)
+    with SessionLocal() as db:
+        account = db.scalar(select(AdminAccount).where(func.lower(AdminAccount.email) == email,
+            AdminAccount.disabled_at.is_(None)))
+        if not account:
+            raise HTTPException(400, 'The code is invalid or expired. Request a new code.')
+        challenge = _valid_challenge(db, email=email, purpose='password_reset', code=payload.code)
+        challenge.consumed_at = now_utc()
+        account.password_hash = hash_password(payload.new_password)
+        account.updated_at = now_utc()
+        for session_row in db.scalars(select(AdminSession).where(
+            func.lower(AdminSession.email) == email, AdminSession.revoked_at.is_(None))).all():
+            session_row.revoked_at = now_utc()
+        db.commit()
+    return {'reset': True, 'message': 'Password updated. Sign in with your new password.'}
+
+
+@router.get('/sessions')
+def list_operator_sessions(request: Request, claims: dict = Depends(require_admin)):
+    email = claims.get('email')
+    with SessionLocal() as db:
+        query = select(AdminSession).where(AdminSession.revoked_at.is_(None),
+            AdminSession.expires_at > now_utc())
+        query = query.where(func.lower(AdminSession.email) == email.lower()) if email else query.where(AdminSession.email.is_(None))
+        rows = db.scalars(query.order_by(AdminSession.created_at.desc()).limit(50)).all()
+        current_id = claims.get('jti')
+        return {'items': [{'id': row.id, 'auth_method': row.auth_method,
+            'created_at': row.created_at.isoformat(), 'last_seen_at': row.last_seen_at.isoformat(),
+            'expires_at': row.expires_at.isoformat(), 'current': row.id == current_id,
+            'user_agent': row.user_agent or 'Unknown browser/device'} for row in rows],
+            'total': len(rows), 'current_session_id': current_id}
+
+
+@router.delete('/sessions/{session_id}')
+def revoke_operator_session(session_id: str, request: Request, response: Response,
+                            claims: dict = Depends(require_admin)):
+    email = claims.get('email')
+    with SessionLocal() as db:
+        row = db.get(AdminSession, session_id)
+        if not row or row.revoked_at is not None:
+            raise HTTPException(404, 'Session not found')
+        if (email and (not row.email or row.email.lower() != email.lower())) or (not email and row.email is not None):
+            raise HTTPException(404, 'Session not found')
+        row.revoked_at = now_utc()
+        db.commit()
+    if session_id == claims.get('jti'):
+        response.delete_cookie(COOKIE_NAME, path='/')
+        return {'revoked': True, 'current_session': True}
+    return {'revoked': True, 'current_session': False}
 
 
 def _source_json(source, last_import=None):
