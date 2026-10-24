@@ -6,6 +6,20 @@ This is a datasource, not the PesaGuard customer onboarding system and not an au
 
 ## Local development
 
+### Run the PesaGuard integration locally
+
+For the full two-repository setup, follow [Local PesaGuard integration readiness](docs/local-pesaguard-integration.md). Quick start in PowerShell:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\scripts\start-windows-local.ps1
+$env:PESAGUARD_DATASOURCE_API_KEY = '<the local-only REGISTRY_API_KEYS value from .env>'
+.\scripts\test-pesaguard-local-integration.ps1
+```
+
+The datasource API is at `http://localhost:8000`, docs at `http://localhost:8000/docs`, and dashboard at `http://localhost:5173`. Keep this service key in backend/server configuration only; never put it in frontend code. The local stack uses SQLite and local file storage, not production Supabase/R2.
+
+
 1. For Windows local testing, copy `.env.example` to `.env` and replace `REGISTRY_API_KEYS` with a long random local-only key.
 2. Run `docker compose -f docker-compose.windows.local.yml up -d --build` to start the API, dashboard, and independent worker with one shared SQLite database and local file storage. This configuration is isolated from production Supabase and R2.
 3. Open the dashboard at `http://localhost:5173` and API docs at `http://localhost:8000/docs`. Sign in with the dashboard admin password (see `ADMIN_PASSWORD_HASH` in `.env.example`); the browser never receives the service API key.
