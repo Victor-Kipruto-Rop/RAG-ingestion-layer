@@ -16,21 +16,60 @@ from .models import ApiKey, ApiKeyAuditEvent
 
 router = APIRouter(prefix="/api/v1/keys", tags=["API key management"])
 
-def require_user_claims(authorization: str | None = Header(default=None, alias="Authorization")):
+def _trusted_identity_signing_keys() -> tuple[dict[str, str], str]:
+    """Load the same rotating HS256 key ring used by PesaGuard's auth_rbac provider."""
+    import json
+    active_kid = (settings.api_key_auth_jwt_active_kid or "current").strip()
+    raw_ring = (settings.api_key_auth_jwt_keys_json or "").strip()
+    if raw_ring:
+        try:
+            ring = json.loads(raw_ring)
+        except json.JSONDecodeError:
+            raise HTTPException(503, "PesaGuard identity key-ring configuration is invalid")
+        if not isinstance(ring, dict) or not ring or any(
+            not isinstance(kid, str) or not isinstance(value, str) or len(value.encode()) < 32
+            for kid, value in ring.items()
+        ):
+            raise HTTPException(503, "PesaGuard identity key-ring configuration is invalid")
+        if active_kid not in ring:
+            # The active key ID is used as a default only when a JWT header omits kid.
+            active_kid = ""
+        return ring, active_kid
+    # Backward-compatible single-key mode for deployments that have not migrated to
+    # the PesaGuard JWT_KEYS_JSON/JWT_ACTIVE_KID rotation configuration yet.
     secret = settings.api_key_auth_jwt_secret
-    if not secret:
-        raise HTTPException(503, "API key management authentication is not configured")
-    if not authorization or not authorization.startswith("Bearer "):
+    if not secret or len(secret.encode()) < 32:
+        raise HTTPException(503, "API key management authentication is not configured with a valid signing key")
+    return {"current": secret}, "current"
+
+
+def require_user_claims(authorization: str | None = Header(default=None, alias="Authorization")):
+    if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(401, "A valid PesaGuard user access token is required")
+    token = authorization[7:].strip()
+    if not token:
+        raise HTTPException(401, "A valid PesaGuard user access token is required")
+
     expected_issuer = settings.api_key_auth_jwt_issuer
     expected_audience = settings.api_key_auth_jwt_audience
-    if settings.app_env.lower() == 'production' and (not expected_issuer or not expected_audience):
-        raise HTTPException(503, 'API key management requires configured JWT issuer and audience')
-    options = {"require": ["exp", "sub"], "verify_aud": bool(expected_audience), "verify_iss": bool(expected_issuer)}
+    if settings.app_env.lower() in {"production", "staging"} and (not expected_issuer or not expected_audience):
+        raise HTTPException(503, "API key management requires the PesaGuard JWT issuer and audience")
+
     try:
+        ring, default_kid = _trusted_identity_signing_keys()
+        header = jwt.get_unverified_header(token)
+        kid = header.get("kid") or default_kid
+        if not isinstance(kid, str) or kid not in ring or header.get("alg") != "HS256":
+            raise jwt.InvalidTokenError("Untrusted signing key")
+        options = {
+            "require": ["exp", "iat", "nbf", "jti", "sub", "tenant_id", "type", "iss", "aud"],
+            "verify_aud": bool(expected_audience),
+            "verify_iss": bool(expected_issuer),
+        }
         claims = jwt.decode(
-            authorization[7:].strip(), secret, algorithms=["HS256"], options=options,
+            token, ring[kid], algorithms=["HS256"], options=options,
             audience=expected_audience or None, issuer=expected_issuer or None,
+            leeway=30,
         )
     except jwt.ExpiredSignatureError:
         raise HTTPException(401, "Access token has expired")
@@ -41,10 +80,23 @@ def require_user_claims(authorization: str | None = Header(default=None, alias="
     except jwt.InvalidAudienceError:
         raise HTTPException(401, "Invalid access token audience")
     except jwt.InvalidTokenError:
-        raise HTTPException(401, "Invalid access token")
-    if not claims.get("sub") or not claims.get("org_id"):
-        raise HTTPException(403, "Access token must identify a user and organization")
-    return claims
+        raise HTTPException(401, "Invalid PesaGuard access token")
+    except HTTPException:
+        raise
+
+    if claims.get("type") != "access":
+        raise HTTPException(401, "A PesaGuard access token is required; refresh tokens are not accepted")
+    subject = claims.get("sub")
+    # PesaGuard's auth_rbac issues tenant_id on every access token and may additionally
+    # include organization_id. Use the explicit organization when present; otherwise
+    # keep the key boundary at the narrower identity tenant scope.
+    org_id = claims.get("organization_id") or claims.get("org_id") or claims.get("tenant_id")
+    if not isinstance(subject, str) or not subject.strip() or not isinstance(org_id, str) or not org_id.strip():
+        raise HTTPException(403, "Access token must identify a user and a tenant or organization")
+    normalized = dict(claims)
+    normalized["org_id"] = org_id
+    normalized["sub"] = subject
+    return normalized
 
 def _roles(claims: dict) -> set[str]:
     roles = claims.get("roles", [])
