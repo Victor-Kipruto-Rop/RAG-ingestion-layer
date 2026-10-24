@@ -9,7 +9,7 @@ from sqlalchemy.pool import StaticPool
 from src import developer_platform
 from src.config import settings
 from src.database import Base
-from src.models import DeveloperSession, now_utc
+from src.models import DeveloperSession
 
 
 @pytest.fixture
