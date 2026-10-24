@@ -89,8 +89,14 @@ frontend-tests:
   script:
     - cd frontend
     - npm ci --no-audit --no-fund
+    - node --check scripts/deploy-pages-staging.mjs
+    - test -f wrangler.jsonc
+    - test -f public/_redirects
+    - test -f public/_headers
     - npm test
     - npm run build
+    - test -f dist/_redirects
+    - test -f dist/_headers
     - npm audit --audit-level=moderate
   artifacts:
     when: always
