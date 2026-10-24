@@ -8,11 +8,14 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: registry-ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Do not cancel a main-branch release validation because another commit lands.
+  # PR runs may be superseded by a newer commit on the same PR.
+  group: registry-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   backend:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -41,6 +44,7 @@ jobs:
         run: docker build -t pesaguard-registry-worker:ci -f backend/Dockerfile.worker ./backend
   backend-postgres:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     services:
       postgres:
         image: postgres:16
@@ -68,6 +72,7 @@ jobs:
         run: pytest -q
   frontend:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: frontend
@@ -90,6 +95,7 @@ jobs:
         run: docker build --build-arg VITE_API_BASE_URL=https://api.example.invalid -t pesaguard-registry-frontend:ci .
   sdk:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -106,6 +112,7 @@ jobs:
         run: node --test sdks/javascript/test/client.test.js
   local-compose-config:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - name: Prepare safe local environment
