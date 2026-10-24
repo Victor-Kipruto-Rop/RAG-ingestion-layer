@@ -151,7 +151,8 @@ staging-blueprint-validation:
       abort "A separate staging database is required" unless blueprint.fetch("databases").any? { |db| db["name"] == "pesaguard-datasource-staging-db" }
       frontend = services.find { |service| service["name"] == "pesaguard-datasource-staging-frontend" }
       abort "Frontend must use a Render static site build" unless frontend["runtime"] == "static"
-      abort "Frontend must publish built assets" unless frontend["staticPublishPath"] == "./dist"
+      abort "Frontend must build from the frontend directory" unless frontend["rootDir"] == "frontend"
+      abort "Frontend must publish built assets" unless frontend["staticPublishPath"] == "dist"
       abort "Frontend must provide SPA route fallback" unless frontend.fetch("routes", []).any? { |route| route["type"] == "rewrite" && route["source"] == "/*" && route["destination"] == "/index.html" }
       abort "Staging frontend API URL is not configured as expected" unless frontend.fetch("envVars", []).any? { |entry| entry["key"] == "VITE_API_BASE_URL" }
       puts "Staging blueprint structure and release gates validated."
