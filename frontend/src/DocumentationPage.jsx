@@ -46,7 +46,7 @@ export default function DocumentationPage() {
       </>}
       {active === 'api' && <>
         <p className="docs-lead">Use the live OpenAPI schema as the authoritative contract. Exact request and response schemas may evolve with the deployed version.</p>
-        <DocSection title="API explorers"><p><a href={`${API_BASE}/openapi.json`} target="_blank" rel="noreferrer">OpenAPI JSON</a> · <a href="/docs" target="_blank" rel="noreferrer">Swagger UI</a> · <a href="/redoc" target="_blank" rel="noreferrer">ReDoc</a></p></DocSection>
+        <DocSection title="API explorers"><p><a href={`${API_BASE}/openapi.json`} target="_blank" rel="noreferrer">OpenAPI JSON</a> · <a href={`${API_BASE}/docs`} target="_blank" rel="noreferrer">Swagger UI</a> · <a href={`${API_BASE}/redoc`} target="_blank" rel="noreferrer">ReDoc</a></p></DocSection>
         <DocSection title="API management workflow"><ul><li>Create a key in the appropriate environment and grant only required scopes.</li><li>Store the secret in a managed secret store; the full secret should only be shown at creation.</li><li>Set expiration and rotate keys before expiry or suspected compromise.</li><li>Revoke compromised keys and inspect the audit-event history.</li><li>Never send service credentials to browser code or commit them to source control.</li></ul></DocSection>
         <DocSection title="Request example"><Code>{'curl -H "Authorization: Bearer $PESAGUARD_ACCESS_TOKEN" "$PESAGUARD_API_BASE/api/v1/keys/me"'}</Code><p>Customer key-management routes require an access token issued by the configured trusted identity provider. The internal operator session is separate.</p></DocSection>
       </>}
