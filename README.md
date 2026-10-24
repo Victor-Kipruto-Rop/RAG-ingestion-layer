@@ -133,3 +133,8 @@ A safe Windows local environment template is provided as [`.env.example`](.env.e
 ## Sandbox and production API keys
 
 See [environment-scoped API key setup](docs/environment-scoped-api-keys.md). User-issued keys are tied to one environment and organization. Sandbox keys are rejected by production deployments and production keys are rejected by sandbox deployments. Key management requires a trusted PesaGuard-issued access token; configure the JWT issuer, audience and signing secret server-side. Apply migration 009 before enabling this feature. Do not expose `REGISTRY_API_KEYS` in browser code.
+
+
+## Operator authentication setup
+
+See [`docs/operator-auth-setup.md`](docs/operator-auth-setup.md) for database migrations, allowlisted sign-up, email OTP, password recovery, Google/GitHub OAuth, and persisted session revocation configuration.
