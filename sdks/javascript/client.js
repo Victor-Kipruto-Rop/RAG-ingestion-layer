@@ -1,4 +1,4 @@
-import { setTimeout as delay } from 'node:timers/promises';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 
 const BASE_URLS = {
   sandbox: 'https://sandbox-api.pesaguard.co.ke',
@@ -41,4 +41,24 @@ export class PesaGuardClient {
   searchRegistry(query, options = {}) {
     return this.request('/api/v1/registry/search', { query: { q: query, ...options } });
   }
+}
+
+
+export function verifyWebhookSignature(secret, rawBody, signatureHeader, { toleranceSeconds = 300, now = Date.now() / 1000 } = {}) {
+  if (typeof secret !== 'string' || typeof signatureHeader !== 'string') return false;
+  const body = Buffer.isBuffer(rawBody) ? rawBody : Buffer.from(rawBody ?? '');
+  const values = {};
+  for (const part of signatureHeader.split(',')) {
+    const index = part.indexOf('=');
+    if (index < 1) continue;
+    const key = part.slice(0, index).trim();
+    const value = part.slice(index + 1).trim();
+    if ((key === 't' || key === 'v1') && !(key in values)) values[key] = value;
+  }
+  const timestamp = Number(values.t);
+  if (!Number.isSafeInteger(timestamp) || typeof values.v1 !== 'string' || Math.abs(now - timestamp) > toleranceSeconds) return false;
+  const expected = createHmac('sha256', secret).update(String(timestamp)).update('.').update(body).digest();
+  let supplied;
+  try { supplied = Buffer.from(values.v1, 'hex'); } catch { return false; }
+  return supplied.length === expected.length && timingSafeEqual(expected, supplied);
 }
