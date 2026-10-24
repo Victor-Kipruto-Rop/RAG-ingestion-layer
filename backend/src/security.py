@@ -84,6 +84,12 @@ def _audit_unknown_environment_mismatch(raw_key, request, key_environment, reque
     except Exception:
         raise HTTPException(503, "Security audit service is unavailable; request rejected")
 
+def _customer_rate_limit_identity(organization_id: str) -> str:
+    """Use a stable tenant bucket so creating more keys cannot multiply lookup quotas."""
+    tenant_digest = hashlib.sha256(("tenant:" + str(organization_id)).encode()).hexdigest()
+    return "customer-api-key:" + tenant_digest
+
+
 def _validate_customer_api_key(raw_key, request):
     from .models import ApiKey
     runtime_environment = settings.api_environment.lower().strip()
@@ -134,7 +140,7 @@ def _validate_customer_api_key(raw_key, request):
         if last_used is None or (now - last_used).total_seconds() > 60:  # avoid a write per request
             key.last_used_at = now
             db.commit()
-        return "customer-api-key:" + key.id
+        return _customer_rate_limit_identity(key.organization_id)
 
 def _check_nonce_local(nonce, expires_at):
     now=time.time()
