@@ -17,3 +17,9 @@ description: Use when documenting local PesaGuard integration, reviewing diffs, 
 
 ## Final report
 List changed paths, commands actually run, test results, service health, remaining blockers, and security checks. Never say CI passed without checking current CI results.
+
+## Mandatory quality gates
+- Review complete unstaged/staged diffs and run whitespace/conflict checks before finishing.
+- Confirm no local environment files, generated credentials, local data, or sensitive logs are tracked.
+- Do not stage or modify unrelated user work. Do not commit, push, merge, or deploy unless explicitly requested.
+- Documentation must distinguish tested behavior from intended behavior and list known blockers.
