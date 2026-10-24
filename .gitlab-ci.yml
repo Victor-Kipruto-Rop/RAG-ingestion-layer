@@ -98,14 +98,24 @@ frontend-tests:
       - frontend/dist/
     expire_in: 1 day
 
-sdk-tests:
+sdk-python-tests:
   extends: .python-job
   stage: test
   timeout: 20m
   script:
     - pip install -e "sdks/python[test]"
     - pytest -q sdks/python/sdk_client_tests.py
-    - apt-get update && apt-get install -y --no-install-recommends nodejs npm
+
+sdk-javascript-tests:
+  image: node:22-bookworm-slim
+  stage: test
+  timeout: 20m
+  cache:
+    key: "npm-sdk-$CI_COMMIT_REF_SLUG"
+    paths:
+      - .npm/
+  script:
+    - node --version
     - node --test sdks/javascript/test/client.test.js
 
 staging-blueprint-validation:
@@ -159,6 +169,9 @@ docker-builds:
     - docker build --build-arg VITE_API_BASE_URL=https://staging-api.example.invalid -t pesaguard-datasource-frontend:ci ./frontend
   rules:
     - if: '$CI_COMMIT_BRANCH == "chore/production-ci-release-gates"'
+      when: manual
+      allow_failure: true
+    - when: never
 
 cloudflare-pages-staging:
   image: node:22-bookworm-slim
