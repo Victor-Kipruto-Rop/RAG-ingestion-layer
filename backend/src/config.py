@@ -7,6 +7,8 @@ class Settings(BaseSettings):
  registry_api_keys:str=''
  api_environment:str='production'
  api_key_auth_jwt_secret:str=''
+ api_key_auth_jwt_keys_json:str=''
+ api_key_auth_jwt_active_kid:str='current'
  api_key_auth_jwt_issuer:str=''
  api_key_auth_jwt_audience:str=''
  cors_origins:str='http://localhost:5173'
