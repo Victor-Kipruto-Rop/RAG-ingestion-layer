@@ -35,7 +35,7 @@ function ToastPopup({ kind='success', message, onClose }) {
     setCreatedAt(new Date());
     const timer = window.setTimeout(onClose, 7000);
     return () => window.clearTimeout(timer);
-  }, [message, onClose]);
+  }, [message]);
   if (!message) return null;
   const Icon = kind === 'error' ? CircleHelp : CheckCircle2;
   return <div className="dp-toast-viewport" aria-live={kind === 'error' ? 'assertive' : 'polite'}>
