@@ -19,3 +19,5 @@ description: Use when local services fail to start, cannot connect, return unhea
 
 ## Guardrails
 Never disable auth, TLS enforcement, validation, health checks, or rate limiting as a shortcut. Do not dump full environment variables or sensitive request bodies.
+
+undefined
