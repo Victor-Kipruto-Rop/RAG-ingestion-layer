@@ -12,7 +12,7 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 from .config import settings
 from .database import get_db, SessionLocal
-from .models import ApiKey, ApiKeyAuditEvent, DeveloperAccount, DeveloperWorkspace
+from .models import ApiKey, ApiKeyAuditEvent, DeveloperAccount, DeveloperWorkspace, DeveloperSession
 
 router = APIRouter(prefix="/api/v1/keys", tags=["API key management"])
 
@@ -70,14 +70,23 @@ def require_user_claims(authorization: str | None = Header(default=None, alias="
             raise HTTPException(401, "Access token has expired")
         except jwt.InvalidTokenError:
             raise HTTPException(401, "Invalid developer access token")
-        if claims.get("type") != "access" or not isinstance(claims.get("sub"), str) or not isinstance(claims.get("tenant_id"), str):
+        if claims.get("type") != "access" or not isinstance(claims.get("sub"), str) or not isinstance(claims.get("tenant_id"), str) or not isinstance(claims.get("session_id"), str):
             raise HTTPException(401, "A valid developer access token is required")
-        # Re-check account/workspace state for immediate account disablement and verification changes.
+        # Re-check account, workspace, and session state on every API-key operation.
+        # Revoking a dashboard session therefore also invalidates its short-lived bearer token immediately.
         with SessionLocal() as db:
             account = db.get(DeveloperAccount, claims["sub"])
             workspace = db.get(DeveloperWorkspace, claims["tenant_id"])
-            if not account or account.disabled_at is not None or not account.email_verified_at or not workspace or workspace.owner_user_id != account.id:
-                raise HTTPException(401, "Developer account or workspace is unavailable")
+            session = db.get(DeveloperSession, claims["session_id"])
+            if (not account or account.disabled_at is not None or not account.email_verified_at
+                    or not workspace or workspace.owner_user_id != account.id
+                    or not session or session.user_id != account.id or session.revoked_at is not None):
+                raise HTTPException(401, "Developer account, workspace, or session is unavailable")
+            session_expiry = session.expires_at
+            if session_expiry.tzinfo is None:
+                session_expiry = session_expiry.replace(tzinfo=timezone.utc)
+            if session_expiry <= datetime.now(timezone.utc):
+                raise HTTPException(401, "Developer session has expired")
             claims["org_id"] = workspace.id
             claims["organization_id"] = workspace.id
             claims["organization_verified"] = workspace.verified is True
@@ -97,7 +106,7 @@ def require_user_claims(authorization: str | None = Header(default=None, alias="
         if not isinstance(kid, str) or kid not in ring or header.get("alg") != "HS256":
             raise jwt.InvalidTokenError("Untrusted signing key")
         options = {
-            "require": ["exp", "iat", "nbf", "jti", "sub", "tenant_id", "type", "iss", "aud", "auth_version", "scope"],
+            "require": ["exp", "iat", "nbf", "jti", "sub", "tenant_id", "session_id", "type", "iss", "aud", "auth_version", "scope"],
             "verify_aud": bool(expected_audience),
             "verify_iss": bool(expected_issuer),
         }
