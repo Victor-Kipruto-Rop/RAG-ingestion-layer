@@ -22,3 +22,10 @@ Report variable names and whether they are configured, never their values. If a 
 undefined
 
 undefined
+
+## Mandatory quality gates
+- Check ignore rules before creating a secret-bearing file; if inadequate, fix them first.
+- Preserve existing local values and do not echo secrets while inspecting or editing.
+- Confirm secret formats against the actual config parser. Never invent encryption-key formats or silently substitute defaults.
+- Scan tracked diffs for secrets and ensure only sanitized placeholders appear in examples.
+- If a real credential is required, mark that integration step BLOCKED; never use production credentials as a workaround.
