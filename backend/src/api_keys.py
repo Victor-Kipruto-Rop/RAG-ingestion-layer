@@ -11,8 +11,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 from .config import settings
-from .database import get_db
-from .models import ApiKey, ApiKeyAuditEvent
+from .database import get_db, SessionLocal
+from .models import ApiKey, ApiKeyAuditEvent, DeveloperAccount, DeveloperWorkspace
 
 router = APIRouter(prefix="/api/v1/keys", tags=["API key management"])
 
@@ -44,10 +44,46 @@ def _trusted_identity_signing_keys() -> tuple[dict[str, str], str]:
 
 def require_user_claims(authorization: str | None = Header(default=None, alias="Authorization")):
     if not authorization or not authorization.lower().startswith("bearer "):
-        raise HTTPException(401, "A valid PesaGuard user access token is required")
+        raise HTTPException(401, "A valid developer or PesaGuard user access token is required")
     token = authorization[7:].strip()
     if not token:
-        raise HTTPException(401, "A valid PesaGuard user access token is required")
+        raise HTTPException(401, "A valid developer or PesaGuard user access token is required")
+
+    # Developer-platform access tokens use their own signing secret, issuer and audience.
+    # They never share the internal operator session secret or service API key.
+    try:
+        untrusted = jwt.decode(token, options={"verify_signature": False, "verify_exp": False, "verify_aud": False})
+    except jwt.InvalidTokenError:
+        raise HTTPException(401, "Invalid access token")
+    if untrusted.get("iss") == settings.developer_access_token_issuer:
+        secret = settings.developer_access_token_secret
+        if not secret or len(secret.encode()) < 32:
+            raise HTTPException(503, "Developer API-key management authentication is not configured")
+        try:
+            claims = jwt.decode(
+                token, secret, algorithms=["HS256"], issuer=settings.developer_access_token_issuer,
+                audience=settings.developer_access_token_audience,
+                options={"require": ["exp", "iat", "nbf", "jti", "sub", "tenant_id", "type", "iss", "aud", "auth_version", "scope"]},
+                leeway=15,
+            )
+        except jwt.ExpiredSignatureError:
+            raise HTTPException(401, "Access token has expired")
+        except jwt.InvalidTokenError:
+            raise HTTPException(401, "Invalid developer access token")
+        if claims.get("type") != "access" or not isinstance(claims.get("sub"), str) or not isinstance(claims.get("tenant_id"), str):
+            raise HTTPException(401, "A valid developer access token is required")
+        # Re-check account/workspace state for immediate account disablement and verification changes.
+        with SessionLocal() as db:
+            account = db.get(DeveloperAccount, claims["sub"])
+            workspace = db.get(DeveloperWorkspace, claims["tenant_id"])
+            if not account or account.disabled_at is not None or not account.email_verified_at or not workspace or workspace.owner_user_id != account.id:
+                raise HTTPException(401, "Developer account or workspace is unavailable")
+            claims["org_id"] = workspace.id
+            claims["organization_id"] = workspace.id
+            claims["organization_verified"] = workspace.verified is True
+            claims["production_access_approved"] = workspace.production_access_approved is True
+            claims["roles"] = ["owner"]
+        return claims
 
     expected_issuer = settings.api_key_auth_jwt_issuer
     expected_audience = settings.api_key_auth_jwt_audience
@@ -86,9 +122,6 @@ def require_user_claims(authorization: str | None = Header(default=None, alias="
     if claims.get("type") != "access":
         raise HTTPException(401, "A PesaGuard access token is required; refresh tokens are not accepted")
     subject = claims.get("sub")
-    # PesaGuard's auth_rbac issues tenant_id on every access token and may additionally
-    # include organization_id. Use the explicit organization when present; otherwise
-    # keep the key boundary at the narrower identity tenant scope.
     org_id = claims.get("organization_id") or claims.get("org_id") or claims.get("tenant_id")
     if not isinstance(subject, str) or not subject.strip() or not isinstance(org_id, str) or not org_id.strip():
         raise HTTPException(403, "Access token must identify a user and a tenant or organization")
@@ -142,8 +175,8 @@ def _create_key(db: Session, claims: dict, payload: CreateApiKey, commit: bool =
     roles = _roles(claims)
     if env == "production" and not payload.expires_in_days:
         raise HTTPException(422, "Production API keys must have an expiry date (maximum 365 days)")
-    if env == "production" and not (claims.get("organization_verified") is True and ({"owner", "admin"} & set(roles))):
-        raise HTTPException(403, "Production keys require a verified organization and an owner/admin role")
+    if env == "production" and not (claims.get("organization_verified") is True and claims.get("production_access_approved") is True and ({"owner", "admin"} & set(roles))):
+        raise HTTPException(403, "Production keys require a verified organization, approved production access, and an owner/admin role. Submit a production-access request first.")
     if not payload.scopes or not set(payload.scopes).issubset(ALLOWED_SCOPES):
         raise HTTPException(422, "One or more requested scopes are not allowed")
     prefix = "pg_sandbox_" if env == "sandbox" else "pg_live_"
