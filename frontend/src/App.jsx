@@ -9,6 +9,7 @@ import {
 import { api, setCsrfToken } from './api.js';
 import ApiKeysPanel from './ApiKeysPanel.jsx';
 import DataSourcesPanel from './DataSourcesPanel.jsx';
+import LoginPage from './LoginPage.jsx';
 
 const NAV = [
   { name: 'Overview', icon: LayoutDashboard, group: 'WORKSPACE' },
@@ -181,6 +182,7 @@ export default function App() {
   const [authed, setAuthed] = useState(false);
   const [password, setPassword] = useState('');
   const [checking, setChecking] = useState(true);
+  const [signingIn, setSigningIn] = useState(false);
   const [connected, setConnected] = useState(false);
   const [summary, setSummary] = useState(null);
   const [orgs, setOrgs] = useState([]);
@@ -225,12 +227,13 @@ export default function App() {
 
   const signIn = async (event) => {
     event.preventDefault();
-    setError('');
+    setError(''); setSigningIn(true);
     try {
       const response = await api('/api/v1/admin/login', { method: 'POST', body: JSON.stringify({ password }) });
       setCsrfToken((await response.json()).csrf_token);
       setPassword(''); setAuthed(true);
     } catch (e) { setError(e.message || 'Sign-in failed.'); }
+    finally { setSigningIn(false); }
   };
   const signOut = async () => {
     try { await api('/api/v1/admin/logout', { method: 'POST' }); } catch { /* cookie is cleared server-side or expires */ }
@@ -269,13 +272,14 @@ export default function App() {
   const navToUpload = () => setPage('Upload center');
   const knownPage = ['Overview', 'Data Sources', 'Registry Records', 'Ingestion Jobs', 'Upload center', 'API Keys'].includes(page);
 
+  if (!authed && !checking) return <LoginPage password={password} setPassword={setPassword} onSubmit={signIn} error={error} busy={signingIn} />;
+
   return <div className="app-shell">
     {mobile && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setMobile(false)} />}
     <Sidebar page={page} setPage={setPage} mobile={mobile} setMobile={setMobile} />
     <main className="main-content">
       <Topbar page={page} connected={connected} onRefresh={refresh} loading={loading} search={search} setSearch={setSearch} setMobile={setMobile} onSignOut={signOut} />
       <div className="page-content">
-        {!authed && !checking && <section className="connect-banner"><div className="connect-banner-icon"><ShieldCheck size={20} /></div><div className="connect-copy"><strong>Sign in to the datasource</strong><p>Use the dashboard admin password. The browser keeps only an HttpOnly session cookie and never holds the service API key.</p></div><form onSubmit={signIn}><input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Admin password" autoComplete="current-password" /><button className="button-primary">Sign in <ArrowRight size={15} /></button></form></section>}
         {error && <div className="alert-banner error"><AlertTriangle size={17} /><span>{error}</span><button onClick={() => setError('')} aria-label="Dismiss error"><X size={16} /></button></div>}
         {message && <div className="alert-banner success"><CheckCircle2 size={17} /><span>{message}</span><button onClick={() => setMessage('')} aria-label="Dismiss message"><X size={16} /></button></div>}
 
