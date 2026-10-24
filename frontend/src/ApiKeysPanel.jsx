@@ -12,7 +12,7 @@ function friendlyError(error) {
   return 'Request failed. Check the access token and API connection.';
 }
 
-export default function ApiKeysPanel() {
+export default function ApiKeysPanel({readOnly=false}) {
   const [token, setToken] = useState('');
   const [connected, setConnected] = useState(false);
   const [items, setItems] = useState([]);
@@ -69,6 +69,7 @@ export default function ApiKeysPanel() {
   const copySecret = async () => { try { await navigator.clipboard.writeText(secret); setMessage('Secret copied to clipboard. Store it in a secret manager; do not commit it to source control.'); } catch { setError('Clipboard access failed. Select and copy the secret manually.'); } };
 
   return <div className="api-keys-page">
+    {readOnly && <div className="alert-banner info"><ShieldCheck size={17}/><span>Preview mode is on. API key creation, rotation and revocation are disabled.</span></div>}
     <div className="page-heading"><div><div className="eyebrow-label">ACCESS & SECURITY</div><h1>API keys</h1><p>Create separate credentials for sandbox testing and live production integrations.</p></div><button className="button-secondary" onClick={refresh} disabled={busy || !token}><RefreshCw size={15} /> Refresh</button></div>
     <div className="key-security-note"><ShieldCheck size={20} /><div><strong>Environment isolation is enforced by the API</strong><p>Sandbox keys only work on the sandbox deployment. Production keys only work on production. Changing a dropdown or request header cannot override the server environment.</p></div></div>
     {!connected && <section className="panel key-auth-panel"><div className="panel-heading"><div><h2>Connect your PesaGuard account</h2><p>Paste a short-lived access token issued by the trusted PesaGuard identity service. This is not your datasource service API key.</p></div><KeyRound size={20} /></div><label className="key-field-label">PesaGuard user access token<input type="password" value={token} onChange={e => setToken(e.target.value)} autoComplete="off" placeholder="Bearer token (value only)" /></label><div className="key-form-actions"><button className="button-primary" onClick={refresh} disabled={!token.trim() || busy}>Connect account</button><span>Stored in this browser tab only.</span></div></section>}
