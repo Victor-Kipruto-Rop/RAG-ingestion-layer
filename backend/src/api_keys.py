@@ -32,8 +32,7 @@ def _trusted_identity_signing_keys() -> tuple[dict[str, str], str]:
         ):
             raise HTTPException(503, "PesaGuard identity key-ring configuration is invalid")
         if active_kid not in ring:
-            # The active key ID is used as a default only when a JWT header omits kid.
-            active_kid = ""
+            raise HTTPException(503, "PesaGuard identity active signing key ID is missing from the configured key ring")
         return ring, active_kid
     # Backward-compatible single-key mode for deployments that have not migrated to
     # the PesaGuard JWT_KEYS_JSON/JWT_ACTIVE_KID rotation configuration yet.
