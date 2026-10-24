@@ -21,3 +21,9 @@ Do not place the service key in frontend configuration. Do not replace real netw
 undefined
 
 undefined
+
+## Mandatory quality gates
+- Prove request contract and auth header against both route and client code before editing.
+- Ensure timeouts are bounded and upstream errors fail safely with useful status mapping.
+- Test malformed/unexpected responses and connection failure as well as success.
+- Verify server-only credentials cannot enter frontend builds or user-facing logs. A mock is not network integration proof.
