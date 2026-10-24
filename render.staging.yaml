@@ -35,7 +35,9 @@ services:
       - key: CORS_ORIGINS
         value: https://pesaguard-datasource-staging-frontend.onrender.com
       - key: PUBLIC_BASE_URL
-        value: https://pesaguard-datasource-staging-frontend.onrender.com
+        value: https://pesaguard-datasource-staging-api.onrender.com
+      - key: DEVELOPER_OAUTH_CALLBACK_BASE_URL
+        value: https://pesaguard-datasource-staging-api.onrender.com
       - key: DEVELOPER_FRONTEND_URL
         value: https://pesaguard-datasource-staging-frontend.onrender.com
       - key: DEVELOPER_PUBLIC_BASE_URL
@@ -58,9 +60,6 @@ services:
         sync: false
       - key: R2_BUCKET_NAME
         sync: false
-      - key: SESSION_COOKIE_SECURE
-        value: "true"
-
   - type: worker
     name: pesaguard-datasource-staging-worker
     runtime: docker
