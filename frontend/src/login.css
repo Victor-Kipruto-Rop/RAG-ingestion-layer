@@ -22,3 +22,7 @@
 .login-submit:hover:not(:disabled){background:#009348}
 .login-error{background:#321c1a;border-color:#60312c;color:#ffb1a7}
 @media(max-width:900px){.login-form-side{background:radial-gradient(ellipse at 90% 0%,#142a1d 0,transparent 42%),#0d120f}}
+
+
+.login-social-group{margin-top:22px}.login-social-divider{display:flex;align-items:center;gap:12px;color:var(--glass-muted,#91b7a7);font-size:9px;font-weight:800;letter-spacing:.12em}.login-social-divider:before,.login-social-divider:after{content:"";height:1px;flex:1;background:var(--glass-border,rgba(255,255,255,.12))}
+.login-social-buttons{display:grid;grid-template-columns:1fr;gap:9px;margin-top:13px}.login-social{display:flex;align-items:center;justify-content:center;gap:10px;min-height:44px;padding:10px 14px;border-radius:12px;border:1px solid var(--glass-border,rgba(255,255,255,.14));background:rgba(255,255,255,.035);color:var(--glass-text,#ecfff6);font-size:13px;font-weight:650;text-decoration:none;transition:border-color .18s,background .18s,transform .18s}.login-social:hover{border-color:rgba(46,204,135,.45);background:rgba(46,204,135,.08);transform:translateY(-1px)}
