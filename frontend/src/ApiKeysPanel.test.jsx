@@ -26,7 +26,7 @@ describe('API key management UI', () => {
     render(<ApiKeysPanel />);
     fireEvent.change(screen.getByPlaceholderText('Paste short-lived access token'), {target:{value:'test-access-token'}});
     fireEvent.click(screen.getByRole('button', {name:'Connect PesaGuard account'}));
-    expect(await screen.findByText(/PesaGuard access token accepted/g)).toBeTruthy();
+    expect(await screen.findByText(/PesaGuard access token accepted/)).toBeTruthy();
     expect(await screen.findByText('Sandbox integration')).toBeTruthy();
     expect(apiMock).toHaveBeenCalledWith('/api/v1/keys/me', expect.objectContaining({headers:expect.objectContaining({Authorization:'Bearer test-access-token'})}));
   });
@@ -35,7 +35,7 @@ describe('API key management UI', () => {
     render(<ApiKeysPanel readOnly />);
     fireEvent.change(screen.getByPlaceholderText('Paste short-lived access token'), {target:{value:'test-access-token'}});
     fireEvent.click(screen.getByRole('button', {name:'Connect PesaGuard account'}));
-    await screen.findByText(/Identity verified/);
+    await screen.findByText(/PesaGuard access token accepted/);
     expect(screen.getByRole('button', {name:/Generate sandbox key/i}).disabled).toBe(true);
   });
 
@@ -43,7 +43,7 @@ describe('API key management UI', () => {
     render(<ApiKeysPanel />);
     fireEvent.change(screen.getByPlaceholderText('Paste short-lived access token'), {target:{value:'test-access-token'}});
     fireEvent.click(screen.getByRole('button', {name:'Connect PesaGuard account'}));
-    await screen.findByText(/Identity verified/);
+    await screen.findByText(/PesaGuard access token accepted/);
     fireEvent.change(screen.getByLabelText('Environment'), {target:{value:'production'}});
     expect(screen.getByRole('button', {name:/Generate production key/i}).disabled).toBe(true);
     expect(screen.getByText(/Production key issuance is unavailable/)).toBeTruthy();
