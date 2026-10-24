@@ -4,7 +4,7 @@ import {
   Bell, Building2, CheckCircle2, ChevronDown, CircleDot, Clock3, Database, KeyRound,
   FileCheck2, FileSpreadsheet, FileText, HardDrive, LayoutDashboard, Menu,
   RefreshCw, Search, Server, Settings, ShieldCheck, SlidersHorizontal,
-  Upload, X, ScrollText, Workflow
+  Upload, X, ScrollText, Workflow, BookOpen, UserRound, BellRing
 } from 'lucide-react';
 import { api, API_BASE, setCsrfToken } from './api.js';
 import ApiKeysPanel from './ApiKeysPanel.jsx';
@@ -12,6 +12,7 @@ import DataSourcesPanel from './DataSourcesPanel.jsx';
 import LoginPage from './LoginPage.jsx';
 import WidgetErrorBoundary from './WidgetErrorBoundary.jsx';
 import WorkspaceModulePage from './WorkspaceModulePage.jsx';
+import DocumentationPage from './DocumentationPage.jsx';
 
 const NAV = [
   { name: 'Overview', icon: LayoutDashboard, group: 'WORKSPACE' },
@@ -24,6 +25,9 @@ const NAV = [
   { name: 'Audit Logs', icon: ScrollText, group: 'ADMINISTRATION' },
   { name: 'API Keys', icon: KeyRound, group: 'ADMINISTRATION' },
   { name: 'Settings', icon: Settings, group: 'ADMINISTRATION' },
+  { name: 'Profile', icon: UserRound, group: 'ACCOUNT' },
+  { name: 'Notifications', icon: BellRing, group: 'ACCOUNT' },
+  { name: 'Documentation', icon: BookOpen, group: 'RESOURCES' },
 ];
 
 const dateLabel = (value) => {
@@ -327,7 +331,7 @@ export default function App() {
 
   const metrics = summary || {};
   const navToUpload = () => setPage('Upload center');
-  const knownPage = ['Overview', 'Data Sources', 'Registry Records', 'Ingestion Jobs', 'Upload center', 'API Keys', 'Data Quality', 'Warehouse', 'Validation Rules', 'Audit Logs', 'Settings'].includes(page);
+  const knownPage = ['Overview', 'Data Sources', 'Registry Records', 'Ingestion Jobs', 'Upload center', 'API Keys', 'Data Quality', 'Warehouse', 'Validation Rules', 'Audit Logs', 'Settings', 'Profile', 'Notifications', 'Documentation'].includes(page);
 
   if (!authed && !checking) return <LoginPage password={password} setPassword={setPassword} onSubmit={signIn} error={error} busy={signingIn} />;
 
@@ -362,6 +366,8 @@ export default function App() {
         {page === 'Registry Records' && <WidgetErrorBoundary label="Registry Records"><section className="panel full-panel"><div className="panel-heading"><div><h2>Registry records</h2><p>Search imported organizations and inspect source information.</p></div><span className="record-count">{number(orgTotal)} records</span></div><OrganizationsTable rows={orgs} total={orgTotal} page={orgPage} pageSize={100} onPageChange={setOrgPage} /></section></WidgetErrorBoundary>}
         {page === 'API Keys' && <WidgetErrorBoundary label="API Keys"><ApiKeysPanel readOnly={previewMode} searchTerm={search} /></WidgetErrorBoundary>}
         {['Data Quality', 'Warehouse', 'Validation Rules', 'Audit Logs', 'Settings'].includes(page) && <WidgetErrorBoundary label={page}><WorkspaceModulePage page={page} searchTerm={search} /></WidgetErrorBoundary>}
+        {page === 'Documentation' && <WidgetErrorBoundary label="Documentation"><DocumentationPage /></WidgetErrorBoundary>}
+        {['Profile', 'Notifications'].includes(page) && <WidgetErrorBoundary label={page}><WorkspaceModulePage page={page} searchTerm={search} /></WidgetErrorBoundary>}
         {page === 'Upload center' && <WidgetErrorBoundary label="Upload center"><section className="panel upload-panel"><div className="panel-heading"><div><h2>Upload dataset</h2><p>Submit registry files for asynchronous ingestion.</p></div><div className="heading-icon"><Upload size={18} /></div></div><form onSubmit={upload} className="upload-form"><label className="dropzone"><input type="file" accept=".csv,.pdf" onChange={e => setFile(e.target.files?.[0] || null)} /><span className="dropzone-icon"><Upload size={25} /></span><strong>{file ? file.name : 'Choose a dataset to upload'}</strong><span>{file ? `${(file.size / 1048576).toFixed(2)} MB · ready to submit` : 'Drag a file here or browse from your device'}</span><small>CSV and PDF · backend size limits apply</small></label><div className="upload-actions"><p>Only upload datasets you are authorized to process. PDF files may be stored even where structured extraction is not yet enabled.</p><button className="button-primary" disabled={!file || loading || previewMode}>{loading ? 'Submitting…' : <><Upload size={16} /> Queue import</>}</button></div></form></section></WidgetErrorBoundary>}
         {!knownPage && <section className="coming-soon panel"><div className="coming-icon"><Database size={25} /></div><span className="eyebrow-label">DATASOURCE MODULE</span><h2>{page}</h2><p>This navigation entry is reserved for the {page.toLowerCase()} workspace. Its production data view has not been connected yet, so this screen does not display fabricated records.</p><button className="button-secondary" onClick={() => setPage('Overview')}>Return to overview</button></section>}
         <footer className="page-footer"><span>© PesaGuard Datasource</span><span className="compliance-state"><ShieldCheck size={14}/>{typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'HTTPS transport' : 'HTTPS not verified'}<i/>RLS: not verified</span><span><span className={connected ? 'footer-status-dot' : 'footer-status-dot muted'} />{connected ? 'Connected to datasource API' : 'Local preview · not connected'}</span></footer>
