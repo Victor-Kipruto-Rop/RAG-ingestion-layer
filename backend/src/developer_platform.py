@@ -88,12 +88,13 @@ def _send_email(to_email: str, subject: str, body: str):
             server.send_message(message)
 
 
-def _issue_access_token(account: DeveloperAccount, workspace: DeveloperWorkspace) -> str:
+def _issue_access_token(account: DeveloperAccount, workspace: DeveloperWorkspace, session_id: str) -> str:
     now = int(time.time())
     claims = {
         "iss": settings.developer_access_token_issuer,
         "aud": settings.developer_access_token_audience,
         "sub": account.id,
+        "session_id": session_id,
         "tenant_id": workspace.id,
         "organization_id": workspace.id,
         "roles": ["owner"],
@@ -188,7 +189,7 @@ def _session_response(request: Request, response: Response, db: Session, account
     response.headers["Cache-Control"] = "no-store"
     return {
         "authenticated": True, "csrf_token": csrf_token, "expires_at": expires,
-        "access_token": _issue_access_token(account, workspace),
+        "access_token": _issue_access_token(account, workspace, session_id),
         "access_token_expires_in": settings.developer_access_token_ttl_seconds,
         "auth_method": auth_method,
         "user": {"id": account.id, "email": account.email, "display_name": account.display_name, "email_verified": bool(account.email_verified_at)},
@@ -488,7 +489,7 @@ def developer_session(request: Request, response: Response, db: Session = Depend
     response.headers["Cache-Control"] = "no-store"
     return {
         "authenticated": True, "csrf_token": claims["csrf"], "expires_at": int(session.expires_at.timestamp()),
-        "access_token": _issue_access_token(account, workspace),
+        "access_token": _issue_access_token(account, workspace, claims["jti"]),
         "access_token_expires_in": settings.developer_access_token_ttl_seconds,
         "user": {"id": account.id, "email": account.email, "display_name": account.display_name, "email_verified": bool(account.email_verified_at)},
         "workspace": {"id": workspace.id, "name": workspace.name, "verified": workspace.verified,
