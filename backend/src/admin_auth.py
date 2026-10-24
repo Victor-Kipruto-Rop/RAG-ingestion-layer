@@ -17,6 +17,7 @@ import secrets
 import sys
 import threading
 import time
+import logging
 
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
@@ -36,6 +37,24 @@ router = APIRouter(prefix='/api/v1/admin', tags=['admin session'])
 
 _attempt_lock = threading.Lock()
 _attempts = collections.defaultdict(collections.deque)
+_rate_logger = logging.getLogger(__name__)
+_REDIS_BUCKET_LUA = """
+local key = KEYS[1]
+local now = tonumber(ARGV[1])
+local capacity = tonumber(ARGV[2])
+local refill = tonumber(ARGV[3])
+local cost = tonumber(ARGV[4])
+local ttl = tonumber(ARGV[5])
+local state = redis.call('HMGET', key, 'tokens', 'updated')
+local tokens = tonumber(state[1]) or capacity
+local updated = tonumber(state[2]) or now
+tokens = math.min(capacity, tokens + math.max(0, now - updated) * refill)
+local allowed = 0
+if tokens >= cost then tokens = tokens - cost; allowed = 1 end
+redis.call('HMSET', key, 'tokens', tokens, 'updated', now)
+redis.call('EXPIRE', key, ttl)
+return {allowed, math.floor(tokens), math.ceil((cost - tokens) / refill)}
+"""
 
 
 def _b64(value: bytes) -> str:
@@ -103,13 +122,35 @@ def enforce_session_csrf(request: Request, claims: dict) -> None:
 
 
 def _check_login_rate(client_host: str) -> None:
-    limit = max(1, settings.admin_login_max_attempts_per_minute)
+    # Redis token bucket is shared across API instances; local fallback is development-only.
+    capacity = max(1, settings.admin_login_max_attempts_per_minute)
+    if settings.redis_url:
+        try:
+            import redis
+            client = redis.Redis.from_url(settings.redis_url, socket_connect_timeout=1, socket_timeout=1,
+                                          decode_responses=True)
+            result = client.eval(_REDIS_BUCKET_LUA, 1,
+                'pg:admin-login:' + hashlib.sha256(client_host.encode()).hexdigest(),
+                time.time(), capacity, capacity / 60.0, 1, 120)
+            allowed, _, retry_after = [int(x) for x in result]
+            if allowed != 1:
+                raise HTTPException(429, 'Too many sign-in attempts. Try again shortly.',
+                                    headers={'Retry-After': str(max(1, retry_after))})
+            return
+        except HTTPException:
+            raise
+        except Exception as exc:
+            _rate_logger.exception('admin_login_redis_rate_limit_unavailable')
+            if settings.app_env.lower() == 'production':
+                raise HTTPException(503, 'Sign-in rate limiter is temporarily unavailable') from exc
+    elif settings.app_env.lower() == 'production':
+        raise HTTPException(503, 'Sign-in rate limiter is not configured')
     now = time.monotonic()
     with _attempt_lock:
         bucket = _attempts[client_host]
         while bucket and now - bucket[0] > 60:
             bucket.popleft()
-        if len(bucket) >= limit:
+        if len(bucket) >= capacity:
             raise HTTPException(429, 'Too many sign-in attempts. Try again in a minute.', headers={'Retry-After': '60'})
         bucket.append(now)
 
