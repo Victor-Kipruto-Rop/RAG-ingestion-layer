@@ -1,84 +1,82 @@
-# PesaGuard Developer Platform
+# PesaGuard Developer Platform — operations and integration contract
 
-The public developer platform is the primary frontend at `/`. The legacy internal operations console remains available at `/internal`. Developer accounts are isolated from operator accounts and do not grant access to internal administration routes.
+## Environment isolation
 
-## Platform features
+Deploy two separately configured API environments; do not route sandbox and production hosts to one process configured for only one `API_ENVIRONMENT`.
 
-- Email sign-up with a six-digit, expiring OTP; passwords require at least 12 characters.
-- Password reset with a time-limited OTP and revocation of every existing developer session.
-- Google and GitHub OAuth authorization-code flows, provider-side verified email checks and state-cookie validation.
-- HttpOnly session cookie, CSRF protection for state-changing cookie-authenticated requests, persisted sessions and session revocation.
-- Tenant/workspace-partitioned API-key management, one-time secret display, scoped read access, rotation, revocation, expiry and audit events.
-- Separate sandbox and production API origins and key formats.
-- Production-access request workflow; live key creation remains blocked until authoritative workspace verification and production approval.
-- HTTPS webhook registration, event subscriptions, signing secrets encrypted at rest, test delivery and persisted delivery history.
-- API Explorer, SDK starter examples for cURL, JavaScript, Python, PHP, Go, Java, Ruby and C#, plus OpenAPI/Swagger/ReDoc links.
-
-## Environment boundary
-
-| Environment | Base URL | Key format |
+| Environment | API base URL | Required key prefix |
 |---|---|---|
-| Sandbox | `https://sandbox-api.pesaguard.co.ke` | `pg_sandbox_...` |
-| Production | `https://api.pesaguard.co.ke` | `pg_live_...` |
+| Sandbox | `https://sandbox-api.pesaguard.co.ke` | `pg_sandbox_` |
+| Production | `https://api.pesaguard.co.ke` | `pg_live_` |
 
-These hosts are configuration defaults, not a claim that DNS, TLS, routing or two deployments are already provisioned. Set `API_ENVIRONMENT=sandbox` on the sandbox deployment and `API_ENVIRONMENT=production` on the production deployment. The backend rejects a key whose declared environment does not match the deployment. Never route both origins to the same deployment.
+Set `API_ENVIRONMENT=sandbox` on the sandbox deployment and `API_ENVIRONMENT=production` on the production deployment. The gateway validates key prefix, persisted key environment, active/revoked state, expiry, scope and tenant rate limit. A mismatch is rejected and recorded as a security event.
 
-## Required server configuration
+Production keys can only be created when the developer workspace is verified, production access is approved, and the caller is an owner/admin. Developers submit a request from the portal. Approval is not a substitute for workspace verification.
 
-Set these through the deployment secret manager. Never commit real values:
+## Account lifecycle
 
-- `DATABASE_URL`: PostgreSQL in staging/production; migrations must be applied.
-- `SESSION_SECRET`: at least 32 random bytes, for signed developer sessions.
-- `DEVELOPER_ACCESS_TOKEN_SECRET`: separate random secret of at least 32 characters.
-- `AUTH_OTP_PEPPER`: separate secret for OTP digests.
-- `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM_EMAIL`, and credentials if authentication is required by the SMTP relay.
-- `DEVELOPER_WEBHOOK_ENCRYPTION_KEY`: stable random value of at least 32 characters; back it up securely.
-- `DEVELOPER_PUBLIC_BASE_URL`: public sandbox API origin.
-- `DEVELOPER_PRODUCTION_BASE_URL`: public production API origin.
-- `DEVELOPER_OAUTH_CALLBACK_BASE_URL`: public API origin receiving OAuth callbacks for this deployment.
-- `DEVELOPER_FRONTEND_URL`: public frontend origin used after successful OAuth.
-- `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET`.
-- `GITHUB_OAUTH_CLIENT_ID` / `GITHUB_OAUTH_CLIENT_SECRET`.
-- `SESSION_COOKIE_SECURE=true` in production; local HTTP development may use false only in a non-production environment.
-- `CORS_ORIGINS`: explicit frontend origins only. Wildcard origins are not allowed with credentials.
-- `VITE_API_BASE_URL`: set to the intended API origin when the frontend is deployed separately; blank means same-origin in production.
+Developer accounts are separate from internal operator accounts.
 
-Register these exact OAuth callback paths on the provider applications, using the API origin configured for the deployment:
+- `POST /api/v1/developer/auth/signup/request-otp` sends a one-time verification code.
+- `POST /api/v1/developer/auth/signup/verify-otp` consumes a valid code and provisions the account, workspace and initial project.
+- `POST /api/v1/developer/auth/login` verifies a password and creates a persisted server-side session.
+- `GET /api/v1/developer/auth/session` validates the cookie and returns a short-lived API control-plane token.
+- `POST /api/v1/developer/auth/logout` revokes the current persisted session.
+- `POST /api/v1/developer/auth/password-reset/request-otp` requests recovery using a generic response to reduce account enumeration.
+- `POST /api/v1/developer/auth/password-reset/confirm` consumes the OTP, changes the password and revokes all sessions.
+- `GET /api/v1/developer/sessions` lists sessions; `DELETE /api/v1/developer/sessions/{session_id}` revokes a session.
+- `GET/PUT /api/v1/developer/profile` reads and updates the display/workspace name.
 
-- `/api/v1/developer/auth/oauth/google/callback`
-- `/api/v1/developer/auth/oauth/github/callback`
+Cookies are HttpOnly, CSRF protected and Secure in production. Passwords must be at least 12 characters. OTPs are hashed with `AUTH_OTP_PEPPER`, expire, have a bounded attempt count and are delivered by configured SMTP. Set strong `DEVELOPER_ACCESS_TOKEN_SECRET`, `SESSION_SECRET`, and `AUTH_OTP_PEPPER` values (at least 32 random characters each), plus SMTP settings. Signup and reset stay disabled when required configuration is missing.
 
-Do not copy the sandbox callback to a production OAuth application unless the deployment intentionally shares the same callback host. Provider secrets must remain server-side.
+## Google and GitHub sign-in
 
-## Key management API
+Register the exact callback URLs in each provider console:
 
-The dashboard signs in with a persisted developer session, then receives a short-lived developer access token for the API-key control plane. That token is held in memory and sent as a Bearer token to `/api/v1/keys`. Refreshing the browser requires a fresh token from `/api/v1/developer/auth/session`; no long-lived access token is stored in local storage.
+- `{DEVELOPER_OAUTH_CALLBACK_BASE_URL}/api/v1/developer/auth/oauth/google/callback`
+- `{DEVELOPER_OAUTH_CALLBACK_BASE_URL}/api/v1/developer/auth/oauth/github/callback`
 
-- `GET /api/v1/keys/me`: current identity and key eligibility.
-- `GET /api/v1/keys`: keys belonging to the authenticated workspace.
-- `POST /api/v1/keys`: create a sandbox key or, if approved and verified, a production key.
-- `POST /api/v1/keys/{id}/rotate`: atomically revoke and issue a replacement.
-- `DELETE /api/v1/keys/{id}`: revoke a key.
-- `GET /api/v1/keys/audit/events`: workspace-scoped key audit events.
-- `POST /api/v1/developer/production-access/request`: submit production use case and expected volume.
+Set `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GITHUB_OAUTH_CLIENT_ID`, and `GITHUB_OAUTH_CLIENT_SECRET` as applicable. Use HTTPS origins in production, and set `DEVELOPER_FRONTEND_URL` to the developer portal origin. Google requires a verified Google email; GitHub requires a primary verified email. OAuth state is checked against a short-lived HttpOnly cookie. Provider credentials stay server-side.
 
-Customer API keys are restricted to documented read-only scopes. Internal ingestion, shared registry writes, warehouse operations and administrative endpoints are not granted to developer API keys.
+## API keys and production review
+
+- `GET/POST /api/v1/keys` list/create tenant keys.
+- `POST /api/v1/keys/{key_id}/rotate` atomically replaces a key.
+- `DELETE /api/v1/keys/{key_id}` revokes a key.
+- `GET /api/v1/keys/audit/events` lists key-management audit records.
+- `POST /api/v1/developer/production-access/request` submits the developer's review request.
+- Internal operators use `GET /api/v1/admin/developer/production-access/requests` and `POST /api/v1/admin/developer/production-access/requests/{request_id}/review`.
+- Internal operators use `POST /api/v1/admin/developer/workspaces/{workspace_id}/verification` to record a manual verification decision. An evidence reference is mandatory. Revoking verification also revokes active production keys.
+
+API keys are displayed once. Store them in a server-side secret manager. Browser applications should call your own backend; never embed a production secret in JavaScript or a mobile binary.
 
 ## Webhooks
 
-- `GET/POST /api/v1/developer/webhooks`
-- `DELETE /api/v1/developer/webhooks/{id}`
-- `POST /api/v1/developer/webhooks/{id}/test`
-- `GET /api/v1/developer/webhooks/{id}/deliveries`
+Create/manage endpoints at `/api/v1/developer/webhooks`; use `POST /{webhook_id}/test` for a test delivery and `GET /{webhook_id}/deliveries` for actual outcomes. Endpoint URLs must be HTTPS and resolve to public addresses. Redirects are disabled and endpoints are revalidated at delivery time.
 
-Use public HTTPS endpoints only. Verify the HMAC signature against the exact raw request bytes, compare in constant time, deduplicate event/delivery IDs, and return a 2xx quickly. Implement replay protection and idempotent handling on the receiving service. Webhook test delivery is asynchronous; a queued response does not mean the destination accepted it.
+Each delivery includes `PesaGuard-Event`, `PesaGuard-Delivery` and `PesaGuard-Signature: t=<unix>,v1=<hex>`. The HMAC-SHA256 message is the ASCII timestamp, a period, and the exact raw request body bytes. Verify the signature in constant time before parsing the body, enforce a short timestamp tolerance, and deduplicate delivery IDs. The signing secret is returned only at creation; encryption at rest requires `DEVELOPER_WEBHOOK_ENCRYPTION_KEY`.
 
-## API testing and SDK status
+Supported events include `api_key.created`, `api_key.revoked`, `api_key.rotated`, `webhook.test`, `registry.lookup.completed`, `data.source.updated`, `production_access.requested`, and `production_access.reviewed`. Events are queued only for subscribed endpoints owned by the corresponding workspace.
 
-The API Explorer sends a real browser request to the selected configured origin. CORS, DNS, TLS and network failures are surfaced as failures, not replaced with sample responses. Use a backend test suite for CI acceptance because browser CORS behavior differs from server-side integration tests.
+## SDKs and local verification
 
-Language examples are starter snippets rather than published, versioned SDK packages. Do not advertise an SDK package as production-supported until it has a versioned release, compatibility policy, tests and a package registry release.
+Python:
 
-## Release gate
+```bash
+cd sdks/python
+python -m pip install -e ".[test]"
+pytest -q sdk_client_tests.py
+```
 
-Before launch, run backend tests, PostgreSQL integration/migration checks, frontend tests and production build, OAuth provider callbacks, SMTP OTP flows, session revocation, key environment mismatch tests, webhook delivery tests, and browser smoke tests against both staging origins. Confirm TLS/DNS, CORS, database backups and restore, rate limits, alerting and deployment rollback. This code change alone does not prove any live provider credentials or infrastructure are configured.
+JavaScript (Node.js 18+):
+
+```bash
+cd sdks/javascript
+node --test test/client.test.js
+```
+
+Both source-controlled SDKs enforce key-prefix/environment matching, support registry search and exact lookup, and include webhook signature verification. The portal also provides starter examples for cURL, JavaScript, Python, PHP, Go, Java, Ruby and C#. These SDKs are not yet published to PyPI/npm.
+
+## Scope
+
+This is a developer integration platform and read-only registry API. It does not move money, originate payment transactions, independently certify government records, or expose internal ingestion and warehouse operations to customer keys.
