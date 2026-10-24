@@ -19,7 +19,7 @@ Set `DEVELOPER_PUBLIC_BASE_URL` and `DEVELOPER_PRODUCTION_BASE_URL` to those pub
 
 Use strong, randomly generated values for `DEVELOPER_ACCESS_TOKEN_SECRET`, `SESSION_SECRET`, and `AUTH_OTP_PEPPER` (at least 32 characters each). Configure the transactional email provider using `RESEND_API_KEY` and a verified `RESEND_FROM_EMAIL`, or explicitly configured SMTP as the documented fallback.
 
-Sign-up requires a verified six-digit email OTP. OTPs are short-lived, purpose-separated, attempt-limited, stored as digests, and sent through the backend email service. Password reset uses a separate OTP purpose and revokes all active developer sessions after a successful reset. Sessions are persisted, HttpOnly, CSRF-protected for state-changing cookie requests, and revocable. Short-lived developer bearer tokens are linked to a persisted session and rechecked by API-key management.
+Sign-up requires a verified six-digit email OTP. OTPs are short-lived, purpose-separated, attempt-limited, stored as digests, and sent through the backend email service. Password reset uses a separate OTP purpose and revokes all active developer sessions after a successful reset. Sessions are persisted, HttpOnly, CSRF-protected for state-changing cookie requests, and revocable. Short-lived developer bearer tokens are linked to a persisted session and rechecked by API-key management. Authentication requests are throttled by both client and a one-way digest of the normalized account identifier; email delivery failures for sign-up and recovery return generic acknowledgements to avoid revealing account existence. Check service-side delivery logs and provider health when a user does not receive a code.
 
 ### Google and GitHub OAuth
 
