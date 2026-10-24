@@ -10,7 +10,7 @@ This checklist separates source-level review from checks that require real crede
 
 - The connected Render workspace lists one Datasource service: `pesaguard-datasource`, on branch `main`, at `https://pesaguard-datasource.onrender.com`. Service metadata has no configured health-check path. No separate Datasource staging/sandbox service was identified in the workspace listing.
 - The application source defines separate sandbox and production API base URL settings and key prefixes (`pg_sandbox_` and `pg_live_`). This source contract does not prove the deployed environment variables or DNS/TLS routing are correct.
-- Google/GitHub OAuth and SMTP credentials were not provided in this request. Provider applications, verified sender identity, and live delivery therefore cannot be confirmed from source code alone.
+- Google/GitHub OAuth and Resend/SMTP credentials were not provided in this request. Provider applications, verified sender identity, and live delivery therefore cannot be confirmed from source code alone.
 - Latest observed GitHub Actions run for the candidate (run ID `40115338997`) reports all jobs failed before steps were created; no test/build steps or useful job logs were available. This is **not** a passing CI result.
 - No production credentials were read or changed, no staging account was used, and no deployment was triggered.
 
@@ -18,14 +18,14 @@ This checklist separates source-level review from checks that require real crede
 
 Set values through the authorized deployment provider's secret/environment-variable UI. Do not commit them to `.env.example`, source control, build args, or logs.
 
-### Operator OAuth and SMTP
+### Operator OAuth and transactional email
 
 Required variables:
 - `PUBLIC_BASE_URL` — canonical operator dashboard/API origin used to construct callback URLs.
 - `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`.
 - `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET`.
 - `ADMIN_OAUTH_ALLOWED_EMAILS` — exact, lower-case operator addresses only; never use a public wildcard.
-- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, `SMTP_USE_STARTTLS`, `SMTP_USE_SSL`.
+- Preferred: `RESEND_API_KEY` and `RESEND_FROM_EMAIL` on a verified Resend sending domain. Optional SMTP fallback: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, `SMTP_USE_STARTTLS`, `SMTP_USE_SSL`.
 - `AUTH_OTP_PEPPER` — independent high-entropy secret used to hash OTPs.
 - `SESSION_SECRET` — independent high-entropy signing secret.
 - `SESSION_COOKIE_SECURE=true` in HTTPS staging/production.
@@ -53,12 +53,12 @@ These are expected values from application configuration, not verified evidence 
 
 Record a run ID, date, tester, deployed commit SHA, service IDs, and redacted evidence for every check.
 
-### OAuth and SMTP
+### OAuth and transactional email
 - [ ] `GET /api/v1/admin/oauth/providers` advertises only providers with client ID, client secret, and an explicit allowlist configured.
 - [ ] Google sign-in completes authorization-code exchange, validates verified email, validates state, and only admits an allowlisted operator.
 - [ ] GitHub sign-in obtains the primary verified email and only admits an allowlisted operator.
 - [ ] Missing, incorrect, expired, and replayed OAuth state is rejected; provider errors do not create a session.
-- [ ] SMTP test mail is delivered to an approved staging mailbox over the configured TLS mode. Confirm the From domain is authenticated (SPF/DKIM/DMARC as applicable); redact OTPs and credentials.
+- [ ] Resend test mail is delivered to an approved staging mailbox using a verified sender domain; if SMTP fallback is intentionally used, verify TLS settings. Confirm sender authentication (SPF/DKIM/DMARC as applicable); redact OTPs and credentials.
 - [ ] Signup OTP expires, cannot be reused, and is locked after the configured failed-attempt threshold.
 - [ ] Password-reset requests return a generic response for both known and unknown addresses. Reset OTP expires and is single-use.
 - [ ] Password reset revokes every active session for that account.
