@@ -6,6 +6,7 @@ import {
   RefreshCw, Rocket, Search, ShieldCheck, Terminal, Trash2, UserRound, Webhook, X, Zap
 } from 'lucide-react';
 import { API_BASE, api, setCsrfToken } from './api.js';
+import ToastPopup from './ToastPopup.jsx';
 
 const EVENTS = ['api_key.created','api_key.revoked','api_key.rotated','webhook.test','registry.lookup.completed','data.source.updated','production_access.requested','production_access.reviewed'];
 const LANGS = ['cURL','JavaScript','Python','PHP','Go','Java','Ruby','C#'];
@@ -27,25 +28,6 @@ async function readJson(path, options={}) { const r=await api(path,options); ret
 function CodeBlock({children}) { return <pre className="dp-code"><code>{children}</code></pre>; }
 function Metric({label,value,detail,icon:Icon}) { return <div className="dp-metric"><span className="dp-metric-icon"><Icon size={17}/></span><div><small>{label}</small><strong>{value}</strong><span>{detail}</span></div></div>; }
 function PageHeading({eyebrow,title,description,actions}) { return <div className="dp-page-heading"><div><div className="dp-eyebrow">{eyebrow}</div><h1>{title}</h1><p>{description}</p></div>{actions && <div className="dp-heading-actions">{actions}</div>}</div>; }
-
-function ToastPopup({ kind='success', message, onClose }) {
-  const [createdAt, setCreatedAt] = useState(() => new Date());
-  useEffect(() => {
-    if (!message) return undefined;
-    setCreatedAt(new Date());
-    const timer = window.setTimeout(onClose, 7000);
-    return () => window.clearTimeout(timer);
-  }, [message]);
-  if (!message) return null;
-  const Icon = kind === 'error' ? CircleHelp : CheckCircle2;
-  return <div className="dp-toast-viewport" aria-live={kind === 'error' ? 'assertive' : 'polite'}>
-    <section className={`dp-toast-popup ${kind}`} role={kind === 'error' ? 'alert' : 'status'}>
-      <span className="dp-toast-icon"><Icon size={19}/></span>
-      <div className="dp-toast-copy"><strong>{kind === 'error' ? 'Something needs attention' : 'Success'}</strong><p>{message}</p><time dateTime={createdAt.toISOString()}>{createdAt.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})}</time></div>
-      <button type="button" className="dp-toast-close" onClick={onClose} aria-label="Dismiss message"><X size={17}/></button>
-    </section>
-  </div>;
-}
 
 export default function DeveloperPlatformApp() {
   const [page,setPage] = useState('Overview');
@@ -201,7 +183,7 @@ export default function DeveloperPlatformApp() {
   const copy = async value => {try{await navigator.clipboard.writeText(value);setNotice('Copied to clipboard.');}catch{setError('Clipboard unavailable; select and copy the text manually.');}};
   const visibleKeys = useMemo(()=>keys.filter(k=>`${k.name} ${k.environment} ${k.key_prefix} ${k.status}`.toLowerCase().includes(search.toLowerCase())),[keys,search]);
 
-  if(!authed) return <>{authMode==='landing' ? <PublicHomePage setMode={setAuthMode} config={authConfig}/> : <AuthScreen mode={authMode} setMode={setAuthMode} config={authConfig} onAuthenticated={finishAuth} busy={busy} error={error} setError={setError}/>}<ToastPopup kind="error" message={error} onClose={()=>setError('')}/></>;
+  if(!authed) return <>{authMode==='landing' ? <PublicHomePage setMode={setAuthMode} config={authConfig}/> : <AuthScreen mode={authMode} setMode={setAuthMode} config={authConfig} onAuthenticated={finishAuth} busy={busy} error={error} setError={setError}/>}</>;
 
   const activeTitle=page;
   return <div className="dp-shell">
@@ -228,7 +210,7 @@ export default function DeveloperPlatformApp() {
       </div>
       <footer className="dp-footer"><span>© {new Date().getFullYear()} PesaGuard Developer Platform</span><span><span className="dp-status-dot"/> Service state is read from the API</span><a href={`${API_BASE}/health`} target="_blank" rel="noreferrer">API health <ExternalLink size={13}/></a></footer>
     </main>
-    <ToastPopup kind="error" message={error} onClose={()=>setError('')}/><ToastPopup kind="success" message={notice} onClose={()=>setNotice('')}/>
+    <ToastPopup kind="error" message={error} onClose={()=>setError('')}/><ToastPopup kind={/warning|blocked|not approved|not configured|cannot|unavailable/i.test(notice) ? 'warning' : 'success'} message={notice} onClose={()=>setNotice('')}/>
   </div>;
 }
 
