@@ -25,7 +25,7 @@ from pydantic import BaseModel, Field
 
 from .config import settings
 from .database import get_db
-from .models import RegistrySource, IngestionJob, Organization, AuditLog, WarehouseRawImport, WarehouseAccessLog, FailedImportDLQ, IngestionRowError
+from .models import RegistrySource, IngestionJob, Organization, AuditLog, WarehouseRawImport, WarehouseAccessLog, FailedImportDLQ, IngestionRowError, AdminProfile, AdminNotificationRead, now_utc
 from sqlalchemy import select, func, or_
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
@@ -369,6 +369,93 @@ def require_admin(request: Request):
         raise HTTPException(401, 'Not signed in')
     enforce_session_csrf(request, claims)
     return claims
+
+
+
+class ProfileUpdateRequest(BaseModel):
+    display_name: str = Field(min_length=2, max_length=120)
+    contact_email: str | None = Field(default=None, max_length=320)
+
+
+class NotificationReadRequest(BaseModel):
+    notification_keys: list[str] = Field(min_length=1, max_length=100)
+
+
+@router.get('/profile')
+def get_operator_profile(db: Session = Depends(get_db), claims: dict = Depends(require_admin)):
+    profile = db.get(AdminProfile, 'admin')
+    return {
+        'display_name': profile.display_name if profile else 'Datasource Operator',
+        'contact_email': profile.contact_email if profile else None,
+        'role': 'operator',
+        'auth_method': claims.get('auth_method', 'password'),
+        'identity_email': claims.get('email'),
+        'updated_at': profile.updated_at.isoformat() if profile and profile.updated_at else None,
+    }
+
+
+@router.put('/profile')
+def update_operator_profile(payload: ProfileUpdateRequest, db: Session = Depends(get_db), claims: dict = Depends(require_admin)):
+    email = payload.contact_email.strip().lower() if payload.contact_email else None
+    if email and ('@' not in email or email.startswith('@') or email.endswith('@')):
+        raise HTTPException(422, 'Enter a valid contact email address')
+    profile = db.get(AdminProfile, 'admin')
+    if profile is None:
+        profile = AdminProfile(id='admin', display_name=payload.display_name.strip(), contact_email=email)
+        db.add(profile)
+    else:
+        profile.display_name = payload.display_name.strip()
+        profile.contact_email = email
+        profile.updated_at = now_utc()
+    db.commit()
+    db.refresh(profile)
+    return {'display_name': profile.display_name, 'contact_email': profile.contact_email,
+            'role': 'operator', 'auth_method': claims.get('auth_method', 'password'),
+            'identity_email': claims.get('email'), 'updated_at': profile.updated_at.isoformat()}
+
+
+def _job_notification(job):
+    status = str(job.status or 'unknown').lower()
+    if status not in {'failed', 'error', 'dead_letter', 'dead-letter', 'queued', 'pending',
+                      'processing', 'running', 'in_progress', 'completed_with_errors'}:
+        return None
+    changed = getattr(job, 'updated_at', None) or getattr(job, 'completed_at', None) or getattr(job, 'created_at', None)
+    stamp = changed.isoformat() if changed else 'unknown-time'
+    key = f'job:{job.id}:{status}:{stamp}'
+    critical = status in {'failed', 'error', 'dead_letter', 'dead-letter'}
+    return {'id': key, 'title': 'Ingestion requires attention' if critical else
+            ('Ingestion completed with row errors' if status == 'completed_with_errors' else f'Ingestion {status.replace("_", " ")}'),
+            'detail': getattr(job, 'error_summary', None) or getattr(job, 'file_name', None) or
+            'The job status changed; inspect the persisted ingestion job for details.',
+            'status': status, 'severity': 'critical' if critical else 'info',
+            'created_at': stamp}
+
+
+@router.get('/notifications')
+def list_operator_notifications(db: Session = Depends(get_db), claims: dict = Depends(require_admin)):
+    jobs = db.scalars(select(IngestionJob).order_by(IngestionJob.created_at.desc()).limit(100)).all()
+    items = [item for item in (_job_notification(job) for job in jobs) if item]
+    keys = [item['id'] for item in items]
+    read_keys = set(db.scalars(select(AdminNotificationRead.notification_key).where(
+        AdminNotificationRead.notification_key.in_(keys))).all()) if keys else set()
+    for item in items:
+        item['read'] = item['id'] in read_keys
+    return {'items': items, 'total': len(items), 'unread': sum(not item['read'] for item in items)}
+
+
+@router.post('/notifications/read')
+def mark_operator_notifications_read(payload: NotificationReadRequest,
+                                     db: Session = Depends(get_db),
+                                     claims: dict = Depends(require_admin)):
+    keys = list(dict.fromkeys(key.strip() for key in payload.notification_keys if key.strip()))
+    if not keys or any(len(key) > 300 for key in keys):
+        raise HTTPException(422, 'Provide one to 100 valid notification keys')
+    for key in keys:
+        if db.get(AdminNotificationRead, key) is None:
+            db.add(AdminNotificationRead(notification_key=key, read_at=now_utc()))
+    db.commit()
+    return {'marked_read': len(keys)}
+
 
 
 def _source_json(source, last_import=None):
