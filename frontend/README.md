@@ -56,7 +56,7 @@ Then build and deploy from the repository root:
 cd frontend
 npm ci
 npm run build
-npx --yes wrangler pages deploy dist --config wrangler.jsonc --project-name=pesaguard-datasource-staging --branch=staging
+npm run pages:deploy:staging
 ```
 
 The API origin must be configured in the build environment before `npm run build`. The backend must allow the exact Pages origin in CORS and must have the intended cookie/session settings. Do not deploy until the staging API URL and authentication flow have been verified.
