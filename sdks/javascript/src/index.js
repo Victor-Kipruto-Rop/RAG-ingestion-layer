@@ -1,3 +1,4 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
 const DEFAULT_BASE_URLS = Object.freeze({
   sandbox: "https://sandbox-api.pesaguard.co.ke",
   production: "https://api.pesaguard.co.ke",
@@ -77,3 +78,24 @@ export class PesaGuardClient {
 }
 
 export const PesaGuardEnvironments = DEFAULT_BASE_URLS;
+
+
+export function verifyWebhookSignature(payload, signatureHeader, secret, { toleranceSeconds = 300, now = Math.floor(Date.now() / 1000) } = {}) {
+  if (!(typeof payload === "string" || Buffer.isBuffer(payload)) || typeof secret !== "string" || !secret) return false;
+  const fields = {};
+  for (const part of String(signatureHeader || "").split(",")) {
+    const separator = part.indexOf("=");
+    if (separator < 1) continue;
+    const key = part.slice(0, separator).trim();
+    const value = part.slice(separator + 1).trim();
+    if (!(key in fields)) fields[key] = value;
+  }
+  const timestamp = Number(fields.t);
+  const supplied = fields.v1;
+  if (!Number.isSafeInteger(timestamp) || typeof supplied !== "string" || !/^[a-f0-9]{64}$/i.test(supplied)) return false;
+  if (!Number.isFinite(toleranceSeconds) || toleranceSeconds < 0 || Math.abs(now - timestamp) > toleranceSeconds) return false;
+  const body = Buffer.isBuffer(payload) ? payload : Buffer.from(payload);
+  const expected = createHmac("sha256", secret).update(String(timestamp)).update(".").update(body).digest();
+  const actual = Buffer.from(supplied, "hex");
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
+}
