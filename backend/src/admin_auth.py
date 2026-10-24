@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field
 
 from .config import settings
 from .database import get_db
-from .models import RegistrySource, IngestionJob, AuditLog
+from .models import RegistrySource, IngestionJob, Organization, AuditLog
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
