@@ -1,0 +1,60 @@
+name: Deploy Datasource staging frontend to Cloudflare Pages
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - chore/production-ci-release-gates
+    paths:
+      - "frontend/**"
+      - ".github/workflows/cloudflare-pages-staging.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-pages-staging
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Check out staging candidate
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+
+      - name: Build frontend
+        working-directory: frontend
+        env:
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+        run: npm run build
+
+      - name: Install Wrangler
+        run: npm install --global wrangler
+
+      - name: Ensure Cloudflare Pages project exists
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if ! wrangler pages project list --json | grep -q '"name"[[:space:]]*:[[:space:]]*"pesaguard-datasource-staging"'; then
+            wrangler pages project create pesaguard-datasource-staging --production-branch chore/production-ci-release-gates
+          fi
+
+      - name: Deploy to Cloudflare Pages staging branch
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: wrangler pages deploy frontend/dist --project-name pesaguard-datasource-staging --branch staging

@@ -189,9 +189,9 @@ def _check_login_rate(client_host: str) -> None:
             raise
         except Exception as exc:
             _rate_logger.exception('admin_login_redis_rate_limit_unavailable')
-            if settings.app_env.lower() == 'production':
+            if settings.app_env.lower() in {'staging', 'production'}:
                 raise HTTPException(503, 'Sign-in rate limiter is temporarily unavailable') from exc
-    elif settings.app_env.lower() == 'production':
+    elif settings.app_env.lower() in {'staging', 'production'}:
         raise HTTPException(503, 'Sign-in rate limiter is not configured')
     now = time.monotonic()
     with _attempt_lock:
@@ -256,7 +256,7 @@ def logout(request: Request, response: Response):
                     db.commit()
         except Exception as exc:
             _rate_logger.warning('admin_session_revoke_failed', error_type=type(exc).__name__)
-            if settings.app_env.lower() == 'production':
+            if settings.app_env.lower() in {'staging', 'production'}:
                 raise HTTPException(503, 'Could not revoke session; retry sign-out') from exc
     response.delete_cookie(COOKIE_NAME, path='/')
     response.headers['Cache-Control'] = 'no-store'
@@ -269,7 +269,7 @@ OAUTH_STATE_TTL_SECONDS = 600
 def _oauth_callback_url(request: Request, provider: str) -> str:
     base = settings.public_base_url.strip().rstrip('/')
     if not base:
-        if settings.app_env.lower() == 'production':
+        if settings.app_env.lower() in {'staging', 'production'}:
             raise HTTPException(503, 'PUBLIC_BASE_URL must be configured for production OAuth')
         base = str(request.base_url).rstrip('/')
     return f"{base}/api/v1/admin/oauth/{provider}/callback"

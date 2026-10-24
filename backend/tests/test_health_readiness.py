@@ -1,3 +1,4 @@
+import pytest
 from contextlib import nullcontext
 from unittest.mock import MagicMock
 
@@ -27,10 +28,11 @@ def test_development_readiness_reports_optional_dependencies_without_failing(hea
     }
 
 
-def test_production_readiness_fails_when_private_object_storage_is_missing(healthy_database, monkeypatch):
+@pytest.mark.parametrize('app_env', ['staging', 'production'])
+def test_production_like_readiness_fails_when_private_object_storage_is_missing(healthy_database, monkeypatch, app_env):
     redis = MagicMock()
     redis.ping.return_value = True
-    monkeypatch.setattr(main.settings, "app_env", "production")
+    monkeypatch.setattr(main.settings, "app_env", app_env)
     monkeypatch.setattr(main.settings, "require_hmac", False)
     monkeypatch.setattr(main.settings, "redis_url", "redis://configured")
     monkeypatch.setattr(main.storage_module, "configured", lambda: False)
@@ -44,8 +46,9 @@ def test_production_readiness_fails_when_private_object_storage_is_missing(healt
     assert dependencies["redis"] == "healthy"
 
 
-def test_production_readiness_fails_when_redis_is_unavailable(healthy_database, monkeypatch):
-    monkeypatch.setattr(main.settings, "app_env", "production")
+@pytest.mark.parametrize('app_env', ['staging', 'production'])
+def test_production_like_readiness_fails_when_redis_is_unavailable(healthy_database, monkeypatch, app_env):
+    monkeypatch.setattr(main.settings, "app_env", app_env)
     monkeypatch.setattr(main.settings, "require_hmac", False)
     monkeypatch.setattr(main.settings, "redis_url", "redis://configured")
     monkeypatch.setattr(main.storage_module, "configured", lambda: True)

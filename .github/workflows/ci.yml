@@ -8,11 +8,14 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: registry-ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Do not cancel a main-branch release validation because another commit lands.
+  # PR runs may be superseded by a newer commit on the same PR.
+  group: registry-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   backend:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -41,6 +44,7 @@ jobs:
         run: docker build -t pesaguard-registry-worker:ci -f backend/Dockerfile.worker ./backend
   backend-postgres:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     services:
       postgres:
         image: postgres:16
@@ -68,6 +72,7 @@ jobs:
         run: pytest -q
   frontend:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: frontend
@@ -90,6 +95,7 @@ jobs:
         run: docker build --build-arg VITE_API_BASE_URL=https://api.example.invalid -t pesaguard-registry-frontend:ci .
   sdk:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -106,8 +112,39 @@ jobs:
         run: node --test sdks/javascript/test/client.test.js
   local-compose-config:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - name: Validate staging Render blueprint
+        shell: bash
+        run: |
+          ruby - <<'RUBY'
+          require "yaml"
+          blueprint = YAML.load_file("render.staging.yaml")
+          services = blueprint.fetch("services")
+          required = [
+            "pesaguard-datasource-staging-api",
+            "pesaguard-datasource-staging-worker",
+            "pesaguard-datasource-staging-frontend",
+            "pesaguard-datasource-staging-redis"
+          ]
+          names = services.map { |service| service.fetch("name") }
+          missing = required - names
+          abort "Missing staging services: #{missing.join(', ')}" unless missing.empty?
+          api = services.find { |service| service["name"] == "pesaguard-datasource-staging-api" }
+          abort "API must use /health/ready" unless api["healthCheckPath"] == "/health/ready"
+          abort "Staging must deploy only after CI passes" unless api["autoDeployTrigger"] == "checksPass"
+          env = api.fetch("envVars").select { |entry| entry["key"] }.to_h { |entry| [entry["key"], entry["value"]] }
+          abort "Staging API must use sandbox key validation" unless env["API_ENVIRONMENT"] == "sandbox"
+          abort "Staging API must not reuse production base URL" unless env["DEVELOPER_PUBLIC_BASE_URL"] != env["DEVELOPER_PRODUCTION_BASE_URL"]
+          abort "A separate staging database is required" unless blueprint.fetch("databases").any? { |db| db["name"] == "pesaguard-datasource-staging-db" }
+          frontend = services.find { |service| service["name"] == "pesaguard-datasource-staging-frontend" }
+          abort "Frontend must use a Render static site build" unless frontend["runtime"] == "static"
+          abort "Frontend must publish built assets" unless frontend["staticPublishPath"] == "./dist"
+          abort "Frontend must provide SPA route fallback" unless frontend.fetch("routes", []).any? { |route| route["type"] == "rewrite" && route["source"] == "/*" && route["destination"] == "/index.html" }
+          abort "Frontend must set the staging API origin at build time" unless frontend.fetch("envVars", []).any? { |entry| entry["key"] == "VITE_API_BASE_URL" && entry["value"] == "https://pesaguard-datasource-staging-api.onrender.com" }
+          puts "Staging blueprint structure and release gates validated."
+          RUBY
       - name: Prepare safe local environment
         run: cp .env.example .env
       - name: Validate connected local Docker stack
