@@ -1,14 +1,16 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, CircleHelp, X } from 'lucide-react';
 
 export default function ToastPopup({ kind = 'success', message, onClose, duration = 7000 }) {
   const [createdAt, setCreatedAt] = useState(() => new Date());
+  const closeRef = useRef(onClose);
+  useEffect(() => { closeRef.current = onClose; }, [onClose]);
   useEffect(() => {
     if (!message) return undefined;
     setCreatedAt(new Date());
-    const timer = window.setTimeout(() => onClose?.(), duration);
+    const timer = window.setTimeout(() => closeRef.current?.(), duration);
     return () => window.clearTimeout(timer);
-  }, [message, duration, onClose]);
+  }, [message, duration]);
   if (!message) return null;
   const tone = kind === 'success' ? 'success' : kind === 'warning' ? 'warning' : 'error';
   const Icon = tone === 'success' ? CheckCircle2 : tone === 'warning' ? AlertTriangle : CircleHelp;
