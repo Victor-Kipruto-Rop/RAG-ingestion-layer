@@ -1,4 +1,7 @@
-"""Reusable circuit breaker and bounded retry helpers for configured registry providers."""
+"""Reusable circuit breaker and bounded retry helpers for external registry providers.
+
+Not yet wired into a request path: fallback verification providers are reported as
+NOT_CONFIGURED by the API. Use call_with_retry() when a provider client is added."""
 import threading
 import time
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential_jitter
@@ -52,7 +55,7 @@ def call_with_retry(breaker, func, *args, **kwargs):
     @retry(
         retry=retry_if_exception_type((TimeoutError, ConnectionError)),
         stop=stop_after_attempt(3),
-        wait=wait_exponential_jitter(initial=0.2, max=2.0),
+        wait=wait_exponential_jitter(multiplier=0.2, max=2.0),
         reraise=True,
     )
     def invoke():

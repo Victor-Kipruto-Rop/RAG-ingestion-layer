@@ -78,10 +78,14 @@ def download_spooled_file(key, max_memory_bytes=1024 * 1024):
         spool.close()
 
 
-def presign_upload_url(key, content_type, expires_seconds):
+def presign_upload_url(key, content_type, expires_seconds, content_length=None):
+    """Presign a PUT. When content_length is given it is signed, so storage rejects any other size."""
     if not configured():
         raise StorageNotConfigured('Cloudflare R2 is not configured')
-    return client().generate_presigned_url('put_object', Params={'Bucket': settings.r2_bucket_name, 'Key': key, 'ContentType': content_type}, ExpiresIn=max(60, int(expires_seconds)))
+    params = {'Bucket': settings.r2_bucket_name, 'Key': key, 'ContentType': content_type}
+    if content_length is not None:
+        params['ContentLength'] = int(content_length)
+    return client().generate_presigned_url('put_object', Params=params, ExpiresIn=max(60, int(expires_seconds)))
 
 def head_object(key):
     if not configured():
@@ -97,3 +101,21 @@ def read_object_prefix(key, max_bytes=4096):
         return body.read(max_bytes)
     finally:
         body.close()
+
+
+def delete_object(key):
+    """Best-effort delete of an orphaned or rejected object. Never raises."""
+    try:
+        if key.startswith('r2://'): key = key[5:]
+        if key.startswith('local://'): key = key[8:]
+        if configured():
+            client().delete_object(Bucket=settings.r2_bucket_name, Key=key)
+            return True
+        root = Path(settings.local_storage_path).resolve()
+        target = (root / key).resolve()
+        if root not in target.parents:
+            return False
+        target.unlink(missing_ok=True)
+        return True
+    except Exception:
+        return False

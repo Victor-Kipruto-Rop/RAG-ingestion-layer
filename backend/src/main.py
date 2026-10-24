@@ -1,13 +1,13 @@
 import logging
 from contextlib import asynccontextmanager
-import time,uuid
+import re,time,uuid
 from datetime import datetime,timezone,timedelta
 import hmac
 import structlog
 from prometheus_client import Counter,Histogram,Gauge,generate_latest,CONTENT_TYPE_LATEST
 from fastapi import Request,Header
 from fastapi.responses import Response
-from sqlalchemy import event,func
+from sqlalchemy import event,func,select
 from fastapi import FastAPI,HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
@@ -16,6 +16,7 @@ from .database import engine,SessionLocal
 from . import models
 from .api import router
 from .api_keys import router as api_keys_router
+from .admin_auth import router as admin_router
 from .models import WarehouseAccessLog
 structlog.configure(processors=[structlog.processors.TimeStamper(fmt='iso'),structlog.processors.add_log_level,structlog.processors.format_exc_info,structlog.processors.JSONRenderer()],logger_factory=structlog.stdlib.LoggerFactory())
 logging.basicConfig(level=logging.INFO,format='%(message)s')
@@ -40,9 +41,10 @@ async def lifespan(app):
  validate_runtime_config()
  yield
 app=FastAPI(title=settings.app_name,version='1.0.0',description='Internal registry ingestion and lookup API',lifespan=lifespan)
-app.add_middleware(CORSMiddleware,allow_origins=settings.cors_origin_list,allow_credentials=False,allow_methods=['GET','POST','PATCH','DELETE','OPTIONS'],allow_headers=['Content-Type','X-API-Key','Authorization','X-Correlation-ID','Idempotency-Key','X-Registry-Source'])
+app.add_middleware(CORSMiddleware,allow_origins=settings.cors_origin_list,allow_credentials=True,allow_methods=['GET','POST','PATCH','DELETE','OPTIONS'],allow_headers=['Content-Type','X-API-Key','Authorization','X-Correlation-ID','Idempotency-Key','X-Registry-Source','X-CSRF-Token'])
 app.include_router(router)
 app.include_router(api_keys_router)
+app.include_router(admin_router)
 @app.middleware('http')
 async def warehouse_access_telemetry(request,call_next):
  path=request.url.path
@@ -55,13 +57,18 @@ async def warehouse_access_telemetry(request,call_next):
   outcome='SUCCESS' if response.status_code<400 else ('NOT_FOUND' if response.status_code==404 else 'ERROR')
   return response
  finally:
-  duration=(time.perf_counter()-started)*1000
-  try:
-   with SessionLocal() as db:
-    db.add(WarehouseAccessLog(request_id=request_id,caller_service=(request.headers.get('X-Caller-Service') or 'unknown')[:200],endpoint=path[:300],http_method=request.method[:12],response_status=response.status_code if response else 500,duration_ms=round(duration,3),outcome=outcome,query_type='organization_lookup' if path.endswith('query-organization') else 'telemetry'))
-    db.commit()
-  except Exception:
-   log.exception('warehouse_access_telemetry_persist_failed',request_id=request_id)
+  status_code=response.status_code if response else 500
+  # never let unauthenticated or throttled traffic write to the database
+  if status_code not in (401,403,429):
+   duration=(time.perf_counter()-started)*1000
+   claimed=re.sub(r'[^A-Za-z0-9._:-]','',request.headers.get('X-Caller-Service') or '')[:100]
+   caller='claimed:'+claimed if claimed else 'unknown'
+   try:
+    with SessionLocal() as db:
+     db.add(WarehouseAccessLog(request_id=request_id,caller_service=caller,endpoint=path[:300],http_method=request.method[:12],response_status=status_code,duration_ms=round(duration,3),outcome=outcome,query_type='organization_lookup' if path.endswith('query-organization') else 'telemetry'))
+     db.commit()
+   except Exception:
+    log.exception('warehouse_access_telemetry_persist_failed',request_id=request_id)
 
 @app.middleware('http')
 async def request_observability(request:Request,call_next):
@@ -109,4 +116,4 @@ def health():
   with engine.connect() as conn:conn.execute(text('SELECT 1'))
   status='healthy'
  except Exception:status='degraded'
- return {'status':status,'database':'healthy' if status=='healthy' else 'unavailable','r2_configured':bool(settings.r2_bucket_name)}
+ return {'status':status,'database':'healthy' if status=='healthy' else 'unavailable'}

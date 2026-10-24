@@ -6,7 +6,7 @@ import {
   MoreHorizontal, RefreshCw, Search, Server, Settings, ShieldCheck, SlidersHorizontal,
   Upload, X, ScrollText, Workflow
 } from 'lucide-react';
-import { api } from './api.js';
+import { api, setCsrfToken } from './api.js';
 import ApiKeysPanel from './ApiKeysPanel.jsx';
 
 const NAV = [
@@ -71,7 +71,7 @@ function Sidebar({ page, setPage, mobile, setMobile }) {
   </aside>;
 }
 
-function Topbar({ page, connected, onRefresh, loading, search, setSearch, setMobile }) {
+function Topbar({ page, connected, onRefresh, loading, search, setSearch, setMobile, onSignOut }) {
   return <header className="topbar">
     <div className="topbar-left">
       <button className="icon-button mobile-menu" onClick={() => setMobile(true)} aria-label="Open menu"><Menu size={20} /></button>
@@ -81,7 +81,7 @@ function Topbar({ page, connected, onRefresh, loading, search, setSearch, setMob
       <label className="global-search"><Search size={16} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search records, jobs, sources…" /><kbd>⌘ K</kbd></label>
       <div className="environment"><span className={connected ? 'pulse-dot' : 'pulse-dot muted'} />{connected ? 'API connected' : 'Preview'}<ChevronDown size={14} /></div>
       <button className="icon-button notification-button" aria-label="Notifications"><Bell size={18} /><i /></button>
-      <button className="profile-chip" aria-label="Account menu"><span>VK</span><ChevronDown size={14} /></button>
+      {connected && <button className="button-secondary" onClick={onSignOut}>Sign out</button>}
       <button className="icon-button refresh-button" onClick={onRefresh} aria-label="Refresh data" disabled={loading}><RefreshCw size={17} className={loading ? 'spin' : ''} /></button>
     </div>
   </header>;
@@ -177,7 +177,9 @@ function ServiceStatus({ label, detail, icon: Icon, value, connected }) {
 
 export default function App() {
   const [page, setPage] = useState('Overview');
-  const [key, setKey] = useState('');
+  const [authed, setAuthed] = useState(false);
+  const [password, setPassword] = useState('');
+  const [checking, setChecking] = useState(true);
   const [connected, setConnected] = useState(false);
   const [summary, setSummary] = useState(null);
   const [orgs, setOrgs] = useState([]);
@@ -191,9 +193,9 @@ export default function App() {
   const [message, setMessage] = useState('');
   const [mobile, setMobile] = useState(false);
 
-  const request = useCallback((path, opts = {}) => api(path, { ...opts, headers: { ...(opts.headers || {}), 'X-API-Key': key } }), [key]);
+  const request = api;
   const refresh = useCallback(async () => {
-    if (!key) return;
+    if (!authed) return;
     setLoading(true); setError('');
     try {
       const [metricsResponse, orgResponse, jobsResponse] = await Promise.all([
@@ -206,11 +208,33 @@ export default function App() {
       const jobsResult = await jobsResponse.json();
       setSummary(metrics); setOrgs(orgResult.items || []); setOrgTotal(orgResult.total || 0);
       setJobs(jobsResult.items || []); setConnected(true);
-    } catch (e) { setConnected(false); setError(e.message || 'Unable to connect to the Registry API.'); }
+    } catch (e) {
+      setConnected(false);
+      if (e.status === 401) { setAuthed(false); setCsrfToken(''); setError('Your session has expired. Sign in again.'); }
+      else setError(e.message || 'Unable to connect to the Registry API.');
+    }
     finally { setLoading(false); }
-  }, [key, request, orgPage, search]);
+  }, [authed, request, orgPage, search]);
 
-  useEffect(() => { if (key) refresh(); }, [key, refresh]);
+  useEffect(() => {
+    // Restore an existing server-side session after a page reload.
+    api('/api/v1/admin/session').then(r => r.json()).then(s => { setCsrfToken(s.csrf_token); setAuthed(true); }).catch(() => {}).finally(() => setChecking(false));
+  }, []);
+  useEffect(() => { if (authed) refresh(); }, [authed, refresh]);
+
+  const signIn = async (event) => {
+    event.preventDefault();
+    setError('');
+    try {
+      const response = await api('/api/v1/admin/login', { method: 'POST', body: JSON.stringify({ password }) });
+      setCsrfToken((await response.json()).csrf_token);
+      setPassword(''); setAuthed(true);
+    } catch (e) { setError(e.message || 'Sign-in failed.'); }
+  };
+  const signOut = async () => {
+    try { await api('/api/v1/admin/logout', { method: 'POST' }); } catch { /* cookie is cleared server-side or expires */ }
+    setCsrfToken(''); setAuthed(false); setConnected(false); setSummary(null); setOrgs([]); setJobs([]);
+  };
   const upload = async (event) => {
     event.preventDefault();
     if (!file) return;
@@ -248,9 +272,9 @@ export default function App() {
     {mobile && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setMobile(false)} />}
     <Sidebar page={page} setPage={setPage} mobile={mobile} setMobile={setMobile} />
     <main className="main-content">
-      <Topbar page={page} connected={connected} onRefresh={refresh} loading={loading} search={search} setSearch={setSearch} setMobile={setMobile} />
+      <Topbar page={page} connected={connected} onRefresh={refresh} loading={loading} search={search} setSearch={setSearch} setMobile={setMobile} onSignOut={signOut} />
       <div className="page-content">
-        {!connected && <section className="connect-banner"><div className="connect-banner-icon"><ShieldCheck size={20} /></div><div className="connect-copy"><strong>Connect your datasource</strong><p>Enter the internal API key to load live registry metrics and ingestion jobs. Avoid production service keys in browser-based previews.</p></div><form onSubmit={e => { e.preventDefault(); refresh(); }}><input type="password" value={key} onChange={e => setKey(e.target.value)} placeholder="Internal API key" autoComplete="off" /><button className="button-primary">Connect <ArrowRight size={15} /></button></form></section>}
+        {!authed && !checking && <section className="connect-banner"><div className="connect-banner-icon"><ShieldCheck size={20} /></div><div className="connect-copy"><strong>Sign in to the datasource</strong><p>Use the dashboard admin password. The browser keeps only an HttpOnly session cookie and never holds the service API key.</p></div><form onSubmit={signIn}><input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Admin password" autoComplete="current-password" /><button className="button-primary">Sign in <ArrowRight size={15} /></button></form></section>}
         {error && <div className="alert-banner error"><AlertTriangle size={17} /><span>{error}</span><button onClick={() => setError('')} aria-label="Dismiss error"><X size={16} /></button></div>}
         {message && <div className="alert-banner success"><CheckCircle2 size={17} /><span>{message}</span><button onClick={() => setMessage('')} aria-label="Dismiss message"><X size={16} /></button></div>}
 

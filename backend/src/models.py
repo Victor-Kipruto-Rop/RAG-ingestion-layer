@@ -55,6 +55,7 @@ class RegistrySource(Base):
  updated_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,onupdate=now_utc,nullable=False)
 class IngestionJob(Base):
  __tablename__='ingestion_jobs'
+ __table_args__=(Index('ix_ingestion_jobs_status_next_attempt','status','next_attempt_at'),)
  id:Mapped[str]=mapped_column(String(36),primary_key=True,default=lambda:str(uuid.uuid4()))
  file_name:Mapped[str]=mapped_column(String(500),nullable=False)
  correlation_id:Mapped[str|None]=mapped_column(String(100),index=True)
@@ -70,6 +71,7 @@ class IngestionJob(Base):
  records_updated:Mapped[int]=mapped_column(Integer,default=0,nullable=False)
  records_skipped:Mapped[int]=mapped_column(Integer,default=0,nullable=False)
  last_processed_row:Mapped[int]=mapped_column(Integer,default=1,nullable=False)
+ heartbeat_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True))
  error_summary:Mapped[str|None]=mapped_column(Text)
  created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
  started_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True))

@@ -18,8 +18,8 @@ try {
 }
 
 if (-not (Test-Path ".env")) {
-    Copy-Item "example.env" ".env"
-    Write-Host "Created .env from example.env." -ForegroundColor Yellow
+    Copy-Item ".env.example" ".env"
+    Write-Host "Created .env from .env.example." -ForegroundColor Yellow
     Write-Host "Open .env, replace REGISTRY_API_KEYS with a long random LOCAL-ONLY key, save it, then rerun this script."
     Start-Process notepad.exe -ArgumentList (Join-Path $repoRoot ".env")
     exit 1

@@ -33,7 +33,7 @@ When Notepad opens, replace `REGISTRY_API_KEYS` with a long, random **local-only
 You can also start manually:
 
 ```powershell
-Copy-Item example.env .env
+Copy-Item .env.example .env
 notepad .env
 docker compose -f docker-compose.windows.local.yml config --quiet
 docker compose -f docker-compose.windows.local.yml up -d --build
@@ -104,4 +104,4 @@ docker compose -f docker-compose.windows.local.yml down -v
 - **API key rejected:** check that `REGISTRY_API_KEYS` in `.env` exactly matches the value entered in the dashboard, then recreate the API container using `docker compose -f docker-compose.windows.local.yml up -d --force-recreate registry-api`.
 - **Worker is not processing:** inspect worker logs, ensure the upload returned a job ID, and verify that the job is `QUEUED` rather than already completed or marked `NEEDS_PDF_PROCESSING`.
 - **Frontend has not started yet:** first install can take time while npm downloads packages; inspect frontend logs before restarting.
-- **Compose config fails:** confirm that `.env` exists and was copied from `example.env`, and run `docker compose -f docker-compose.windows.local.yml config` to view the configuration error.
+- **Compose config fails:** confirm that `.env` exists and was copied from `.env.example`, and run `docker compose -f docker-compose.windows.local.yml config` to view the configuration error.

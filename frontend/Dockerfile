@@ -1,9 +1,12 @@
 FROM node:22-alpine AS builder
 WORKDIR /app
-COPY package*.json ./
-RUN npm install --no-audit --no-fund
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund
 COPY . .
-ARG VITE_API_BASE_URL=/api
+# The API origin is baked in at build time. Pass an absolute URL (e.g. https://api.example.com),
+# or an empty value to call the API on the same origin through your own reverse proxy.
+ARG VITE_API_BASE_URL
+RUN [ -n "${VITE_API_BASE_URL+x}" ] || { echo "Build argument VITE_API_BASE_URL is required (use --build-arg VITE_API_BASE_URL=https://api.example.com)" >&2; exit 1; }
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 RUN npm run build
 

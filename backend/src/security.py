@@ -118,18 +118,22 @@ def _validate_customer_api_key(raw_key, request):
             raise HTTPException(status_code=403, detail=environment_mismatch_detail(key.environment, runtime_environment))
         path, method = request.url.path, request.method.upper()
         required_scope = None
-        if path in {"/api/v1/registry/lookup", "/api/v1/registry/search", "/api/v1/organizations", "/api/v1/metrics/summary", "/api/v1/exports/organizations.csv"} and method == "GET":
+        if method == "GET" and path in {"/api/v1/registry/lookup", "/api/v1/registry/search", "/api/v1/organizations"}:
             required_scope = "registry:read"
-        elif path.startswith("/api/v1/sources") and method == "GET":
+        elif method == "GET" and (path == "/api/v1/sources" or path.startswith("/api/v1/sources/")):
             required_scope = "sources:read"
-        elif path.startswith("/api/v1/ingestion/uploads") and method == "POST":
-            required_scope = "ingestion:write"
-        elif path.startswith("/api/v1/ingestion") and method == "GET":
-            required_scope = "ingestion:read"
-        if not required_scope or required_scope not in (key.scopes or []):
+        # Everything else (ingestion, export, metrics, warehouse, source writes) is internal-only:
+        # customer keys are never granted access to bulk data or to the shared canonical registry.
+        if not required_scope:
+            raise HTTPException(403, {"code":"API_KEY_ENDPOINT_NOT_AVAILABLE","message":"This endpoint is not available to customer API keys.","required_scope":None})
+        if required_scope not in (key.scopes or []):
             raise HTTPException(403, {"code":"API_KEY_SCOPE_INSUFFICIENT","message":"This key does not have permission for the requested endpoint.","required_scope":required_scope})
-        key.last_used_at = now
-        db.commit()
+        last_used = key.last_used_at
+        if last_used is not None and last_used.tzinfo is None:
+            last_used = last_used.replace(tzinfo=timezone.utc)
+        if last_used is None or (now - last_used).total_seconds() > 60:  # avoid a write per request
+            key.last_used_at = now
+            db.commit()
         return "customer-api-key:" + key.id
 
 def _check_nonce_local(nonce, expires_at):
@@ -173,6 +177,24 @@ async def _take_token(identity, request):
             raise HTTPException(429,'Registry lookup rate limit exceeded',headers={'Retry-After':'1'})
         _local_buckets[key]=(tokens-1,now)
 
+def is_customer_identity(identity):
+    return str(identity).startswith("customer-api-key:")
+
+async def _read_bounded_body(request):
+    """Buffer the body for HMAC verification without accepting unbounded uploads."""
+    limit=settings.max_upload_bytes+1024*1024
+    declared=request.headers.get('content-length')
+    if declared and declared.isdigit() and int(declared)>limit:
+        raise HTTPException(413,'Request body exceeds the configured limit')
+    chunks=[];size=0
+    async for chunk in request.stream():
+        size+=len(chunk)
+        if size>limit: raise HTTPException(413,'Request body exceeds the configured limit')
+        chunks.append(chunk)
+    body=b''.join(chunks)
+    request._body=body  # let downstream form parsing reuse the verified bytes
+    return body
+
 async def require_api_key(request:Request,
     x_api_key:str|None=Header(default=None,alias='X-API-Key'),
     x_internal_signature:str|None=Header(default=None,alias='X-Internal-Signature'),
@@ -188,7 +210,7 @@ async def require_api_key(request:Request,
             raise HTTPException(401,'Internal signature timestamp expired')
         if not x_internal_nonce or len(x_internal_nonce)>200:
             raise HTTPException(401,'Invalid internal signature nonce')
-        body=await request.body(); body_hash=hashlib.sha256(body).hexdigest()
+        body=await _read_bounded_body(request); body_hash=hashlib.sha256(body).hexdigest()
         canonical='\n'.join([str(timestamp),x_internal_nonce,request.method.upper(),request.url.path,request.url.query,body_hash])
         expected=hmac.new(secret.encode(),canonical.encode(),hashlib.sha256).hexdigest()
         if not hmac.compare_digest(expected,x_internal_signature.lower()):
@@ -196,8 +218,13 @@ async def require_api_key(request:Request,
         if not await _check_nonce(x_internal_nonce,max(60,settings.hmac_nonce_ttl_seconds)):
             raise HTTPException(401,'Internal request replay detected')
         identity='hmac-client:'+(request.client.host if request.client else 'unknown')
+    elif not x_api_key:
+        from .admin_auth import session_from_request,enforce_session_csrf
+        claims=session_from_request(request)
+        if not claims: raise HTTPException(401,'Invalid or missing API key')
+        enforce_session_csrf(request,claims)
+        identity='admin-session:'+str(claims.get('sub','admin'))
     else:
-        if not x_api_key: raise HTTPException(401,'Invalid or missing API key')
         if x_api_key.startswith(("pg_sandbox_","pg_live_")):
             identity=await asyncio.to_thread(_validate_customer_api_key,x_api_key,request)
         else:

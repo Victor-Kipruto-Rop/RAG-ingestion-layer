@@ -31,3 +31,16 @@ Set METRICS_TOKEN to a strong secret to enable GET /metrics with the X-Metrics-T
 
 ## Production startup validation
 Production startup validates a non-placeholder REGISTRY_API_KEYS, PostgreSQL DATABASE_URL, and the R2 account/access key/secret/bucket. If REQUIRE_HMAC is enabled, HMAC_SHARED_SECRET and REDIS_URL are mandatory. The application does not print configured secret values.
+## Dashboard sessions
+
+The dashboard does not hold the service API key. An operator signs in at `POST /api/v1/admin/login`
+with the admin password (verified against `ADMIN_PASSWORD_HASH`, PBKDF2-SHA256). The server returns a signed,
+HttpOnly, SameSite=Strict cookie (`pg_admin_session`) and a per-session CSRF token. Cookie-authenticated
+unsafe requests must send that token in `X-CSRF-Token`; the browser keeps it in memory only.
+
+- Generate the hash: `python -m src.admin_auth hash-password`. Set `SESSION_SECRET` to at least 32 random characters.
+- Production requires `SESSION_COOKIE_SECURE=true`; `CORS_ORIGINS` must be explicit origins (never `*`).
+- Sessions are stateless and expire after `SESSION_TTL_SECONDS` (default 8 hours); logout clears the cookie
+  but cannot revoke a copied token early. Rotate `SESSION_SECRET` to invalidate all sessions.
+- Login attempts are limited per client address per process. Put a shared rate limit at your edge for multi-instance deployments.
+- Service-to-service callers keep using `X-API-Key` or HMAC signatures; HMAC bodies are size-bounded before verification.
