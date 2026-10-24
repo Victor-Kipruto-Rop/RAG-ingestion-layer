@@ -57,6 +57,10 @@ Set `APP_ENV=production` only after migrations are applied. Production startup i
 Configure `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `R2_BUCKET_NAME` in the deployment environment. Create the private bucket in Cloudflare R2 first; the repository cannot create a Cloudflare account resource without authorized Cloudflare access.
 
 
+## Cloudflare Pages frontend
+
+The dashboard frontend is configured for Cloudflare Pages. See [Cloudflare Pages frontend setup](docs/cloudflare-pages-frontend.md) for the build settings, production API origin, custom domain attachment, and release verification checklist. Intended frontend origin: `https://datasource.pesaguard.co.ke`; intended API origin: `https://api.datasource.pesaguard.co.ke`. Repository files do not create Cloudflare resources or deploy the application.
+
 ## Production hardening
 
 The current implementation work is tracked in [the phased production hardening roadmap](docs/production-hardening-roadmap.md). Review [database migration safety](docs/database-migrations.md) before running Alembic against any existing database, and see [internal API security](docs/internal-api-security.md) and [large-file ingestion](docs/large-file-ingestion.md) for HMAC signing, replay protection, rate limits, cache behavior and metrics.
