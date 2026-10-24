@@ -1,7 +1,7 @@
 # PesaGuard Datasource — staging release acceptance
 
-**Status: BLOCKED — not approved for production deployment.**  
-**Candidate:** PR #47, `feat/datasource-crud-jobs-api-keys`  
+**Status: STAGING BLOCKED — source changes prepared; CI execution and deployed staging verification are outstanding. Not approved for production deployment.**  
+**Candidate:** PR #52, `chore/production-ci-release-gates`  
 **Rule:** Never paste secrets, OTP values, access tokens, webhook signing secrets, database URLs, or SMTP credentials into GitHub issues, PRs, logs, or this document.
 
 This checklist separates source-level review from checks that require real credentials and a deployed staging environment. A checkbox may only be marked complete after evidence is attached (redacted logs, test report, deployment IDs, or reviewer sign-off).
@@ -13,6 +13,7 @@ This checklist separates source-level review from checks that require real crede
 - The application source defines separate sandbox and production API base URL settings and key prefixes (`pg_sandbox_` and `pg_live_`). This source contract does not prove the deployed environment variables or DNS/TLS routing are correct.
 - Google/GitHub OAuth and Resend/SMTP credentials were not provided in this request. Provider applications, verified sender identity, and live delivery therefore cannot be confirmed from source code alone.
 - Recent GitHub Actions runs (`40121465378` and `40121525191`) show all five jobs failing within two seconds with `runner_id=0`, an empty runner name, and `steps=[]`; job-log downloads return `BlobNotFound`. A retry of an earlier run behaved the same way. This indicates the jobs never reached a runner, so no test/build commands are evidenced as executed. The repository cannot diagnose whether runner provisioning is blocked by repository/account Actions settings or a GitHub-side issue; check Actions permissions/usage and GitHub Actions service health. This is **not** evidence that the source tests passed or failed.
+- A staging-only Render Blueprint is provided in `render.staging.yaml`. It defines an isolated PostgreSQL database, private Key Value service, API, worker, and a static frontend with SPA route fallback and security headers. The frontend receives the staging API base URL during its build. The Blueprint has not been applied, so no staging resources or custom DNS records exist yet.
 - No production credentials were read or changed, no staging account was used, and no deployment was triggered.
 
 ## 2. Reproducible Render staging environment
