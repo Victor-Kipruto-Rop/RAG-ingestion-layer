@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
-    "test": "vitest run"
+    "test": "vitest run",
+    "pages:preview": "npx --yes wrangler pages dev dist --config wrangler.jsonc",
+    "pages:deploy:staging": "npx --yes wrangler pages deploy dist --config wrangler.jsonc --project-name=pesaguard-datasource-staging --branch=staging"
   },
   "dependencies": {
     "@vitejs/plugin-react": "6.1.2",
