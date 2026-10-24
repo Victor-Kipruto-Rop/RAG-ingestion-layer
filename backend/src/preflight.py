@@ -7,7 +7,7 @@ from sqlalchemy import inspect, select, func, text
 from sqlalchemy.exc import SQLAlchemyError
 
 from .database import engine, SessionLocal
-from .config import settings
+from .config import settings, validate_runtime_config
 from .models import IngestionJob
 from .storage import health_check
 
@@ -31,6 +31,12 @@ REQUIRED_TABLES = {
 
 def main() -> int:
     try:
+        validate_runtime_config()
+    except RuntimeError as exc:
+        log.error("Runtime configuration validation failed: %s", str(exc))
+        return 1
+
+    try:
         with engine.connect() as connection:
             connection.exec_driver_sql("SELECT 1")
             if engine.dialect.name == "postgresql":
@@ -40,7 +46,7 @@ def main() -> int:
                 """)).mappings().first()
                 if role and any(bool(role[field]) for field in ("rolsuper", "rolbypassrls", "rolcreaterole", "rolcreatedb")):
                     log.error("Database runtime role has elevated cluster privileges; use a least-privilege application role")
-                    if settings.app_env.lower() == "production":
+                    if settings.app_env.lower() in {"staging", "production"}:
                         return 1
                     log.warning("Continuing outside production; reduce database role privileges before deployment")
                 elif role:
