@@ -193,7 +193,6 @@ def create_api_key(payload: CreateApiKey, claims: dict = Depends(require_user_cl
 
 @router.post("/{key_id}/rotate", status_code=201)
 def rotate_api_key(key_id: str, claims: dict = Depends(require_user_claims), db: Session = Depends(get_db)):
-    _set_tenant_database_context(db, claims)
     _require_org_admin(claims)
     row = db.scalar(select(ApiKey).where(ApiKey.id == key_id, ApiKey.organization_id == str(claims["org_id"])))
     if not row:
@@ -219,7 +218,6 @@ def rotate_api_key(key_id: str, claims: dict = Depends(require_user_claims), db:
 
 @router.delete("/{key_id}", status_code=204)
 def revoke_api_key(key_id: str, claims: dict = Depends(require_user_claims), db: Session = Depends(get_db)):
-    _set_tenant_database_context(db, claims)
     _require_org_admin(claims)
     row = db.scalar(select(ApiKey).where(ApiKey.id == key_id, ApiKey.organization_id == str(claims["org_id"])))
     if not row:
@@ -232,7 +230,6 @@ def revoke_api_key(key_id: str, claims: dict = Depends(require_user_claims), db:
 
 @router.get("/audit/events")
 def list_key_audit(claims: dict = Depends(require_user_claims), db: Session = Depends(get_db), limit: int = 100):
-    _set_tenant_database_context(db, claims)
     limit = max(1, min(limit, 200))
     rows = db.scalars(select(ApiKeyAuditEvent).where(ApiKeyAuditEvent.organization_id == str(claims["org_id"])).order_by(ApiKeyAuditEvent.created_at.desc()).limit(limit)).all()
     return {"items": [{"id": r.id, "api_key_id": r.api_key_id, "action": r.action, "details": r.details or {}, "created_at": r.created_at.isoformat()} for r in rows]}
