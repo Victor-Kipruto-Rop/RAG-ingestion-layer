@@ -654,16 +654,34 @@ def _otp_digest(email: str, purpose: str, code: str) -> str:
 
 
 def _send_auth_otp(email: str, code: str, purpose: str) -> None:
+    subject = 'PesaGuard Datasource email verification' if purpose == 'signup' else 'PesaGuard Datasource password reset'
+    action = 'verify your email and finish creating your operator account' if purpose == 'signup' else 'reset your operator account password'
+    body = (
+        f'Your PesaGuard Datasource verification code is {code}.\\n\\n'
+        f'Use this code to {action}. It expires in {settings.auth_otp_ttl_seconds // 60} minute(s). '
+        'If you did not request this, you can ignore this message. Do not share this code.\\n'
+    )
+    if settings.resend_api_key and settings.resend_from_email:
+        try:
+            result = httpx.post(
+                'https://api.resend.com/emails',
+                headers={'Authorization': f'Bearer {settings.resend_api_key}', 'Accept': 'application/json'},
+                json={'from': settings.resend_from_email, 'to': [email], 'subject': subject, 'text': body},
+                timeout=10.0,
+                follow_redirects=False,
+            )
+        except httpx.HTTPError as exc:
+            raise RuntimeError('Resend email delivery request failed') from exc
+        if result.status_code < 200 or result.status_code >= 300:
+            raise RuntimeError(f'Resend email delivery failed with HTTP {result.status_code}')
+        return
+
+    # Explicit compatibility fallback for deployments still using SMTP.
     message = EmailMessage()
-    message['Subject'] = 'PesaGuard Datasource email verification' if purpose == 'signup' else 'PesaGuard Datasource password reset'
+    message['Subject'] = subject
     message['From'] = settings.smtp_from_email
     message['To'] = email
-    action = 'verify your email and finish creating your operator account' if purpose == 'signup' else 'reset your operator account password'
-    message.set_content(
-        f'Your PesaGuard Datasource verification code is {code}.\n\n'
-        f'Use this code to {action}. It expires in {settings.auth_otp_ttl_seconds // 60} minute(s). '
-        'If you did not request this, you can ignore this message. Do not share this code.\n'
-    )
+    message.set_content(body)
     if settings.smtp_use_ssl:
         with smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, timeout=10) as server:
             if settings.smtp_username:
