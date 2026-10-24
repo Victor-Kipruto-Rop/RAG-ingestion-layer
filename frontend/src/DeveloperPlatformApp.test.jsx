@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import DeveloperPlatformApp from './DeveloperPlatformApp.jsx';
 
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe('DeveloperPlatformApp public landing', () => {
   it('renders the developer landing page when no developer session exists', async () => {
@@ -26,7 +26,7 @@ describe('DeveloperPlatformApp public landing', () => {
     render(<DeveloperPlatformApp />);
     expect(await screen.findByRole('heading', { name: /connect your product/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /start building/i })).toBeTruthy();
-    expect(screen.getByText(/pg_sandbox_/)).toBeTruthy();
+    expect(screen.getAllByText(/pg_sandbox_/).length).toBeGreaterThan(0);
     expect(screen.getByText(/strict environment separation/i)).toBeTruthy();
   });
 });
