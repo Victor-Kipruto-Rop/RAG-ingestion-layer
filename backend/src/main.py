@@ -17,6 +17,7 @@ from . import models
 from .api import router
 from .api_keys import router as api_keys_router
 from .admin_auth import router as admin_router, COOKIE_NAME, session_from_request, refresh_session_token
+from .developer_platform import router as developer_router
 from .models import WarehouseAccessLog, AdminSession, now_utc
 from . import storage as storage_module
 from .security import _redis_client
@@ -47,6 +48,7 @@ app.add_middleware(CORSMiddleware,allow_origins=settings.cors_origin_list,allow_
 app.include_router(router)
 app.include_router(api_keys_router)
 app.include_router(admin_router)
+app.include_router(developer_router)
 @app.middleware('http')
 async def warehouse_access_telemetry(request,call_next):
  path=request.url.path
