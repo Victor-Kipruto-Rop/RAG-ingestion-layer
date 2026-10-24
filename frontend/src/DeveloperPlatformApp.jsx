@@ -29,9 +29,10 @@ function Metric({label,value,detail,icon:Icon}) { return <div className="dp-metr
 function PageHeading({eyebrow,title,description,actions}) { return <div className="dp-page-heading"><div><div className="dp-eyebrow">{eyebrow}</div><h1>{title}</h1><p>{description}</p></div>{actions && <div className="dp-heading-actions">{actions}</div>}</div>; }
 
 function ToastPopup({ kind='success', message, onClose }) {
-  const [createdAt] = useState(() => new Date());
+  const [createdAt, setCreatedAt] = useState(() => new Date());
   useEffect(() => {
     if (!message) return undefined;
+    setCreatedAt(new Date());
     const timer = window.setTimeout(onClose, 7000);
     return () => window.clearTimeout(timer);
   }, [message, onClose]);
