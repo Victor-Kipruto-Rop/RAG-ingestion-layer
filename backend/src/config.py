@@ -92,8 +92,12 @@ def validate_runtime_config():
   raise RuntimeError("Invalid configuration: CORS_ORIGINS must list explicit origins; '*' is not allowed because the dashboard uses credentialed requests")
  if settings.auth_otp_ttl_seconds < 60 or settings.auth_otp_ttl_seconds > 1800 or settings.auth_otp_max_attempts < 1 or settings.auth_otp_max_attempts > 10:
   raise RuntimeError('Invalid configuration: AUTH_OTP_TTL_SECONDS must be 60-1800 and AUTH_OTP_MAX_ATTEMPTS must be 1-10')
+ if settings.smtp_use_ssl and settings.smtp_use_starttls:
+  raise RuntimeError('Invalid configuration: SMTP_USE_SSL and SMTP_USE_STARTTLS cannot both be enabled')
  if settings.app_env.lower() == 'production' and settings.admin_signup_email_list and not settings.auth_email_delivery_configured:
   raise RuntimeError('Invalid configuration: SMTP_HOST, SMTP_FROM_EMAIL and AUTH_OTP_PEPPER are required for operator sign-up')
+ if settings.app_env.lower() == 'production' and settings.admin_signup_email_list and len(settings.auth_otp_pepper) < 32:
+  raise RuntimeError('Invalid configuration: AUTH_OTP_PEPPER must contain at least 32 characters')
  if settings.admin_password_hash and len(settings.session_secret)<32:
   raise RuntimeError('Invalid configuration: SESSION_SECRET must be at least 32 characters when ADMIN_PASSWORD_HASH is set')
  # Validate worker safety limits in every environment, not only production.
