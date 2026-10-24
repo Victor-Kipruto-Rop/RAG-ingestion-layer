@@ -7,7 +7,7 @@ This guide verifies the datasource locally before connecting it to the PesaGuard
 - Run the datasource API, worker, and dashboard using the isolated Windows Compose stack.
 - PesaGuard backend calls the datasource API server-to-server over localhost during local development.
 - Send the internal datasource key in `X-API-Key`; keep it in the PesaGuard backend environment only.
-- Use `GET /api/v1/registry/lookup?reg_no=...` or `?tax_pin=...` for lookup. A missing record is a valid lookup outcome; it is not proof that a company does not exist.
+- Use `POST /api/v1/registry/lookup` with JSON containing exactly one of `reg_no` or `tax_pin` for lookup. A missing record is a valid lookup outcome; it is not proof that a company does not exist.
 - Treat imported data as unverified unless a separate authorized verification workflow establishes otherwise.
 - Do not call ingestion endpoints from customer-facing PesaGuard flows. Ingestion is an internal operator capability.
 - Never connect this local setup to production databases, production R2 buckets, or production credentials.
