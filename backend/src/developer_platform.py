@@ -668,6 +668,8 @@ def request_production_access(payload: ProductionAccessRequestBody, request: Req
     _csrf(request, claims)
     account = claims["account"]
     workspace = _workspace(db, account.id)
+    if workspace.production_access_approved is True:
+        raise HTTPException(409, "Production access is already approved for this workspace")
     pending = db.scalar(select(DeveloperProductionAccessRequest).where(
         DeveloperProductionAccessRequest.workspace_id == workspace.id,
         DeveloperProductionAccessRequest.status == "pending"))
