@@ -66,6 +66,12 @@ def _email(email: str) -> str:
     return value
 
 
+def _check_account_rate(email: str) -> None:
+    """Rate-limit a normalized account identifier without exposing it to the rate limiter."""
+    digest = hashlib.sha256(_email(email).encode()).hexdigest()
+    _check_login_rate("developer-account:" + digest)
+
+
 def _otp_digest(email: str, purpose: str, code: str) -> str:
     return hmac.new(settings.auth_otp_pepper.encode(), f"{purpose}:{email}:{code}".encode(), hashlib.sha256).hexdigest()
 
@@ -419,6 +425,7 @@ def signup_request_otp(payload: SignupRequest, request: Request, db: Session = D
     _require_platform_config()
     _check_login_rate(request.client.host if request.client else "unknown")
     email = _email(str(payload.email))
+    _check_account_rate(email)
     existing = db.scalar(select(DeveloperAccount).where(func.lower(DeveloperAccount.email) == email))
     if existing:
         return {"accepted": True, "message": "If this address can register, a verification code will arrive shortly."}
@@ -440,10 +447,10 @@ def signup_request_otp(payload: SignupRequest, request: Request, db: Session = D
     try:
         _send_email(email, "Verify your PesaGuard Developer Platform account",
                     f"Your verification code is {code}. It expires in {max(1, settings.auth_otp_ttl_seconds // 60)} minutes. If you did not request this, ignore this email.", template_id="account.verify_otp", idempotency_key=f"signup-otp:{challenge.id}")
-    except Exception as exc:
+    except Exception:
         challenge.consumed_at = now_utc()
         db.commit()
-        raise HTTPException(503, "Verification email could not be sent. Please retry later.") from exc
+        logging.getLogger(__name__).warning("developer_signup_otp_delivery_failed")
     return {"accepted": True, "message": "If this address can register, a verification code will arrive shortly."}
 
 
@@ -452,6 +459,7 @@ def signup_verify_otp(payload: VerifyOtpRequest, request: Request, response: Res
     _require_platform_config()
     _check_login_rate(request.client.host if request.client else "unknown")
     email = _email(str(payload.email))
+    _check_account_rate(email)
     challenge = _active_challenge(db, email, OTP_PURPOSE_SIGNUP)
     if not challenge or challenge.expires_at <= now_utc() or challenge.attempts >= settings.auth_otp_max_attempts:
         raise HTTPException(400, "Verification code is invalid or expired. Request a new code.")
@@ -487,6 +495,7 @@ def developer_login(payload: LoginRequest, request: Request, response: Response,
     _require_platform_config()
     _check_login_rate(request.client.host if request.client else "unknown")
     email = _email(str(payload.email))
+    _check_account_rate(email)
     account = db.scalar(select(DeveloperAccount).where(func.lower(DeveloperAccount.email) == email))
     if not account or account.disabled_at is not None or not account.email_verified_at or not verify_password(payload.password, account.password_hash):
         raise HTTPException(401, "Invalid email or password")
@@ -532,6 +541,7 @@ def password_reset_request(payload: ResetRequest, request: Request, db: Session 
     _require_platform_config()
     _check_login_rate(request.client.host if request.client else "unknown")
     email = _email(str(payload.email))
+    _check_account_rate(email)
     account = db.scalar(select(DeveloperAccount).where(func.lower(DeveloperAccount.email) == email, DeveloperAccount.disabled_at.is_(None)))
     if account:
         code = f"{secrets.randbelow(10 ** OTP_DIGITS):0{OTP_DIGITS}d}"
@@ -549,8 +559,12 @@ def password_reset_request(payload: ResetRequest, request: Request, db: Session 
         try:
             _send_email(email, "Reset your PesaGuard Developer Platform password",
                         f"Your password reset code is {code}. It expires in {max(1, settings.auth_otp_ttl_seconds // 60)} minutes. If you did not request this, ignore this email.", template_id="account.password_reset_otp", idempotency_key=f"password-reset-otp:{email}:{now.isoformat()}")
-        except Exception as exc:
-            raise HTTPException(503, "Recovery email could not be sent. Please retry later.") from exc
+        except Exception:
+            challenge = _active_challenge(db, email, OTP_PURPOSE_RESET)
+            if challenge:
+                challenge.consumed_at = now_utc()
+                db.commit()
+            logging.getLogger(__name__).warning("developer_password_reset_otp_delivery_failed")
     return {"accepted": True, "message": "If an active account exists for this address, a reset code will arrive shortly."}
 
 
@@ -559,6 +573,7 @@ def password_reset_confirm(payload: ResetConfirmRequest, request: Request, respo
     _require_platform_config()
     _check_login_rate(request.client.host if request.client else "unknown")
     email = _email(str(payload.email))
+    _check_account_rate(email)
     challenge = _active_challenge(db, email, OTP_PURPOSE_RESET)
     if not challenge or challenge.expires_at <= now_utc() or challenge.attempts >= settings.auth_otp_max_attempts:
         raise HTTPException(400, "Reset code is invalid or expired. Request a new code.")
