@@ -245,9 +245,11 @@ def _active_challenge(db: Session, email: str, purpose: str):
 
 @router.get("/auth/config")
 def auth_config():
-    configured = bool(len(settings.developer_access_token_secret.encode()) >= 32 and len(settings.session_secret.encode()) >= 32 and settings.auth_email_delivery_configured and len(settings.auth_otp_pepper.encode()) >= 32)
-    google = bool(configured and settings.google_oauth_client_id and settings.google_oauth_client_secret)
-    github = bool(configured and settings.github_oauth_client_id and settings.github_oauth_client_secret)
+    signing_configured = bool(len(settings.developer_access_token_secret.encode()) >= 32 and len(settings.session_secret.encode()) >= 32)
+    configured = bool(signing_configured and settings.auth_email_delivery_configured and len(settings.auth_otp_pepper.encode()) >= 32)
+    callback_configured = settings.app_env.lower() != "production" or bool(settings.developer_oauth_callback_base_url.strip())
+    google = bool(signing_configured and callback_configured and settings.google_oauth_client_id and settings.google_oauth_client_secret)
+    github = bool(signing_configured and callback_configured and settings.github_oauth_client_id and settings.github_oauth_client_secret)
     return {"signup_enabled": configured, "password_reset_enabled": configured, "password_min_length": 12,
             "otp_ttl_seconds": settings.auth_otp_ttl_seconds,
             "social_auth_enabled": bool(google or github),
@@ -296,7 +298,8 @@ def developer_oauth_providers():
 
 @router.get("/auth/oauth/{provider}/start")
 def developer_oauth_start(provider: str, request: Request):
-    _require_platform_config()
+    if len(settings.developer_access_token_secret.encode()) < 32 or len(settings.session_secret.encode()) < 32:
+        raise HTTPException(503, "Developer OAuth signing and session secrets must each contain at least 32 characters")
     client_id, client_secret = _oauth_provider(provider)
     if not client_id or not client_secret:
         raise HTTPException(503, f"{provider.title()} sign-in is not configured")
