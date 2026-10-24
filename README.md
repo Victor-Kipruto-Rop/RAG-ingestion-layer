@@ -20,6 +20,13 @@ Google and GitHub OAuth are supported for **existing allowlisted dashboard opera
 
 The current dashboard authentication model is a single configured operator credential plus allowlisted OAuth identities, not a multi-tenant user-account system. Self-service signup, account-specific profile persistence, password-reset email delivery and per-user notification preferences require a separate user/role model and transactional email configuration; they must not be simulated with browser-only state or open signup on the internal data platform.
 
+### Operator profile and notifications
+
+- The Profile sidebar page reads and updates the persisted operator display name and contact email through `/api/v1/admin/profile`.
+- The Notifications page derives operational alerts from persisted ingestion jobs. Read state is persisted through `/api/v1/admin/notifications` and `POST /api/v1/admin/notifications/read`.
+- Apply database migrations before using these endpoints: `cd backend && alembic upgrade head`.
+- These are operator profile metadata and operational job alerts, not a multi-user signup system or email/push notification delivery service.
+
 ## Local development
 
 1. For Windows local testing, copy `.env.example` to `.env` and replace `REGISTRY_API_KEYS` with a long random local-only key.
