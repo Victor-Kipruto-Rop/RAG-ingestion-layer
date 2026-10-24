@@ -93,3 +93,16 @@ Before enabling production traffic, require all of the following evidence:
 - Staging load, monitoring, alerting and incident/rollback evidence.
 
 Keep the release blocked if a workflow fails before its steps execute. A runner startup failure is not a passing test and does not establish a code-level test failure either.
+
+
+## SDK endpoint and credential-leakage protection
+
+The Python and JavaScript SDKs bind the API key prefix to an approved API origin:
+- `pg_sandbox_` keys use `https://sandbox-api.pesaguard.co.ke`.
+- `pg_live_` keys use `https://api.pesaguard.co.ke`.
+- SDKs reject the opposite environment host, arbitrary external origins, URL paths, query strings, fragments, and embedded URL credentials. This prevents accidentally forwarding a live secret to a caller-supplied host.
+- A custom localhost origin is supported for sandbox-only local development and cannot be used with production keys.
+- Redirects are disabled so credentials are not forwarded through HTTP redirects.
+- The SDKs include request timeouts, typed HTTP errors, bounded input validation, and webhook signature verification using the exact raw payload bytes and timestamp tolerance.
+
+SDK tests cover environment prefix mismatch, unapproved origin rejection, request construction, invalid lookup arguments, HTTP errors, and webhook signature/replay handling. Run them in CI or locally from the SDK directories; do not treat them as passing until an actual test run reports success.

@@ -43,3 +43,20 @@ test("webhook signature verifier accepts valid signatures and rejects tampering/
   assert.equal(verifyWebhookSignature(Buffer.concat([payload, Buffer.from(" ")]), header, secret, { now: timestamp }), false);
   assert.equal(verifyWebhookSignature(payload, header, secret, { now: timestamp + 1000 }), false);
 });
+
+
+test("rejects arbitrary origins, URL paths and embedded credentials", () => {
+  for (const baseUrl of [
+    "https://attacker.example",
+    "https://api.pesaguard.co.ke/path",
+    "https://user:password@sandbox-api.pesaguard.co.ke",
+    "https://sandbox-api.pesaguard.co.ke?forward=1",
+  ]) {
+    assert.throws(() => new PesaGuardClient({ apiKey: "pg_sandbox_test", environment: "sandbox", baseUrl }));
+  }
+});
+
+test("custom localhost origins are sandbox-only", () => {
+  assert.doesNotThrow(() => new PesaGuardClient({ apiKey: "pg_sandbox_test", baseUrl: "http://localhost:8000" }));
+  assert.throws(() => new PesaGuardClient({ apiKey: "pg_live_test", environment: "production", baseUrl: "http://localhost:8000" }), /only with sandbox keys/);
+});

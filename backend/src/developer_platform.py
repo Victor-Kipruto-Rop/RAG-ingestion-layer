@@ -298,6 +298,7 @@ def developer_oauth_providers():
 
 @router.get("/auth/oauth/{provider}/start")
 def developer_oauth_start(provider: str, request: Request):
+    _check_login_rate("developer-oauth-start:" + (request.client.host if request.client else "unknown"))
     if len(settings.developer_access_token_secret.encode()) < 32 or len(settings.session_secret.encode()) < 32:
         raise HTTPException(503, "Developer OAuth signing and session secrets must each contain at least 32 characters")
     if settings.app_env.lower() == "production" and not settings.developer_frontend_url.strip():
@@ -365,6 +366,7 @@ async def _fetch_oauth_email(provider: str, code: str, callback: str) -> tuple[s
 
 
 async def _developer_oauth_callback(provider: str, request: Request, db: Session):
+    _check_login_rate("developer-oauth-callback:" + (request.client.host if request.client else "unknown"))
     expected = request.cookies.get(f"pg_developer_oauth_state_{provider}", "")
     supplied = request.query_params.get("state", "")
     code = request.query_params.get("code", "")
@@ -419,6 +421,7 @@ def signup_request_otp(payload: SignupRequest, request: Request, db: Session = D
     _require_platform_config()
     _check_login_rate(request.client.host if request.client else "unknown")
     email = _email(str(payload.email))
+    _check_login_rate('developer-email:' + email)
     existing = db.scalar(select(DeveloperAccount).where(func.lower(DeveloperAccount.email) == email))
     if existing:
         return {"accepted": True, "message": "If this address can register, a verification code will arrive shortly."}
@@ -452,6 +455,7 @@ def signup_verify_otp(payload: VerifyOtpRequest, request: Request, response: Res
     _require_platform_config()
     _check_login_rate(request.client.host if request.client else "unknown")
     email = _email(str(payload.email))
+    _check_login_rate('developer-email:' + email)
     challenge = _active_challenge(db, email, OTP_PURPOSE_SIGNUP)
     if not challenge or challenge.expires_at <= now_utc() or challenge.attempts >= settings.auth_otp_max_attempts:
         raise HTTPException(400, "Verification code is invalid or expired. Request a new code.")
@@ -487,6 +491,7 @@ def developer_login(payload: LoginRequest, request: Request, response: Response,
     _require_platform_config()
     _check_login_rate(request.client.host if request.client else "unknown")
     email = _email(str(payload.email))
+    _check_login_rate('developer-email:' + email)
     account = db.scalar(select(DeveloperAccount).where(func.lower(DeveloperAccount.email) == email))
     if not account or account.disabled_at is not None or not account.email_verified_at or not verify_password(payload.password, account.password_hash):
         raise HTTPException(401, "Invalid email or password")
@@ -532,6 +537,7 @@ def password_reset_request(payload: ResetRequest, request: Request, db: Session 
     _require_platform_config()
     _check_login_rate(request.client.host if request.client else "unknown")
     email = _email(str(payload.email))
+    _check_login_rate('developer-email:' + email)
     account = db.scalar(select(DeveloperAccount).where(func.lower(DeveloperAccount.email) == email, DeveloperAccount.disabled_at.is_(None)))
     if account:
         code = f"{secrets.randbelow(10 ** OTP_DIGITS):0{OTP_DIGITS}d}"
@@ -559,6 +565,7 @@ def password_reset_confirm(payload: ResetConfirmRequest, request: Request, respo
     _require_platform_config()
     _check_login_rate(request.client.host if request.client else "unknown")
     email = _email(str(payload.email))
+    _check_login_rate('developer-email:' + email)
     challenge = _active_challenge(db, email, OTP_PURPOSE_RESET)
     if not challenge or challenge.expires_at <= now_utc() or challenge.attempts >= settings.auth_otp_max_attempts:
         raise HTTPException(400, "Reset code is invalid or expired. Request a new code.")

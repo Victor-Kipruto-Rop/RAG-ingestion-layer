@@ -25,13 +25,21 @@ export class PesaGuardClient {
     this.apiKey = apiKey;
     this.environment = environment;
     this.baseUrl = (baseUrl || DEFAULT_BASE_URLS[environment]).replace(/\/$/, "");
-    const parsed = new URL(this.baseUrl);
-    const otherEnvironment = environment === "sandbox" ? "production" : "sandbox";
-    if (parsed.protocol !== "https:" && !["localhost", "127.0.0.1"].includes(parsed.hostname)) {
+    let parsed;
+    try { parsed = new URL(this.baseUrl); } catch { throw new TypeError("baseUrl must be a valid absolute URL"); }
+    if (parsed.username || parsed.password || parsed.search || parsed.hash || !["", "/"].includes(parsed.pathname)) {
+      throw new TypeError("baseUrl must be an origin without credentials, path, query or fragment");
+    }
+    const localHost = ["localhost", "127.0.0.1"].includes(parsed.hostname.toLowerCase());
+    if (parsed.protocol !== "https:" && !localHost) {
       throw new TypeError("baseUrl must use HTTPS outside local development");
     }
-    if (parsed.hostname === new URL(DEFAULT_BASE_URLS[otherEnvironment]).hostname) {
-      throw new TypeError("API key environment does not match the selected base URL");
+    if (localHost && environment !== "sandbox") {
+      throw new TypeError("Local/custom API origins are allowed only with sandbox keys");
+    }
+    const expectedHost = new URL(DEFAULT_BASE_URLS[environment]).hostname;
+    if (!localHost && parsed.hostname.toLowerCase() !== expectedHost) {
+      throw new TypeError("API key environment does not match the approved base URL");
     }
     this.timeoutMs = timeoutMs;
     this.fetchImpl = fetchImpl;
