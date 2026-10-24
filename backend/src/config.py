@@ -85,5 +85,7 @@ def validate_runtime_config():
   missing.append('API_ENVIRONMENT (must be sandbox or production)')
  if settings.admin_password_hash and not settings.session_cookie_secure:
   missing.append('SESSION_COOKIE_SECURE=true (required for dashboard sessions in production)')
+ if settings.admin_password_hash and not settings.redis_url:
+  missing.append('REDIS_URL (required for distributed admin login rate limiting)')
  if missing:
   raise RuntimeError('Invalid production configuration: '+', '.join(missing))
