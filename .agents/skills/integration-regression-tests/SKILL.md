@@ -19,3 +19,9 @@ description: Use when verifying the end-to-end datasource-to-backend flow and ru
 Separate tests that passed from tests not run because of unavailable dependencies, credentials, or infrastructure.
 
 undefined
+
+## Mandatory quality gates
+- For every test, state whether it is unit, integration, or end-to-end; do not conflate them.
+- Never remove assertions, weaken expected status codes, skip failing tests without explicit justification, or replace integration tests with mocks to claim completion.
+- Rerun the failing test after a fix and preserve its actual result.
+- Mark unavailable infrastructure/credentials BLOCKED, not PASS. Include exact commands and outcomes.
