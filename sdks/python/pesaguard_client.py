@@ -1,5 +1,8 @@
 """PesaGuard HTTP client starter. Keep credentials in server-side secrets."""
+import hashlib
+import hmac
 import os
+import time
 from urllib.parse import urljoin, urlparse
 
 import requests
@@ -41,3 +44,26 @@ class PesaGuardClient:
 
     def search_registry(self, query, **params):
         return self.request("/api/v1/registry/search", params={"q": query, **params})
+
+
+def verify_webhook_signature(secret, raw_body, signature_header, *, tolerance_seconds=300, now=None):
+    """Verify PesaGuard-Signature: t=<unix>,v1=<hex> against the exact raw body bytes."""
+    if isinstance(raw_body, str):
+        raw_body = raw_body.encode("utf-8")
+    if not isinstance(raw_body, bytes) or not isinstance(signature_header, str):
+        return False
+    values = {}
+    for part in signature_header.split(","):
+        key, separator, value = part.strip().partition("=")
+        if separator and key in {"t", "v1"} and key not in values:
+            values[key] = value
+    try:
+        timestamp = int(values["t"])
+        supplied = values["v1"]
+    except (KeyError, ValueError):
+        return False
+    current = int(time.time() if now is None else now)
+    if abs(current - timestamp) > tolerance_seconds:
+        return False
+    expected = hmac.new(secret.encode("utf-8"), str(timestamp).encode("ascii") + b"." + raw_body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, supplied)
