@@ -221,3 +221,96 @@ class AdminSession(Base):
  user_agent:Mapped[str|None]=mapped_column(String(500),nullable=True)
  ip_digest:Mapped[str|None]=mapped_column(String(64),nullable=True)
  __table_args__=(Index('ix_admin_sessions_email_created','email','created_at'),Index('ix_admin_sessions_expiry','expires_at'),)
+
+
+# Public developer-platform control plane. These tables are deliberately separate from
+# the single-operator admin account/session tables above.
+class DeveloperAccount(Base):
+ __tablename__='developer_accounts'
+ id:Mapped[str]=mapped_column(String(36),primary_key=True,default=lambda:str(uuid.uuid4()))
+ email:Mapped[str]=mapped_column(String(320),unique=True,index=True,nullable=False)
+ display_name:Mapped[str]=mapped_column(String(120),nullable=False)
+ password_hash:Mapped[str]=mapped_column(String(255),nullable=False)
+ email_verified_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
+ disabled_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
+ created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
+ updated_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,onupdate=now_utc,nullable=False)
+
+class DeveloperWorkspace(Base):
+ __tablename__='developer_workspaces'
+ id:Mapped[str]=mapped_column(String(36),primary_key=True,default=lambda:str(uuid.uuid4()))
+ name:Mapped[str]=mapped_column(String(160),nullable=False)
+ owner_user_id:Mapped[str]=mapped_column(String(36),ForeignKey('developer_accounts.id',ondelete='CASCADE'),index=True,nullable=False)
+ verified:Mapped[bool]=mapped_column(Boolean,default=False,nullable=False)
+ production_access_approved:Mapped[bool]=mapped_column(Boolean,default=False,nullable=False)
+ created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
+
+class DeveloperProject(Base):
+ __tablename__='developer_projects'
+ id:Mapped[str]=mapped_column(String(36),primary_key=True,default=lambda:str(uuid.uuid4()))
+ workspace_id:Mapped[str]=mapped_column(String(36),ForeignKey('developer_workspaces.id',ondelete='CASCADE'),index=True,nullable=False)
+ name:Mapped[str]=mapped_column(String(160),nullable=False)
+ slug:Mapped[str]=mapped_column(String(180),unique=True,index=True,nullable=False)
+ created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
+
+class DeveloperAuthChallenge(Base):
+ __tablename__='developer_auth_challenges'
+ id:Mapped[str]=mapped_column(String(36),primary_key=True,default=lambda:str(uuid.uuid4()))
+ email:Mapped[str]=mapped_column(String(320),index=True,nullable=False)
+ purpose:Mapped[str]=mapped_column(String(32),nullable=False)
+ otp_hash:Mapped[str]=mapped_column(String(64),nullable=False)
+ password_hash:Mapped[str|None]=mapped_column(String(255),nullable=True)
+ display_name:Mapped[str|None]=mapped_column(String(120),nullable=True)
+ attempts:Mapped[int]=mapped_column(Integer,default=0,nullable=False)
+ expires_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+ consumed_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
+ created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
+
+class DeveloperSession(Base):
+ __tablename__='developer_sessions'
+ id:Mapped[str]=mapped_column(String(36),primary_key=True)
+ user_id:Mapped[str]=mapped_column(String(36),ForeignKey('developer_accounts.id',ondelete='CASCADE'),index=True,nullable=False)
+ created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
+ last_seen_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
+ expires_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),nullable=False)
+ revoked_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
+ user_agent:Mapped[str|None]=mapped_column(String(500),nullable=True)
+ ip_digest:Mapped[str|None]=mapped_column(String(64),nullable=True)
+
+class DeveloperWebhook(Base):
+ __tablename__='developer_webhooks'
+ id:Mapped[str]=mapped_column(String(36),primary_key=True,default=lambda:str(uuid.uuid4()))
+ workspace_id:Mapped[str]=mapped_column(String(36),ForeignKey('developer_workspaces.id',ondelete='CASCADE'),index=True,nullable=False)
+ project_id:Mapped[str|None]=mapped_column(String(36),ForeignKey('developer_projects.id',ondelete='SET NULL'),nullable=True)
+ name:Mapped[str]=mapped_column(String(120),nullable=False)
+ endpoint_url:Mapped[str]=mapped_column(String(2000),nullable=False)
+ events:Mapped[list]=mapped_column(json_type,default=list,nullable=False)
+ secret_ciphertext:Mapped[str]=mapped_column(Text,nullable=False)
+ secret_prefix:Mapped[str]=mapped_column(String(24),nullable=False)
+ enabled:Mapped[bool]=mapped_column(Boolean,default=True,nullable=False)
+ created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
+ updated_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,onupdate=now_utc,nullable=False)
+
+class DeveloperWebhookDelivery(Base):
+ __tablename__='developer_webhook_deliveries'
+ __table_args__=(Index('ix_dev_webhook_deliveries_hook_created','webhook_id','created_at'),)
+ id:Mapped[str]=mapped_column(String(36),primary_key=True,default=lambda:str(uuid.uuid4()))
+ webhook_id:Mapped[str]=mapped_column(String(36),ForeignKey('developer_webhooks.id',ondelete='CASCADE'),index=True,nullable=False)
+ event_type:Mapped[str]=mapped_column(String(120),nullable=False)
+ status:Mapped[str]=mapped_column(String(32),nullable=False)
+ response_status:Mapped[int|None]=mapped_column(Integer,nullable=True)
+ response_excerpt:Mapped[str|None]=mapped_column(String(500),nullable=True)
+ duration_ms:Mapped[int|None]=mapped_column(Integer,nullable=True)
+ created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
+
+class DeveloperProductionAccessRequest(Base):
+ __tablename__='developer_production_access_requests'
+ id:Mapped[str]=mapped_column(String(36),primary_key=True,default=lambda:str(uuid.uuid4()))
+ workspace_id:Mapped[str]=mapped_column(String(36),ForeignKey('developer_workspaces.id',ondelete='CASCADE'),index=True,nullable=False)
+ requested_by_user_id:Mapped[str]=mapped_column(String(36),ForeignKey('developer_accounts.id',ondelete='CASCADE'),nullable=False)
+ use_case:Mapped[str]=mapped_column(Text,nullable=False)
+ expected_volume:Mapped[str]=mapped_column(String(100),nullable=False)
+ status:Mapped[str]=mapped_column(String(24),default='pending',nullable=False)
+ reviewer_note:Mapped[str|None]=mapped_column(String(1000),nullable=True)
+ reviewed_at:Mapped[datetime|None]=mapped_column(DateTime(timezone=True),nullable=True)
+ created_at:Mapped[datetime]=mapped_column(DateTime(timezone=True),default=now_utc,nullable=False)
