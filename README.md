@@ -4,6 +4,7 @@ The public developer control plane is implemented in `frontend/src/DeveloperPlat
 
 - [Developer platform operations guide](docs/developer-platform.md)
 - [Resend email, OTP signup/recovery, and session security setup](docs/developer-platform-email-auth.md)
+- [Complete email catalogue and sending algorithms](docs/email-notification-catalog-and-algorithms.md) — transactional, security, API-key, webhook, production access, ingestion, lifecycle and consent-based marketing emails.
 - [Staging release acceptance checklist](docs/release-acceptance-staging.md) — mandatory evidence gates for OAuth, Resend/SMTP delivery, environment isolation, API keys, webhooks, and session revocation.
 - [Python SDK](sdks/python/README.md)
 - [JavaScript SDK](sdks/javascript/README.md)
@@ -32,7 +33,7 @@ Google and GitHub OAuth are supported for **existing allowlisted dashboard opera
 4. Use HTTPS and set `SESSION_COOKIE_SECURE=true` in production. Keep client secrets in the deployment secret manager; never put them in frontend environment variables.
 5. Verify `GET /api/v1/admin/oauth/providers` reports the expected enabled providers, then test login, state mismatch rejection, unallowlisted accounts and logout in staging.
 
-The current dashboard authentication model is a single configured operator credential plus allowlisted OAuth identities, not a multi-tenant user-account system. Self-service signup, account-specific profile persistence, password-reset email delivery and per-user notification preferences require a separate user/role model and transactional email configuration; they must not be simulated with browser-only state or open signup on the internal data platform.
+The internal operator dashboard remains separate from the public developer platform. The public developer platform has its own account/workspace/session models, OTP-based signup and password recovery, OAuth, profile and session endpoints. Keep the two identity domains separate. Developer email delivery still requires configured Resend or SMTP, verified sender-domain DNS, and target-environment verification; durable outbox processing and provider bounce/complaint callbacks remain release requirements.
 
 ### Operator profile and notifications
 
