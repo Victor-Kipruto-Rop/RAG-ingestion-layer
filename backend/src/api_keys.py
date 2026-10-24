@@ -6,13 +6,13 @@ from datetime import timedelta
 
 import jwt
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 from .config import settings
 from .database import get_db, SessionLocal
-from .models import ApiKey, ApiKeyAuditEvent, DeveloperAccount, DeveloperWorkspace, DeveloperSession
+from .models import ApiKey, ApiKeyAuditEvent, DeveloperAccount, DeveloperWorkspace, DeveloperSession, DeveloperWebhook
 
 router = APIRouter(prefix="/api/v1/keys", tags=["API key management"])
 
@@ -215,6 +215,20 @@ def _serialize(row: ApiKey):
             "last_used_at": row.last_used_at.isoformat() if row.last_used_at else None,
             "expires_at": row.expires_at.isoformat() if row.expires_at else None}
 
+def _queue_workspace_webhook_event(background_tasks: BackgroundTasks, workspace_id: str, event_type: str, payload: dict):
+    """Queue signed event deliveries only for endpoints owned by this workspace."""
+    # Local import avoids a module-import cycle with the developer platform router.
+    from .developer_platform import _deliver_webhook
+    with SessionLocal() as db:
+        hooks = db.scalars(select(DeveloperWebhook).where(
+            DeveloperWebhook.workspace_id == workspace_id,
+            DeveloperWebhook.enabled.is_(True),
+        )).all()
+        hook_ids = [hook.id for hook in hooks if event_type in (hook.events or [])]
+    for hook_id in hook_ids:
+        background_tasks.add_task(_deliver_webhook, hook_id, workspace_id, event_type, payload)
+
+
 @router.get("/me")
 def current_identity(claims: dict = Depends(require_user_claims)):
     roles = sorted(_roles(claims))
@@ -236,11 +250,15 @@ def list_api_keys(claims: dict = Depends(require_user_claims), db: Session = Dep
     return {"items": [_serialize(row) for row in rows]}
 
 @router.post("", status_code=201)
-def create_api_key(payload: CreateApiKey, claims: dict = Depends(require_user_claims), db: Session = Depends(get_db)):
-    return _create_key(db, claims, payload)
+def create_api_key(payload: CreateApiKey, background_tasks: BackgroundTasks, claims: dict = Depends(require_user_claims), db: Session = Depends(get_db)):
+    result = _create_key(db, claims, payload)
+    _queue_workspace_webhook_event(background_tasks, str(claims["org_id"]), "api_key.created",
+        {"id": result["id"], "name": result["name"], "environment": result["environment"],
+         "key_prefix": result["key_prefix"], "scopes": result["scopes"], "expires_at": result["expires_at"]})
+    return result
 
 @router.post("/{key_id}/rotate", status_code=201)
-def rotate_api_key(key_id: str, claims: dict = Depends(require_user_claims), db: Session = Depends(get_db)):
+def rotate_api_key(key_id: str, background_tasks: BackgroundTasks, claims: dict = Depends(require_user_claims), db: Session = Depends(get_db)):
     _require_org_admin(claims)
     row = db.scalar(select(ApiKey).where(ApiKey.id == key_id, ApiKey.organization_id == str(claims["org_id"])))
     if not row:
@@ -261,11 +279,14 @@ def rotate_api_key(key_id: str, claims: dict = Depends(require_user_claims), db:
     except Exception:
         db.rollback()
         raise
+    _queue_workspace_webhook_event(background_tasks, str(claims["org_id"]), "api_key.rotated",
+        {"id": result["id"], "name": result["name"], "environment": result["environment"],
+         "key_prefix": result["key_prefix"], "scopes": result["scopes"], "expires_at": result["expires_at"]})
     return result
 
 
 @router.delete("/{key_id}", status_code=204)
-def revoke_api_key(key_id: str, claims: dict = Depends(require_user_claims), db: Session = Depends(get_db)):
+def revoke_api_key(key_id: str, background_tasks: BackgroundTasks, claims: dict = Depends(require_user_claims), db: Session = Depends(get_db)):
     _require_org_admin(claims)
     row = db.scalar(select(ApiKey).where(ApiKey.id == key_id, ApiKey.organization_id == str(claims["org_id"])))
     if not row:
@@ -274,6 +295,8 @@ def revoke_api_key(key_id: str, claims: dict = Depends(require_user_claims), db:
         row.status = "revoked"; row.revoked_at = datetime.now(timezone.utc)
         _audit(db, org_id=row.organization_id, actor=str(claims["sub"]), action="api_key.revoked", key_id=row.id, details={"environment": row.environment})
         db.commit()
+        _queue_workspace_webhook_event(background_tasks, str(claims["org_id"]), "api_key.revoked",
+            {"id": row.id, "name": row.name, "environment": row.environment, "key_prefix": row.key_prefix})
     return None
 
 @router.get("/audit/events")
