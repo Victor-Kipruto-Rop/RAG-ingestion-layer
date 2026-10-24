@@ -17,3 +17,5 @@ description: Use when working on organization-scoped endpoints, PesaGuard authen
 
 ## Required invariant
 A user in tenant A must not read or mutate tenant B's organization or evidence.
+
+undefined
