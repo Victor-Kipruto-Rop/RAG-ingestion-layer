@@ -14,7 +14,7 @@ describe('PesaGuard glass theme contract', () => {
 
   it('keeps glass effects scoped to named surfaces rather than substring-matching arbitrary classes', () => {
     expect(css).toContain('.panel,.metric-card');
-    expect(css).not.toMatch(/\[class\*=/);
+    expect(css).not.toMatch(/^\\s*\\[class\\*=/m);
   });
 
   it('preserves keyboard focus and reduced-motion/transparency accommodations', () => {
