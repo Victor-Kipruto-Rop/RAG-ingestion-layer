@@ -21,3 +21,9 @@ Record actual command exit codes, HTTP status, and service health. Redact creden
 undefined
 
 undefined
+
+## Mandatory quality gates
+- Determine exact health routes and their intended semantics from current code.
+- Run readiness and protected API tests; liveness alone is insufficient.
+- Test missing/invalid credentials and invalid input, not just the happy path.
+- Use local-only data and redact keys/payloads. Report external-provider connectivity as unverified unless independently tested.
