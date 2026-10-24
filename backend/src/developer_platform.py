@@ -15,13 +15,14 @@ import time
 import uuid
 from datetime import datetime, timezone, timedelta
 from email.message import EmailMessage
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlencode
 import ipaddress
 
 import httpx
 import jwt
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request, Response
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import select, func, update
 from sqlalchemy.orm import Session
@@ -248,8 +249,155 @@ def _active_challenge(db: Session, email: str, purpose: str):
 def auth_config():
     configured = bool(settings.developer_access_token_secret and settings.session_secret and settings.auth_email_delivery_configured)
     return {"signup_enabled": configured, "password_reset_enabled": configured, "password_min_length": 12,
-            "otp_ttl_seconds": settings.auth_otp_ttl_seconds, "social_auth_enabled": False,
-            "social_auth_note": "Developer OAuth must be configured separately from internal operator OAuth."}
+            "otp_ttl_seconds": settings.auth_otp_ttl_seconds,
+            "social_auth_enabled": bool(settings.google_oauth_client_id and settings.google_oauth_client_secret or settings.github_oauth_client_id and settings.github_oauth_client_secret),
+            "google_enabled": bool(settings.google_oauth_client_id and settings.google_oauth_client_secret),
+            "github_enabled": bool(settings.github_oauth_client_id and settings.github_oauth_client_secret)}
+
+
+@router.get("/platform/config")
+def developer_platform_config():
+    return {
+        "sandbox_base_url": settings.developer_public_base_url.rstrip("/"),
+        "production_base_url": settings.developer_production_base_url.rstrip("/"),
+        "api_docs": {"openapi": "/openapi.json", "swagger": "/docs", "redoc": "/redoc"},
+        "key_prefixes": {"sandbox": "pg_sandbox_", "production": "pg_live_"},
+        "environments": {"sandbox": settings.api_environment.lower() == "sandbox", "production": settings.api_environment.lower() == "production"},
+        "sdk_languages": ["cURL", "JavaScript", "Python", "PHP", "Go", "Java", "Ruby", "C#"],
+    }
+
+
+def _oauth_provider(provider: str):
+    if provider == "google":
+        return settings.google_oauth_client_id, settings.google_oauth_client_secret
+    if provider == "github":
+        return settings.github_oauth_client_id, settings.github_oauth_client_secret
+    raise HTTPException(404, "Unsupported OAuth provider")
+
+
+def _oauth_callback_url(request: Request, provider: str) -> str:
+    base = (settings.developer_oauth_callback_base_url or settings.developer_public_base_url or str(request.base_url)).rstrip("/")
+    return f"{base}/api/v1/developer/auth/oauth/{provider}/callback"
+
+
+@router.get("/auth/oauth/providers")
+def developer_oauth_providers():
+    return {"google": bool(settings.google_oauth_client_id and settings.google_oauth_client_secret),
+            "github": bool(settings.github_oauth_client_id and settings.github_oauth_client_secret)}
+
+
+@router.get("/auth/oauth/{provider}/start")
+def developer_oauth_start(provider: str, request: Request):
+    client_id, client_secret = _oauth_provider(provider)
+    if not client_id or not client_secret:
+        raise HTTPException(503, f"{provider.title()} sign-in is not configured")
+    state = secrets.token_urlsafe(32)
+    callback = _oauth_callback_url(request, provider)
+    if provider == "google":
+        params = {"client_id": client_id, "redirect_uri": callback, "response_type": "code",
+                  "scope": "openid email profile", "state": state, "prompt": "select_account"}
+        destination = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(params)
+    else:
+        params = {"client_id": client_id, "redirect_uri": callback, "response_type": "code",
+                  "scope": "read:user user:email", "state": state}
+        destination = "https://github.com/login/oauth/authorize?" + urlencode(params)
+    response = RedirectResponse(destination, status_code=303)
+    response.set_cookie(f"pg_developer_oauth_state_{provider}", state, max_age=600, httponly=True,
+                        secure=settings.session_cookie_secure, samesite="lax", path="/api/v1/developer/auth/oauth/")
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+async def _fetch_oauth_email(provider: str, code: str, callback: str) -> tuple[str, str]:
+    client_id, client_secret = _oauth_provider(provider)
+    async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
+        if provider == "google":
+            token_response = await client.post("https://oauth2.googleapis.com/token", data={
+                "code": code, "client_id": client_id, "client_secret": client_secret,
+                "redirect_uri": callback, "grant_type": "authorization_code"})
+            if token_response.status_code != 200:
+                raise HTTPException(401, "Google authorization could not be completed")
+            token = token_response.json().get("access_token")
+            if not token:
+                raise HTTPException(401, "Google did not return an access token")
+            profile_response = await client.get("https://openidconnect.googleapis.com/v1/userinfo",
+                headers={"Authorization": f"Bearer {token}"})
+            if profile_response.status_code != 200:
+                raise HTTPException(401, "Google identity could not be verified")
+            profile = profile_response.json()
+            if profile.get("email_verified") is not True or not isinstance(profile.get("email"), str):
+                raise HTTPException(403, "A verified Google email is required")
+            return profile["email"].strip().lower(), str(profile.get("name") or profile["email"].split("@")[0])[:120]
+        token_response = await client.post("https://github.com/login/oauth/access_token", data={
+            "code": code, "client_id": client_id, "client_secret": client_secret,
+            "redirect_uri": callback}, headers={"Accept": "application/json"})
+        if token_response.status_code != 200:
+            raise HTTPException(401, "GitHub authorization could not be completed")
+        token = token_response.json().get("access_token")
+        if not token:
+            raise HTTPException(401, "GitHub did not return an access token")
+        headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json",
+                   "X-GitHub-Api-Version": "2022-11-28"}
+        profile_response = await client.get("https://api.github.com/user", headers=headers)
+        emails_response = await client.get("https://api.github.com/user/emails", headers=headers)
+        if profile_response.status_code != 200 or emails_response.status_code != 200:
+            raise HTTPException(401, "GitHub identity could not be verified")
+        profile = profile_response.json()
+        emails = emails_response.json()
+        verified = next((item for item in emails if item.get("primary") and item.get("verified")), None)
+        if not verified or not isinstance(verified.get("email"), str):
+            raise HTTPException(403, "A primary verified GitHub email is required")
+        return verified["email"].strip().lower(), str(profile.get("name") or profile.get("login") or verified["email"].split("@")[0])[:120]
+
+
+async def _developer_oauth_callback(provider: str, request: Request, db: Session):
+    expected = request.cookies.get(f"pg_developer_oauth_state_{provider}", "")
+    supplied = request.query_params.get("state", "")
+    code = request.query_params.get("code", "")
+    if not expected or not supplied or not hmac.compare_digest(expected, supplied):
+        raise HTTPException(400, "OAuth state validation failed; restart sign-in")
+    if not code:
+        raise HTTPException(400, "Identity provider did not return an authorization code")
+    callback = _oauth_callback_url(request, provider)
+    try:
+        email, display_name = await _fetch_oauth_email(provider, code, callback)
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, "Identity provider is temporarily unavailable") from exc
+    account = db.scalar(select(DeveloperAccount).where(func.lower(DeveloperAccount.email) == email))
+    if account and account.disabled_at is not None:
+        raise HTTPException(403, "This developer account is disabled")
+    if account is None:
+        account = DeveloperAccount(email=email, display_name=display_name,
+            password_hash=hash_password(secrets.token_urlsafe(48)), email_verified_at=now_utc())
+        db.add(account)
+        db.flush()
+        workspace = DeveloperWorkspace(name=f"{display_name}'s workspace", owner_user_id=account.id,
+            verified=False, production_access_approved=False)
+        db.add(workspace)
+        db.flush()
+        db.add(DeveloperProject(workspace_id=workspace.id, name="Default project", slug="project-" + uuid.uuid4().hex[:10]))
+        db.commit()
+    else:
+        if account.email_verified_at is None:
+            account.email_verified_at = now_utc()
+            db.commit()
+        workspace = _workspace(db, account.id)
+    frontend = (settings.developer_frontend_url or settings.public_base_url or "/").rstrip("/")
+    result = RedirectResponse(frontend if frontend else "/", status_code=303)
+    _session_response(request, result, db, account, workspace, auth_method=provider)
+    result.delete_cookie(f"pg_developer_oauth_state_{provider}", path="/api/v1/developer/auth/oauth/",
+                         secure=settings.session_cookie_secure, httponly=True, samesite="lax")
+    return result
+
+
+@router.get("/auth/oauth/google/callback")
+async def developer_google_oauth_callback(request: Request, db: Session = Depends(get_db)):
+    return await _developer_oauth_callback("google", request, db)
+
+
+@router.get("/auth/oauth/github/callback")
+async def developer_github_oauth_callback(request: Request, db: Session = Depends(get_db)):
+    return await _developer_oauth_callback("github", request, db)
 
 
 @router.post("/auth/signup/request-otp")
