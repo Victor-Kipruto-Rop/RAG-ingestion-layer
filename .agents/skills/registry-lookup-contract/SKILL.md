@@ -19,3 +19,9 @@ description: Use when implementing or testing the organization registry lookup e
 Contract tests must prove the request shape, response validation, safe error mapping, sensitive-field filtering, and no verification-state mutation.
 
 undefined
+
+## Mandatory quality gates
+- Validate schema and provenance; reject missing, unexpected, or malformed values safely.
+- Test organization verification state before and after lookup and prove lookup is read-only.
+- Filter sensitive values from responses and logs according to the current contract.
+- Never infer official verification from a lookup, fixture, vendor outage, or no-match response.
