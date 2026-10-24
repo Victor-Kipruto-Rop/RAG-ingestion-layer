@@ -1,3 +1,15 @@
+## Developer platform and SDKs
+
+The public developer control plane is implemented in `frontend/src/DeveloperPlatformApp.jsx` and `backend/src/developer_platform.py`. It includes email OTP signup and recovery, Google/GitHub OAuth configuration, revocable sessions, tenant API-key management, production-access requests, signed webhooks, API Explorer, and multi-language integration examples.
+
+- [Developer platform operations guide](docs/developer-platform.md)
+- [Python SDK](sdks/python/README.md)
+- [JavaScript SDK](sdks/javascript/README.md)
+- Sandbox base URL: `https://sandbox-api.pesaguard.co.ke` with `pg_sandbox_` keys.
+- Production base URL: `https://api.pesaguard.co.ke` with `pg_live_` keys; production access requires verified workspace and operator approval.
+
+The SDKs are source-controlled and have CI test targets; they are not published to PyPI/npm yet. Provider OAuth, SMTP delivery, webhook encryption, PostgreSQL, Redis, and separate sandbox/production deployments must be configured and verified in the target environment before calling these flows operational in production.
+
 # PesaGuard Registry Datasource
 
 A standalone organization-data warehouse for PesaGuard. It imports authorized registry datasets, normalizes and searches organization records, preserves source provenance and change history, and exposes a protected internal API.
