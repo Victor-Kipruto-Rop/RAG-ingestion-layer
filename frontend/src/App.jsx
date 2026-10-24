@@ -10,6 +10,7 @@ import { api, setCsrfToken } from './api.js';
 import ApiKeysPanel from './ApiKeysPanel.jsx';
 import DataSourcesPanel from './DataSourcesPanel.jsx';
 import LoginPage from './LoginPage.jsx';
+import WidgetErrorBoundary from './WidgetErrorBoundary.jsx';
 
 const NAV = [
   { name: 'Overview', icon: LayoutDashboard, group: 'WORKSPACE' },
@@ -140,11 +141,11 @@ function QualityPanel({ summary }) {
   const valid = summary?.data_quality?.valid_percentage;
   const missing = summary?.data_quality?.missing_percentage;
   const duplicate = summary?.data_quality?.duplicate_percentage;
-  const hasQuality = [valid, missing, duplicate].some(v => v !== undefined && v !== null);
+  const hasQuality = [valid, missing].some(v => v !== undefined && v !== null);
   const rows = hasQuality ? [
     ['Valid records', Number(valid || 0), 'quality-valid'],
     ['Missing required fields', Number(missing || 0), 'quality-missing'],
-    ['Duplicate candidates', Number(duplicate || 0), 'quality-duplicate'],
+    ...(duplicate === undefined || duplicate === null ? [] : [['Duplicate candidates', Number(duplicate), 'quality-duplicate']]),
   ] : null;
   return <div className="quality-panel">
     <div className="card-heading"><div><h2>Data quality</h2><p>Registry validation overview</p></div><div className="heading-icon"><SlidersHorizontal size={17} /></div></div>
@@ -321,15 +322,15 @@ export default function App() {
             <MetricCard icon={AlertCircle} label="Failed jobs" value={summary ? number(metrics.failed_jobs) : '—'} note="May require investigation" accent="amber" />
           </div>
           <div className="dashboard-grid">
-            <section className="panel activity-panel"><div className="panel-heading"><div><h2>Ingestion activity</h2><p>Processed and inserted records from recent jobs</p></div><span className="panel-period"><Activity size={14} /> Recent activity</span></div>{summary?.connected_sources_count === 0 ? <div className="chart-empty"><Activity size={25} /><strong>Activity will appear here</strong><span>Connect the API and process ingestion jobs to populate this chart.</span><button className="button-link" onClick={() => setPage('Data Sources')}>Connect a source <ArrowRight size={15} /></button></div> : <ActivityChart jobs={jobs} />}</section>
-            <section className="panel"><QualityPanel summary={summary} /></section>
+            <section className="panel activity-panel"><div className="panel-heading"><div><h2>Ingestion activity</h2><p>Processed and inserted records from recent jobs</p></div><span className="panel-period"><Activity size={14} /> Recent activity</span></div>{summary?.connected_sources_count === 0 ? <div className="chart-empty"><Activity size={25} /><strong>Activity will appear here</strong><span>Connect the API and process ingestion jobs to populate this chart.</span><button className="button-link" onClick={() => setPage('Data Sources')}>Connect a source <ArrowRight size={15} /></button></div> : <WidgetErrorBoundary label="Ingestion activity"><ActivityChart jobs={jobs} /></WidgetErrorBoundary>}</section>
+            <section className="panel"><WidgetErrorBoundary label="Data quality"><QualityPanel summary={summary} /></WidgetErrorBoundary></section>
           </div>
-          <section className="panel jobs-panel"><div className="panel-heading"><div><h2>Recent ingestion jobs</h2><p>Latest persisted pipeline activity</p></div><button className="button-link" onClick={() => setPage('Ingestion Jobs')}>View all jobs <ArrowRight size={15} /></button></div><JobsTable jobs={jobs} compact search={search} /></section>
+          <section className="panel jobs-panel"><div className="panel-heading"><div><h2>Recent ingestion jobs</h2><p>Latest persisted pipeline activity</p></div><button className="button-link" onClick={() => setPage('Ingestion Jobs')}>View all jobs <ArrowRight size={15} /></button></div><WidgetErrorBoundary label="Recent ingestion jobs"><JobsTable jobs={jobs} compact search={search} /></WidgetErrorBoundary></section>
           <section className="infra-section"><div className="section-title"><div><h2>Infrastructure health</h2><p>Connection state reported by the current datasource session</p></div><span className="health-summary"><i /> {connected ? 'API reachable' : 'Awaiting connection'}</span></div><div className="service-grid"><ServiceStatus label="Registry API" detail="Datasource application" value={connected ? 'Connected' : 'Not connected'} connected={connected} icon={Server} /><ServiceStatus label="Database metrics" detail="Registry data access" value={summary ? 'Available' : 'Unknown'} connected={!!summary} icon={Database} /><ServiceStatus label="External verification" detail="KRA / BRS integrations" value="Not configured" connected={false} icon={ShieldCheck} /></div></section>
         </>}
 
         {page === 'Data Sources' && <DataSourcesPanel onUpload={() => setPage('Upload center')} />}
-        {page === 'Ingestion Jobs' && <section className="panel full-panel"><div className="panel-heading"><div><h2>Ingestion jobs</h2><p>{number(jobs.length)} jobs loaded from the database. An empty list means no persisted jobs were returned.</p></div><div className="heading-actions"><button className="button-secondary" onClick={refresh} disabled={loading}><RefreshCw size={15} className={loading ? 'spin' : ''} /> Refresh</button><button className="button-primary" onClick={navToUpload}><Upload size={15}/> Upload dataset</button></div></div><JobsTable jobs={jobs} search={search} /></section>}
+        {page === 'Ingestion Jobs' && <section className="panel full-panel"><div className="panel-heading"><div><h2>Ingestion jobs</h2><p>{number(jobs.length)} jobs loaded from the database. An empty list means no persisted jobs were returned.</p></div><div className="heading-actions"><button className="button-secondary" onClick={refresh} disabled={loading}><RefreshCw size={15} className={loading ? 'spin' : ''} /> Refresh</button><button className="button-primary" onClick={navToUpload}><Upload size={15}/> Upload dataset</button></div></div><WidgetErrorBoundary label="Ingestion jobs"><JobsTable jobs={jobs} search={search} /></WidgetErrorBoundary></section>}
         {page === 'Registry Records' && <section className="panel full-panel"><div className="panel-heading"><div><h2>Registry records</h2><p>Search imported organizations and inspect source information.</p></div><span className="record-count">{number(orgTotal)} records</span></div><OrganizationsTable rows={orgs} total={orgTotal} page={orgPage} pageSize={100} onPageChange={setOrgPage} /></section>}
         {page === 'API Keys' && <ApiKeysPanel />}
         {page === 'Upload center' && <section className="panel upload-panel"><div className="panel-heading"><div><h2>Upload dataset</h2><p>Submit registry files for asynchronous ingestion.</p></div><div className="heading-icon"><Upload size={18} /></div></div><form onSubmit={upload} className="upload-form"><label className="dropzone"><input type="file" accept=".csv,.pdf" onChange={e => setFile(e.target.files?.[0] || null)} /><span className="dropzone-icon"><Upload size={25} /></span><strong>{file ? file.name : 'Choose a dataset to upload'}</strong><span>{file ? `${(file.size / 1048576).toFixed(2)} MB · ready to submit` : 'Drag a file here or browse from your device'}</span><small>CSV and PDF · backend size limits apply</small></label><div className="upload-actions"><p>Only upload datasets you are authorized to process. PDF files may be stored even where structured extraction is not yet enabled.</p><button className="button-primary" disabled={!file || loading}>{loading ? 'Submitting…' : <><Upload size={16} /> Queue import</>}</button></div></form></section>}
