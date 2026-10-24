@@ -45,7 +45,7 @@ Configure `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, and `R2_B
 
 ## Production hardening
 
-The current implementation work is tracked in [the phased production hardening roadmap](docs/production-hardening-roadmap.md). Review [database migration safety](docs/database-migrations.md) before running Alembic against any existing database, and see [internal API security](docs/internal-api-security.md) and [large-file ingestion](docs/large-file-ingestion.md) for HMAC signing, replay protection, rate limits, cache behavior and metrics.
+The current implementation work is tracked in [the phased production hardening roadmap](docs/production-hardening-roadmap.md). The broader premium UX and production-readiness execution plan is [here](docs/premium-production-roadmap.md), with strict phase-by-phase agent instructions in [prompts/](prompts/README.md) and evidence reports in [docs/phase-reports/](docs/phase-reports/). Review [database migration safety](docs/database-migrations.md) before running Alembic against any existing database, and see [internal API security](docs/internal-api-security.md) and [large-file ingestion](docs/large-file-ingestion.md) for HMAC signing, replay protection, rate limits, cache behavior and metrics.
 
 - CSV ingestion uses a disk-backed spool, bounded database batches, and persisted row progress for safe retry/resume; PDF diagnostics remain bounded and manual-review-only.
 - Invalid row diagnostics are written to the restricted dead-letter table with sensitive row values masked.
