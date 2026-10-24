@@ -90,7 +90,7 @@ protection and mirroring have been verified.
 | `frontend-tests` | npm install from lockfile, unit tests, production build and npm audit | Automatic |
 | `sdk-tests` | Python and JavaScript SDK tests | Automatic |
 | `staging-blueprint-validation` | Validates the staging Render blueprint and safety assumptions | Automatic |
-| `docker-builds` | Builds API, worker and frontend container images without publishing them | Automatic; requires a runner that supports Docker-in-Docker/privileged service |
+| `docker-builds` | Builds API, worker and frontend container images without publishing them | Optional manual job; requires a runner that supports Docker-in-Docker/privileged service |
 | `cloudflare-pages-staging` | Builds frontend with staging API URL and deploys `frontend/dist` to Pages branch `staging` | Manual |
 | `staging-ingestion-preflight` | Non-destructive staging configuration preflight | Manual; requires staging database configuration |
 | `staging-ingestion-batch` | Processes a bounded batch of eligible staging jobs | Manual; requires staging DB and staging R2 |
