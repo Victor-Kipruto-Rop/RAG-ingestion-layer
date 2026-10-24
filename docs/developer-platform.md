@@ -26,6 +26,7 @@ Developer accounts are separate from internal operator accounts.
 - `POST /api/v1/developer/auth/password-reset/confirm` consumes the OTP, changes the password and revokes all sessions.
 - `GET /api/v1/developer/sessions` lists sessions; `DELETE /api/v1/developer/sessions/{session_id}` revokes a session.
 - `GET/PUT /api/v1/developer/profile` reads and updates the display/workspace name.
+- `GET /api/v1/developer/notifications` returns workspace-scoped persisted API-key, production-access and webhook-delivery activity.
 
 Cookies are HttpOnly, CSRF protected and Secure in production. Passwords must be at least 12 characters. OTPs are hashed with `AUTH_OTP_PEPPER`, expire, have a bounded attempt count and are delivered by configured SMTP. Set strong `DEVELOPER_ACCESS_TOKEN_SECRET`, `SESSION_SECRET`, and `AUTH_OTP_PEPPER` values (at least 32 random characters each), plus SMTP settings. Signup and reset stay disabled when required configuration is missing.
 
@@ -75,7 +76,7 @@ cd sdks/javascript
 node --test test/client.test.js
 ```
 
-Both source-controlled SDKs enforce key-prefix/environment matching, support registry search and exact lookup, and include webhook signature verification. The portal also provides starter examples for cURL, JavaScript, Python, PHP, Go, Java, Ruby and C#. These SDKs are not yet published to PyPI/npm.
+Both source-controlled SDKs enforce key-prefix/environment matching, support registry search and exact lookup, and include webhook signature verification. The portal's browser-based API Explorer is sandbox-only; production checks must run from a trusted backend. The portal also provides starter examples for cURL, JavaScript, Python, PHP, Go, Java, Ruby and C#. These SDKs are not yet published to PyPI/npm.
 
 ## Scope
 
