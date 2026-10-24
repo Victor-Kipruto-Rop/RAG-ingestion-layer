@@ -52,7 +52,7 @@ def _require_platform_config():
     if not settings.developer_access_token_secret or len(settings.developer_access_token_secret.encode()) < 32:
         raise HTTPException(503, "Developer account authentication is not configured")
     if not settings.auth_email_delivery_configured:
-        raise HTTPException(503, "Email verification and recovery are unavailable until SMTP and AUTH_OTP_PEPPER are configured")
+        raise HTTPException(503, "Email verification and recovery are unavailable until Resend (or SMTP fallback) and AUTH_OTP_PEPPER are configured")
 
 
 def _email(email: str) -> str:
@@ -67,6 +67,34 @@ def _otp_digest(email: str, purpose: str, code: str) -> str:
 
 
 def _send_email(to_email: str, subject: str, body: str):
+    """Send transactional OTP mail through Resend, with explicit SMTP fallback."""
+    if settings.resend_api_key and settings.resend_from_email:
+        try:
+            with httpx.Client(timeout=10.0, follow_redirects=False) as client:
+                result = client.post(
+                    "https://api.resend.com/emails",
+                    headers={
+                        "Authorization": f"Bearer {settings.resend_api_key}",
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                    },
+                    json={
+                        "from": settings.resend_from_email,
+                        "to": [to_email],
+                        "subject": subject,
+                        "text": body,
+                    },
+                )
+            if result.status_code < 200 or result.status_code >= 300:
+                # Do not include provider response bodies; they can contain user data.
+                raise RuntimeError(f"Resend email delivery failed with HTTP {result.status_code}")
+            return
+        except httpx.HTTPError as exc:
+            raise RuntimeError("Resend email delivery request failed") from exc
+
+    # Backwards-compatible explicit SMTP fallback for existing deployments.
+    if not settings.smtp_host or not settings.smtp_from_email:
+        raise RuntimeError("Email delivery is not configured")
     message = EmailMessage()
     message["Subject"] = subject
     message["From"] = settings.smtp_from_email
