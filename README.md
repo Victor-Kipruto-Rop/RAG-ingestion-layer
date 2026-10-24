@@ -1,3 +1,9 @@
+## GitLab CI/CD
+
+GitLab CI/CD configuration is in `.gitlab-ci.yml`. Setup, required CI/CD variables, staging deployment, runner requirements, and troubleshooting are documented in [GitLab CI/CD setup](docs/gitlab-ci-setup.md). Merge request and issue templates are in `.gitlab/`.
+
+The GitLab pipeline is staging-scoped: validation/test jobs can run on merge requests, while Cloudflare Pages deployment and ingestion operations are manual and restricted to `chore/production-ci-release-gates`. Importing this repository from GitHub does not guarantee ongoing synchronization; keep the GitLab branch updated before expecting its pipeline to run the latest changes. Never use production credentials in staging CI variables.
+
 ## Developer platform and SDKs
 
 The public developer control plane is implemented in `frontend/src/DeveloperPlatformApp.jsx` and `backend/src/developer_platform.py`. It includes email OTP signup and recovery, Google/GitHub OAuth configuration, revocable sessions, tenant API-key management, production-access requests, signed webhooks, API Explorer, and multi-language integration examples.
