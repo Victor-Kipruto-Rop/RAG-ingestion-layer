@@ -134,7 +134,7 @@ function ActivityChart({ jobs }) {
         })}
       </svg>
       <div className="chart-xlabels">{points.map(p => <span key={p.key}>{p.label}</span>)}</div>
-    </> : <div className="chart-empty"><Activity size={25} /><strong>Activity will appear here</strong><span>Connect the API and process ingestion jobs to populate this chart.</span></div>}
+    </> : <div className="chart-empty"><Activity size={25} /><strong>Activity will appear here</strong><span>Register or enable a source and process ingestion jobs to populate this chart.</span></div>}
   </div>;
 }
 
@@ -343,7 +343,7 @@ export default function App() {
             <MetricCard icon={AlertCircle} label="Failed jobs" value={summary ? number(metrics.failed_jobs) : '—'} note="May require investigation" accent="amber" />
           </div>
           <div className="dashboard-grid">
-            <section className="panel activity-panel"><div className="panel-heading"><div><h2>Ingestion activity</h2><p>Processed and inserted records from recent jobs</p></div><span className="panel-period"><Activity size={14} /> Recent activity</span></div>{summary?.connected_sources_count === 0 ? <div className="chart-empty"><Activity size={25} /><strong>Activity will appear here</strong><span>Connect the API and process ingestion jobs to populate this chart.</span><button className="button-link" onClick={() => setPage('Data Sources')}>Connect a source <ArrowRight size={15} /></button></div> : <WidgetErrorBoundary label="Ingestion activity"><ActivityChart jobs={jobs} /></WidgetErrorBoundary>}</section>
+            <section className="panel activity-panel"><div className="panel-heading"><div><h2>Ingestion activity</h2><p>Processed and inserted records from recent jobs</p></div><span className="panel-period"><Activity size={14} /> Recent activity</span></div>{summary?.enabled_sources_count === 0 ? <div className="chart-empty"><Activity size={25} /><strong>Activity will appear here</strong><span>Connect the API and process ingestion jobs to populate this chart.</span><button className="button-link" onClick={() => setPage('Data Sources')}>Connect a source <ArrowRight size={15} /></button></div> : <WidgetErrorBoundary label="Ingestion activity"><ActivityChart jobs={jobs} /></WidgetErrorBoundary>}</section>
             <section className="panel"><WidgetErrorBoundary label="Data quality"><QualityPanel summary={summary} /></WidgetErrorBoundary></section>
           </div>
           <section className="panel jobs-panel"><div className="panel-heading"><div><h2>Recent ingestion jobs</h2><p>Latest persisted pipeline activity</p></div><button className="button-link" onClick={() => setPage('Ingestion Jobs')}>View all jobs <ArrowRight size={15} /></button></div><WidgetErrorBoundary label="Recent ingestion jobs"><JobsTable jobs={jobs} compact search={search} /></WidgetErrorBoundary></section>
