@@ -155,7 +155,7 @@ docker-builds:
     - docker info
     - docker build -t pesaguard-datasource-api:ci ./backend
     - docker build -t pesaguard-datasource-worker:ci -f backend/Dockerfile.worker ./backend
-    - docker build --build-arg VITE_API_BASE_URL=https://staging-api.example.invalid -t pesaguard-datasource-frontend:ci ./frontend
+    - docker build --build-arg VITE_API_BASE_URL=https://staging-api.example.invalid -t pesaguard-datasource-frontend:ci .
   rules:
     - if: '$CI_COMMIT_BRANCH == "chore/production-ci-release-gates"'
 
