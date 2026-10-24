@@ -74,7 +74,7 @@ function Sidebar({ page, setPage, mobile, setMobile }) {
   </aside>;
 }
 
-function Topbar({ page, connected, onRefresh, loading, search, setSearch, setMobile, onSignOut }) {
+function Topbar({ page, connected, onRefresh, loading, search, setSearch, setMobile, onSignOut, previewMode, onTogglePreview, failedJobs, notificationsOpen, setNotificationsOpen }) {
   return <header className="topbar">
     <div className="topbar-left">
       <button className="icon-button mobile-menu" onClick={() => setMobile(true)} aria-label="Open menu"><Menu size={20} /></button>
@@ -82,8 +82,9 @@ function Topbar({ page, connected, onRefresh, loading, search, setSearch, setMob
     </div>
     <div className="topbar-tools">
       <label className="global-search"><Search size={16} /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search records, jobs, sources…" /><kbd>⌘ K</kbd></label>
-      <div className="environment"><span className={connected ? 'pulse-dot' : 'pulse-dot muted'} />{connected ? 'API connected' : 'Preview'}<ChevronDown size={14} /></div>
-      <button className="icon-button notification-button" aria-label="Notifications"><Bell size={18} /><i /></button>
+      <button className={`environment preview-toggle ${previewMode ? 'active' : ''}`} onClick={onTogglePreview} aria-pressed={previewMode} title="Preview mode disables dashboard write actions"><span className={connected ? 'pulse-dot' : 'pulse-dot muted'} />{previewMode ? 'Preview mode' : (connected ? 'API connected' : 'API offline')}</button>
+      <div className="notification-wrap"><button className="icon-button notification-button" aria-label={`Notifications, ${failedJobs.length} failed jobs`} aria-expanded={notificationsOpen} onClick={() => setNotificationsOpen(!notificationsOpen)}><Bell size={18} />{failedJobs.length > 0 && <i>{failedJobs.length > 99 ? '99+' : failedJobs.length}</i>}</button>
+      {notificationsOpen && <div className="notification-popover"><strong>Workspace alerts</strong>{failedJobs.length ? failedJobs.slice(0,5).map(job => <button key={job.id} className="notification-item" onClick={() => { setNotificationsOpen(false); }}><span className="notification-danger-dot"/><span><b>{job.file_name || 'Ingestion job failed'}</b><small>{job.error_summary || 'This job needs investigation.'}</small></span></button>) : <p>No failed ingestion jobs are currently reported.</p>}<button className="button-link" onClick={() => { setNotificationsOpen(false); }}>Close alerts</button></div>}</div>
       {connected && <button className="button-secondary" onClick={onSignOut}>Sign out</button>}
       <button className="icon-button refresh-button" onClick={onRefresh} aria-label="Refresh data" disabled={loading}><RefreshCw size={17} className={loading ? 'spin' : ''} /></button>
     </div>
@@ -198,6 +199,8 @@ export default function App() {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [mobile, setMobile] = useState(false);
+  const [previewMode, setPreviewMode] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
 
   const request = api;
   const refresh = useCallback(async () => {
@@ -308,13 +311,13 @@ export default function App() {
     {mobile && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setMobile(false)} />}
     <Sidebar page={page} setPage={setPage} mobile={mobile} setMobile={setMobile} />
     <main className="main-content">
-      <Topbar page={page} connected={connected} onRefresh={refresh} loading={loading} search={search} setSearch={setSearch} setMobile={setMobile} onSignOut={signOut} />
+      <Topbar page={page} connected={connected} onRefresh={refresh} loading={loading} search={search} setSearch={setSearch} setMobile={setMobile} onSignOut={signOut} previewMode={previewMode} onTogglePreview={() => setPreviewMode(v => !v)} failedJobs={jobs.filter(job => ['failed','error'].includes(String(job.status || '').toLowerCase()))} notificationsOpen={notificationsOpen} setNotificationsOpen={setNotificationsOpen} />
       <div className="page-content">
         {error && <div className="alert-banner error"><AlertTriangle size={17} /><span>{error}</span><button onClick={() => setError('')} aria-label="Dismiss error"><X size={16} /></button></div>}
         {message && <div className="alert-banner success"><CheckCircle2 size={17} /><span>{message}</span><button onClick={() => setMessage('')} aria-label="Dismiss message"><X size={16} /></button></div>}
 
         {page === 'Overview' && <>
-          <div className="page-heading"><div><div className="eyebrow-label">REGISTRY OPERATIONS</div><h1>Datasource overview</h1><p>Monitor registry ingestion, data quality, and warehouse activity from one workspace.</p></div><div className="heading-actions"><button className="button-secondary" onClick={() => setPage('Ingestion Jobs')}>View jobs</button><button className="button-primary" onClick={navToUpload}><Upload size={16} /> Upload dataset</button></div></div>
+          <div className="page-heading"><div><div className="eyebrow-label">REGISTRY OPERATIONS</div><h1>Datasource overview</h1><p>Monitor registry ingestion, data quality, and warehouse activity from one workspace.</p></div><div className="heading-actions"><button className="button-secondary" onClick={() => setPage('Ingestion Jobs')}>View jobs</button><button className="button-primary" onClick={navToUpload} disabled={previewMode} title={previewMode ? 'Disable Preview mode to upload data' : undefined}><Upload size={16} /> Upload dataset</button></div></div>
           <div className="metric-grid">
             <MetricCard icon={Building2} label="Indexed organizations" value={summary ? number(metrics.total_organizations) : '—'} note="Persisted registry records" />
             <MetricCard icon={Workflow} label="Ingestion jobs" value={summary ? number(metrics.total_jobs) : '—'} note="Tracked import runs" accent="mint" />
@@ -332,10 +335,10 @@ export default function App() {
         {page === 'Data Sources' && <DataSourcesPanel onUpload={() => setPage('Upload center')} />}
         {page === 'Ingestion Jobs' && <section className="panel full-panel"><div className="panel-heading"><div><h2>Ingestion jobs</h2><p>{number(jobs.length)} jobs loaded from the database. An empty list means no persisted jobs were returned.</p></div><div className="heading-actions"><button className="button-secondary" onClick={refresh} disabled={loading}><RefreshCw size={15} className={loading ? 'spin' : ''} /> Refresh</button><button className="button-primary" onClick={navToUpload}><Upload size={15}/> Upload dataset</button></div></div><WidgetErrorBoundary label="Ingestion jobs"><JobsTable jobs={jobs} search={search} /></WidgetErrorBoundary></section>}
         {page === 'Registry Records' && <section className="panel full-panel"><div className="panel-heading"><div><h2>Registry records</h2><p>Search imported organizations and inspect source information.</p></div><span className="record-count">{number(orgTotal)} records</span></div><OrganizationsTable rows={orgs} total={orgTotal} page={orgPage} pageSize={100} onPageChange={setOrgPage} /></section>}
-        {page === 'API Keys' && <ApiKeysPanel />}
+        {page === 'API Keys' && <ApiKeysPanel readOnly={previewMode} />}
         {page === 'Upload center' && <section className="panel upload-panel"><div className="panel-heading"><div><h2>Upload dataset</h2><p>Submit registry files for asynchronous ingestion.</p></div><div className="heading-icon"><Upload size={18} /></div></div><form onSubmit={upload} className="upload-form"><label className="dropzone"><input type="file" accept=".csv,.pdf" onChange={e => setFile(e.target.files?.[0] || null)} /><span className="dropzone-icon"><Upload size={25} /></span><strong>{file ? file.name : 'Choose a dataset to upload'}</strong><span>{file ? `${(file.size / 1048576).toFixed(2)} MB · ready to submit` : 'Drag a file here or browse from your device'}</span><small>CSV and PDF · backend size limits apply</small></label><div className="upload-actions"><p>Only upload datasets you are authorized to process. PDF files may be stored even where structured extraction is not yet enabled.</p><button className="button-primary" disabled={!file || loading}>{loading ? 'Submitting…' : <><Upload size={16} /> Queue import</>}</button></div></form></section>}
         {!knownPage && <section className="coming-soon panel"><div className="coming-icon"><Database size={25} /></div><span className="eyebrow-label">DATASOURCE MODULE</span><h2>{page}</h2><p>This navigation entry is reserved for the {page.toLowerCase()} workspace. Its production data view has not been connected yet, so this screen does not display fabricated records.</p><button className="button-secondary" onClick={() => setPage('Overview')}>Return to overview</button></section>}
-        <footer className="page-footer"><span>© PesaGuard Datasource</span><span><span className={connected ? 'footer-status-dot' : 'footer-status-dot muted'} />{connected ? 'Connected to datasource API' : 'Local preview · not connected'}</span></footer>
+        <footer className="page-footer"><span>© PesaGuard Datasource</span><span className="compliance-state"><ShieldCheck size={14}/>{typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'HTTPS transport' : 'HTTPS not verified'}<i/>RLS: not verified</span><span><span className={connected ? 'footer-status-dot' : 'footer-status-dot muted'} />{connected ? 'Connected to datasource API' : 'Local preview · not connected'}</span></footer>
       </div>
     </main>
   </div>;
