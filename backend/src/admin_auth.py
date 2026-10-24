@@ -91,9 +91,11 @@ def _sign(payload: str) -> str:
     return _b64(hmac.new(settings.session_secret.encode(), payload.encode(), hashlib.sha256).digest())
 
 
-def issue_session_token(now: float | None = None) -> tuple[str, dict]:
+def issue_session_token(now: float | None = None, *, email: str | None = None, auth_method: str = 'password') -> tuple[str, dict]:
     issued = int(now if now is not None else time.time())
-    claims = {'sub': 'admin', 'iat': issued, 'exp': issued + max(60, settings.session_ttl_seconds), 'csrf': secrets.token_urlsafe(24)}
+    claims = {'sub': 'admin', 'iat': issued, 'exp': issued + max(60, settings.session_ttl_seconds), 'csrf': secrets.token_urlsafe(24), 'auth_method': auth_method}
+    if email:
+        claims['email'] = email.strip().lower()
     payload = _b64(json.dumps(claims, separators=(',', ':')).encode())
     return f'{payload}.{_sign(payload)}', claims
 
@@ -178,11 +180,11 @@ def login(payload: LoginRequest, request: Request, response: Response):
     _check_login_rate(request.client.host if request.client else 'unknown')
     if not verify_password(payload.password, settings.admin_password_hash):
         raise HTTPException(401, 'Invalid credentials')
-    token, claims = issue_session_token()
+    token, claims = issue_session_token(email=email, auth_method=provider)
     response.set_cookie(COOKIE_NAME, token, max_age=max(60, settings.session_ttl_seconds), httponly=True,
                         secure=settings.session_cookie_secure, samesite='strict', path='/')
     response.headers['Cache-Control'] = 'no-store'
-    return {'authenticated': True, 'csrf_token': claims['csrf'], 'expires_at': claims['exp']}
+    return {'authenticated': True, 'csrf_token': claims['csrf'], 'expires_at': claims['exp'], 'auth_method': claims.get('auth_method', 'password'), 'identity_email': claims.get('email')}
 
 
 @router.get('/session')
@@ -228,7 +230,7 @@ def _oauth_state_cookie(provider: str) -> str:
     return f"pg_oauth_state_{provider}"
 
 
-def _issue_admin_oauth_session(response: Response, email: str) -> None:
+def _issue_admin_oauth_session(response: Response, email: str, provider: str) -> None:
     allowed = settings.admin_oauth_email_list
     if not allowed:
         raise HTTPException(503, 'Social sign-in is not enabled: configure ADMIN_OAUTH_ALLOWED_EMAILS')
@@ -335,7 +337,7 @@ async def _oauth_callback(provider: str, request: Request):
     if email not in settings.admin_oauth_email_list:
         raise HTTPException(403, 'This identity is not authorized for operator access')
     response = RedirectResponse(url='/', status_code=303)
-    _issue_admin_oauth_session(response, email)
+    _issue_admin_oauth_session(response, email, provider)
     response.delete_cookie(_oauth_state_cookie(provider), path='/api/v1/admin/oauth/')
     return response
 
