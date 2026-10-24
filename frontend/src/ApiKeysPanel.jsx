@@ -16,6 +16,7 @@ export default function ApiKeysPanel({readOnly=false, searchTerm=''}) {
   const [token, setToken] = useState('');
   const [connected, setConnected] = useState(false);
   const [items, setItems] = useState([]);
+  const [identity, setIdentity] = useState(null);
   const [events, setEvents] = useState([]);
   const [name, setName] = useState('My integration');
   const [environment, setEnvironment] = useState('sandbox');
@@ -34,11 +35,12 @@ export default function ApiKeysPanel({readOnly=false, searchTerm=''}) {
     if (!token.trim()) { setConnected(false); return; }
     setBusy(true); setError('');
     try {
-      const [keyResult, auditResult] = await Promise.all([
+      const [keyResult, auditResult, identityResult] = await Promise.all([
         request('/api/v1/keys', token),
         request('/api/v1/keys/audit/events?limit=50', token),
+        request('/api/v1/keys/me', token),
       ]);
-      setItems(keyResult.items || []); setEvents(auditResult.items || []);
+      setItems(keyResult.items || []); setEvents(auditResult.items || []); setIdentity(identityResult);
       setConnected(true);
     } catch (e) { setConnected(false); setError(friendlyError(e)); }
     finally { setBusy(false); }
@@ -80,6 +82,9 @@ export default function ApiKeysPanel({readOnly=false, searchTerm=''}) {
     {message && <div className="alert-banner success" role="status"><Check size={17} /><span>{message}</span><button onClick={() => setMessage('')} aria-label="Dismiss message">×</button></div>}
     {secret && <section className="panel generated-secret"><div className="secret-heading"><div className="heading-icon"><KeyRound size={18} /></div><div><h2>Copy your new API key</h2><p>This secret is shown only once. Store it in a secrets manager and never expose it in frontend code.</p></div></div><div className="secret-value"><code>{showSecret ? secret : '•'.repeat(36)}</code><button className="icon-button" onClick={() => setShowSecret(v => !v)} aria-label={showSecret ? 'Hide secret' : 'Show secret'}>{showSecret ? <EyeOff size={17} /> : <Eye size={17} />}</button><button className="button-secondary" onClick={copySecret}><Copy size={15} /> Copy</button></div><button className="button-link" onClick={() => { setSecret(''); setShowSecret(false); }}>I have stored the key</button></section>}
     {connected && <>
+      <div className="key-connected-bar"><span><ShieldCheck size={15}/> Identity verified · {identity?.organization_id || 'tenant scope'} · {identity?.user_id || 'authenticated user'}</span><button type="button" className="button-secondary" onClick={() => { setToken(''); setConnected(false); setItems([]); setEvents([]); setIdentity(null); setSecret(''); setShowSecret(false); setMessage(''); setError(''); }}><LogOut size={14}/> Disconnect</button></div>
+      <label className="key-search"><Search size={15}/><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Filter API keys and audit events…" aria-label="Filter API keys and audit events"/></label>
+      {!identity?.production_key_eligible && <div className="alert-banner info" role="status"><ShieldCheck size={16}/><span>Production key issuance is unavailable until the identity token includes a verified organization claim and an owner/admin role. Sandbox keys remain subject to the server's authorization checks.</span></div>}
       <div className="key-layout">
         <section className="panel key-create-panel"><div className="panel-heading"><div><h2>Generate an API key</h2><p>Secrets are hashed at rest and shown once.</p></div><div className="heading-icon"><Plus size={18} /></div></div>
           <form onSubmit={create} className="key-create-form">
@@ -88,7 +93,7 @@ export default function ApiKeysPanel({readOnly=false, searchTerm=''}) {
             <label className="key-field-label">Expiry<select value={expires} onChange={e => setExpires(e.target.value)}><option value="30">30 days</option><option value="90">90 days</option><option value="180">180 days</option><option value="365">365 days</option></select></label>
             <fieldset className="scope-field"><legend>Permissions</legend>{[['registry:read','Read registry records'],['sources:read','Read data sources']].map(([scope,label])=><label key={scope}><input type="checkbox" checked={scopes.includes(scope)} onChange={e=>setScopes(old=>e.target.checked?[...old,scope]:old.filter(x=>x!==scope))}/><span>{label}</span></label>)}</fieldset>
             {environment === 'production' && <div className="production-warning"><AlertTriangle size={16} />Production key creation requires an owner/admin role and a verified organization.</div>}
-            <button className="button-primary" disabled={busy || readOnly || !name.trim() || !scopes.length}><KeyRound size={15} /> {busy ? 'Working…' : `Generate ${environment === 'sandbox' ? 'sandbox' : 'production'} key`}</button>
+            <button className="button-primary" disabled={busy || readOnly || !name.trim() || !scopes.length || (environment === 'production' && !identity?.production_key_eligible)}><KeyRound size={15} /> {busy ? 'Working…' : `Generate ${environment === 'sandbox' ? 'sandbox' : 'production'} key`}</button>
           </form>
         </section>
         <section className="panel key-list-panel"><div className="panel-heading"><div><h2>Your API keys</h2><p>{items.length} key record{items.length === 1 ? '' : 's'} for this organization</p></div><span className="record-count">{items.filter(x=>x.status==='active').length} active</span></div>
