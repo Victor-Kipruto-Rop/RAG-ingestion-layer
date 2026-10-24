@@ -18,6 +18,8 @@ def client(monkeypatch):
     monkeypatch.setattr(settings, 'session_secret', 's' * 48)
     monkeypatch.setattr(settings, 'session_cookie_secure', False)
     monkeypatch.setattr(settings, 'admin_login_max_attempts_per_minute', 5)
+    monkeypatch.setattr(settings, 'redis_url', '')
+    monkeypatch.setattr(settings, 'app_env', 'test')
     admin_auth._attempts.clear()
     return TestClient(app)
 
