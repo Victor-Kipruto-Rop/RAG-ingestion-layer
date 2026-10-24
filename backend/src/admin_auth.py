@@ -402,11 +402,12 @@ def ingestion_activity(request: Request, limit: int = 50, db: Session = Depends(
     limit = max(1, min(limit, 200))
     rows = db.scalars(select(IngestionJob).order_by(IngestionJob.created_at.desc()).limit(limit)).all()
     events = []
-    volumes = [max(0, int(j.records_processed or 0)) for j in reversed(rows)]
-    for i, job in enumerate(rows):
-        # Only flag a volumetric anomaly when enough preceding observations exist.
-        history = volumes[max(0, len(volumes) - i - 8):len(volumes) - i - 1]
-        volume = max(0, int(job.records_processed or 0))
+    chronological = list(reversed(rows))
+    volumes = [max(0, int(j.records_processed or 0)) for j in chronological]
+    for i, job in enumerate(chronological):
+        # Compare this job only with preceding observations; flag only with at least five baselines.
+        history = volumes[max(0, i - 7):i]
+        volume = volumes[i]
         anomaly = None
         if len(history) >= 5:
             mean = sum(history) / len(history)
@@ -417,6 +418,7 @@ def ingestion_activity(request: Request, limit: int = 50, db: Session = Depends(
         events.append({'job_id':job.id,'created_at':job.created_at.isoformat() if job.created_at else None,
             'status':job.status,'records_processed':volume,'records_inserted':int(job.records_inserted or 0),
             'anomaly':anomaly})
+    events.reverse()
     return {'items':events,'count':len(events),'generated_at':__import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat(),
             'source':'database'}
 
