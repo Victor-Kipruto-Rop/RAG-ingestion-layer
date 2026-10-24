@@ -8,6 +8,8 @@ import {
 } from 'lucide-react';
 import { api, setCsrfToken } from './api.js';
 import ApiKeysPanel from './ApiKeysPanel.jsx';
+import DataSourcesPanel from './DataSourcesPanel.jsx';
+import LoginPage from './LoginPage.jsx';
 
 const NAV = [
   { name: 'Overview', icon: LayoutDashboard, group: 'WORKSPACE' },
@@ -58,7 +60,7 @@ function Sidebar({ page, setPage, mobile, setMobile }) {
           {showGroup && <div className="nav-group-label">{item.group}</div>}
           <button className={`nav-item ${page === item.name ? 'active' : ''}`} onClick={() => { setPage(item.name); setMobile(false); }}>
             <item.icon size={18} strokeWidth={1.8} /><span>{item.name}</span>
-            {item.name === 'Ingestion Jobs' && <span className="nav-count">Live</span>}
+            
           </button>
         </React.Fragment>;
       })}
@@ -180,6 +182,7 @@ export default function App() {
   const [authed, setAuthed] = useState(false);
   const [password, setPassword] = useState('');
   const [checking, setChecking] = useState(true);
+  const [signingIn, setSigningIn] = useState(false);
   const [connected, setConnected] = useState(false);
   const [summary, setSummary] = useState(null);
   const [orgs, setOrgs] = useState([]);
@@ -199,9 +202,9 @@ export default function App() {
     setLoading(true); setError('');
     try {
       const [metricsResponse, orgResponse, jobsResponse] = await Promise.all([
-        request('/api/v1/metrics/summary'),
-        request(`/api/v1/organizations?page=${orgPage}&page_size=100${search ? `&q=${encodeURIComponent(search)}` : ''}`),
-        request('/api/v1/ingestion/jobs?page_size=50')
+        request('/api/v1/admin/metrics/summary'),
+        request(`/api/v1/admin/organizations?page=${orgPage}&page_size=100${search ? `&q=${encodeURIComponent(search)}` : ''}`),
+        request('/api/v1/admin/ingestion/jobs?page_size=50')
       ]);
       const metrics = await metricsResponse.json();
       const orgResult = await orgResponse.json();
@@ -224,12 +227,13 @@ export default function App() {
 
   const signIn = async (event) => {
     event.preventDefault();
-    setError('');
+    setError(''); setSigningIn(true);
     try {
       const response = await api('/api/v1/admin/login', { method: 'POST', body: JSON.stringify({ password }) });
       setCsrfToken((await response.json()).csrf_token);
       setPassword(''); setAuthed(true);
     } catch (e) { setError(e.message || 'Sign-in failed.'); }
+    finally { setSigningIn(false); }
   };
   const signOut = async () => {
     try { await api('/api/v1/admin/logout', { method: 'POST' }); } catch { /* cookie is cleared server-side or expires */ }
@@ -242,7 +246,7 @@ export default function App() {
     try {
       let result;
       if (file.size > 50 * 1024 * 1024) {
-        const presignResponse = await request('/api/v1/ingestion/uploads/presign', { method: 'POST', body: JSON.stringify({ file_name: file.name, size_bytes: file.size }) });
+        const presignResponse = await request('/api/v1/admin/ingestion/uploads/presign', { method: 'POST', body: JSON.stringify({ file_name: file.name, size_bytes: file.size }) });
         const ticket = await presignResponse.json();
         setMessage('Uploading directly to private object storage…');
         const putStatus = await new Promise((resolve, reject) => {
@@ -251,11 +255,11 @@ export default function App() {
           xhr.onload = () => resolve(xhr.status); xhr.onerror = () => reject(new Error('Direct storage upload failed. Check bucket CORS and retry before the upload URL expires.')); xhr.send(file);
         });
         if (putStatus < 200 || putStatus >= 300) throw new Error('Direct storage upload failed. Check bucket CORS and retry before the upload URL expires.');
-        const completeResponse = await request(`/api/v1/ingestion/uploads/${ticket.job_id}/complete`, { method: 'POST' });
+        const completeResponse = await request(`/api/v1/admin/ingestion/uploads/${ticket.job_id}/complete`, { method: 'POST' });
         result = await completeResponse.json();
       } else {
         const form = new FormData(); form.append('file', file);
-        const response = await request('/api/v1/ingestion/uploads', { method: 'POST', body: form });
+        const response = await request('/api/v1/admin/ingestion/uploads', { method: 'POST', body: form });
         result = await response.json();
       }
       setMessage(`Queued job ${String(result.job_id || '').slice(0, 8)}. Processing runs asynchronously; refresh the jobs list for the outcome.`);
@@ -266,7 +270,9 @@ export default function App() {
 
   const metrics = summary || {};
   const navToUpload = () => setPage('Upload center');
-  const knownPage = ['Overview', 'Registry Records', 'Ingestion Jobs', 'Upload center', 'API Keys'].includes(page);
+  const knownPage = ['Overview', 'Data Sources', 'Registry Records', 'Ingestion Jobs', 'Upload center', 'API Keys'].includes(page);
+
+  if (!authed && !checking) return <LoginPage password={password} setPassword={setPassword} onSubmit={signIn} error={error} busy={signingIn} />;
 
   return <div className="app-shell">
     {mobile && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setMobile(false)} />}
@@ -274,7 +280,6 @@ export default function App() {
     <main className="main-content">
       <Topbar page={page} connected={connected} onRefresh={refresh} loading={loading} search={search} setSearch={setSearch} setMobile={setMobile} onSignOut={signOut} />
       <div className="page-content">
-        {!authed && !checking && <section className="connect-banner"><div className="connect-banner-icon"><ShieldCheck size={20} /></div><div className="connect-copy"><strong>Sign in to the datasource</strong><p>Use the dashboard admin password. The browser keeps only an HttpOnly session cookie and never holds the service API key.</p></div><form onSubmit={signIn}><input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Admin password" autoComplete="current-password" /><button className="button-primary">Sign in <ArrowRight size={15} /></button></form></section>}
         {error && <div className="alert-banner error"><AlertTriangle size={17} /><span>{error}</span><button onClick={() => setError('')} aria-label="Dismiss error"><X size={16} /></button></div>}
         {message && <div className="alert-banner success"><CheckCircle2 size={17} /><span>{message}</span><button onClick={() => setMessage('')} aria-label="Dismiss message"><X size={16} /></button></div>}
 
@@ -294,7 +299,8 @@ export default function App() {
           <section className="infra-section"><div className="section-title"><div><h2>Infrastructure health</h2><p>Connection state reported by the current datasource session</p></div><span className="health-summary"><i /> {connected ? 'API reachable' : 'Awaiting connection'}</span></div><div className="service-grid"><ServiceStatus label="Registry API" detail="Datasource application" value={connected ? 'Connected' : 'Not connected'} connected={connected} icon={Server} /><ServiceStatus label="Database metrics" detail="Registry data access" value={summary ? 'Available' : 'Unknown'} connected={!!summary} icon={Database} /><ServiceStatus label="External verification" detail="KRA / BRS integrations" value="Not configured" connected={false} icon={ShieldCheck} /></div></section>
         </>}
 
-        {page === 'Ingestion Jobs' && <section className="panel full-panel"><div className="panel-heading"><div><h2>Ingestion jobs</h2><p>Inspect persisted import outcomes and processing counts.</p></div><button className="button-secondary" onClick={refresh} disabled={loading}><RefreshCw size={15} className={loading ? 'spin' : ''} /> Refresh</button></div><JobsTable jobs={jobs} search={search} /></section>}
+        {page === 'Data Sources' && <DataSourcesPanel onUpload={() => setPage('Upload center')} />}
+        {page === 'Ingestion Jobs' && <section className="panel full-panel"><div className="panel-heading"><div><h2>Ingestion jobs</h2><p>{number(jobs.length)} jobs loaded from the database. An empty list means no persisted jobs were returned.</p></div><div className="heading-actions"><button className="button-secondary" onClick={refresh} disabled={loading}><RefreshCw size={15} className={loading ? 'spin' : ''} /> Refresh</button><button className="button-primary" onClick={navToUpload}><Upload size={15}/> Upload dataset</button></div></div><JobsTable jobs={jobs} search={search} /></section>}
         {page === 'Registry Records' && <section className="panel full-panel"><div className="panel-heading"><div><h2>Registry records</h2><p>Search imported organizations and inspect source information.</p></div><span className="record-count">{number(orgTotal)} records</span></div><OrganizationsTable rows={orgs} total={orgTotal} page={orgPage} pageSize={100} onPageChange={setOrgPage} /></section>}
         {page === 'API Keys' && <ApiKeysPanel />}
         {page === 'Upload center' && <section className="panel upload-panel"><div className="panel-heading"><div><h2>Upload dataset</h2><p>Submit registry files for asynchronous ingestion.</p></div><div className="heading-icon"><Upload size={18} /></div></div><form onSubmit={upload} className="upload-form"><label className="dropzone"><input type="file" accept=".csv,.pdf" onChange={e => setFile(e.target.files?.[0] || null)} /><span className="dropzone-icon"><Upload size={25} /></span><strong>{file ? file.name : 'Choose a dataset to upload'}</strong><span>{file ? `${(file.size / 1048576).toFixed(2)} MB · ready to submit` : 'Drag a file here or browse from your device'}</span><small>CSV and PDF · backend size limits apply</small></label><div className="upload-actions"><p>Only upload datasets you are authorized to process. PDF files may be stored even where structured extraction is not yet enabled.</p><button className="button-primary" disabled={!file || loading}>{loading ? 'Submitting…' : <><Upload size={16} /> Queue import</>}</button></div></form></section>}
