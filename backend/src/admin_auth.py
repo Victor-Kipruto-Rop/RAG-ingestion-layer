@@ -442,7 +442,8 @@ class NotificationReadRequest(BaseModel):
 
 @router.get('/profile')
 def get_operator_profile(db: Session = Depends(get_db), claims: dict = Depends(require_admin)):
-    profile = db.get(AdminProfile, 'admin')
+    profile_id = hashlib.sha256(claims['email'].lower().encode()).hexdigest()[:36] if claims.get('email') else 'admin'
+    profile = db.get(AdminProfile, profile_id)
     return {
         'display_name': profile.display_name if profile else 'Datasource Operator',
         'contact_email': profile.contact_email if profile else None,
@@ -458,9 +459,10 @@ def update_operator_profile(payload: ProfileUpdateRequest, db: Session = Depends
     email = payload.contact_email.strip().lower() if payload.contact_email else None
     if email and ('@' not in email or email.startswith('@') or email.endswith('@')):
         raise HTTPException(422, 'Enter a valid contact email address')
-    profile = db.get(AdminProfile, 'admin')
+    profile_id = hashlib.sha256(claims['email'].lower().encode()).hexdigest()[:36] if claims.get('email') else 'admin'
+    profile = db.get(AdminProfile, profile_id)
     if profile is None:
-        profile = AdminProfile(id='admin', display_name=payload.display_name.strip(), contact_email=email)
+        profile = AdminProfile(id=profile_id, display_name=payload.display_name.strip(), contact_email=email)
         db.add(profile)
     else:
         profile.display_name = payload.display_name.strip()
@@ -657,8 +659,12 @@ def signup_request_otp(payload: SignupRequest, request: Request):
     with SessionLocal() as db:
         if db.scalar(select(AdminAccount.id).where(func.lower(AdminAccount.email) == email)):
             return {'accepted': True, 'message': 'If this address is eligible, a verification code will be sent.'}
-        _create_auth_challenge(db, email=email, purpose='signup', password_hash=hash_password(payload.password),
-                               display_name=payload.display_name.strip())
+        try:
+            _create_auth_challenge(db, email=email, purpose='signup', password_hash=hash_password(payload.password),
+                                   display_name=payload.display_name.strip())
+        except HTTPException as exc:
+            if exc.status_code != 503:
+                raise
     return {'accepted': True, 'message': 'If this address is eligible, a verification code will be sent.'}
 
 
@@ -694,7 +700,11 @@ def password_reset_request_otp(payload: PasswordResetRequest, request: Request):
         account = db.scalar(select(AdminAccount).where(func.lower(AdminAccount.email) == email,
             AdminAccount.disabled_at.is_(None)))
         if account:
-            _create_auth_challenge(db, email=email, purpose='password_reset')
+            try:
+                _create_auth_challenge(db, email=email, purpose='password_reset')
+            except HTTPException as exc:
+                if exc.status_code != 503:
+                    raise
     return {'accepted': True, 'message': 'If an active account exists, a reset code will be sent.'}
 
 
