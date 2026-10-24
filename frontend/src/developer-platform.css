@@ -33,3 +33,9 @@
 .dp-sdk-package-links a:hover{border-color:rgba(53,224,155,.45);background:rgba(53,224,155,.06)}
 .dp-sdk-package-links a strong{font-size:13px}.dp-sdk-package-links a code,.dp-sdk-package-links a span{grid-column:1/-1;overflow-wrap:anywhere}.dp-sdk-package-links a code{font-size:11px;color:#8ce9b9}.dp-sdk-package-links a span{font-size:11px;line-height:1.6;color:#9ab9aa}
 @media(max-width:620px){.dp-sdk-package-links{grid-template-columns:1fr}}
+
+.dp-notification-list{display:grid;gap:0}
+.dp-notification-item{display:grid;grid-template-columns:36px minmax(0,1fr) auto;gap:12px;align-items:start;padding:16px 0;border-top:1px solid rgba(145,220,183,.1)}
+.dp-notification-mark{width:34px;height:34px;display:grid;place-items:center;border:1px solid rgba(53,224,155,.22);border-radius:11px;background:rgba(53,224,155,.07);color:#7deab3}
+.dp-notification-item strong{font-size:13px;color:#e8f8f0}.dp-notification-item p{font-size:12px;line-height:1.6;color:#a0bcae;margin:5px 0}.dp-notification-item small{font-size:10px;color:#729a85}.dp-notification-item>code{font-size:10px;color:#82e9b4;overflow-wrap:anywhere;text-align:right;max-width:190px}
+@media(max-width:640px){.dp-notification-item{grid-template-columns:34px minmax(0,1fr)}.dp-notification-item>code{grid-column:2;text-align:left;max-width:100%}}
