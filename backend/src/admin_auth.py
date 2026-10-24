@@ -27,7 +27,7 @@ from .models import RegistrySource, IngestionJob, AuditLog
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from fastapi import Depends
+from fastapi import Depends, UploadFile
 
 COOKIE_NAME = 'pg_admin_session'
 SAFE_METHODS = {'GET', 'HEAD', 'OPTIONS'}
@@ -277,3 +277,42 @@ def dashboard_ingestion_jobs(request: Request, page: int = 1, page_size: int = 5
         'created_at':j.created_at.isoformat() if j.created_at else None,'started_at':j.started_at.isoformat() if j.started_at else None,
         'completed_at':j.completed_at.isoformat() if j.completed_at else None,'heartbeat_at':j.heartbeat_at.isoformat() if j.heartbeat_at else None} for j in rows],
         'total':total,'page':page,'page_size':page_size}
+
+
+@router.get('/metrics/summary')
+def dashboard_summary(request: Request, db: Session = Depends(get_db)):
+    require_admin(request)
+    total_orgs = db.scalar(select(func.count()).select_from(Organization)) or 0
+    total_jobs = db.scalar(select(func.count()).select_from(IngestionJob)) or 0
+    completed = db.scalar(select(func.count()).select_from(IngestionJob).where(IngestionJob.status.in_(['COMPLETED','COMPLETED_WITH_ERRORS']))) or 0
+    failed = db.scalar(select(func.count()).select_from(IngestionJob).where(IngestionJob.status.in_(['FAILED','ERROR']))) or 0
+    return {'total_organizations':total_orgs,'total_jobs':total_jobs,'completed_jobs':completed,'failed_jobs':failed,
+            'data_quality':None,'source':'database','generated_at':__import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat()}
+
+
+@router.get('/organizations')
+def dashboard_organizations(request: Request, page: int = 1, page_size: int = 25, q: str | None = None,
+                            db: Session = Depends(get_db)):
+    require_admin(request)
+    page=max(1,page); page_size=max(1,min(page_size,100))
+    stmt=select(Organization)
+    if q and q.strip():
+        from sqlalchemy import or_
+        pattern='%'+q.strip().replace('%','\\%').replace('_','\\_')+'%'
+        stmt=stmt.where(or_(Organization.legal_name.ilike(pattern,escape='\\\\'),
+                            Organization.registration_number.ilike(pattern,escape='\\\\')))
+    total=db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    rows=db.scalars(stmt.order_by(Organization.legal_name).offset((page-1)*page_size).limit(page_size)).all()
+    return {'items':[{'id':o.id,'legal_name':o.legal_name,'registration_number':o.registration_number,
+        'tax_pin':('•'*(max(0,len(o.tax_pin)-2))+o.tax_pin[-2:]) if o.tax_pin else None,
+        'status':o.status,'data_quality_status':o.data_quality_status,'source_file':o.source_file,
+        'created_at':o.created_at.isoformat() if o.created_at else None,'updated_at':o.updated_at.isoformat() if o.updated_at else None} for o in rows],
+        'total':total,'page':page,'page_size':page_size}
+
+
+@router.post('/ingestion/uploads', status_code=202)
+def dashboard_upload(request: Request, file: UploadFile, db: Session = Depends(get_db)):
+    require_admin(request)
+    from .api import upload as upload_impl
+    return upload_impl(request, file, db, request.headers.get('X-Correlation-ID'),
+                       request.headers.get('Idempotency-Key'), request.headers.get('X-Registry-Source'))
