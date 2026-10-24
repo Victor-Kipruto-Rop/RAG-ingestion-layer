@@ -26,7 +26,7 @@ describe('API key management UI', () => {
     render(<ApiKeysPanel />);
     fireEvent.change(screen.getByPlaceholderText('Paste short-lived access token'), {target:{value:'test-access-token'}});
     fireEvent.click(screen.getByRole('button', {name:'Connect PesaGuard account'}));
-    expect(await screen.findByText(/Identity verified/)).toBeTruthy();
+    expect(await screen.findByText(/PesaGuard access token accepted/g)).toBeTruthy();
     expect(await screen.findByText('Sandbox integration')).toBeTruthy();
     expect(apiMock).toHaveBeenCalledWith('/api/v1/keys/me', expect.objectContaining({headers:expect.objectContaining({Authorization:'Bearer test-access-token'})}));
   });
