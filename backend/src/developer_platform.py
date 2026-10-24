@@ -276,7 +276,7 @@ def _active_challenge(db: Session, email: str, purpose: str):
 
 @router.get("/auth/config")
 def auth_config():
-    configured = bool(settings.developer_access_token_secret and settings.session_secret and settings.auth_email_delivery_configured)
+    configured = bool(len(settings.developer_access_token_secret.encode()) >= 32 and len(settings.session_secret.encode()) >= 32 and settings.auth_email_delivery_configured)
     return {"signup_enabled": configured, "password_reset_enabled": configured, "password_min_length": 12,
             "otp_ttl_seconds": settings.auth_otp_ttl_seconds,
             "social_auth_enabled": bool(settings.google_oauth_client_id and settings.google_oauth_client_secret or settings.github_oauth_client_id and settings.github_oauth_client_secret),
