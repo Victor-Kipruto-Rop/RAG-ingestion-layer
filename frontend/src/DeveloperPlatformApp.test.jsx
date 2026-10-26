@@ -30,6 +30,11 @@ describe('DeveloperPlatformApp public landing', () => {
     expect(screen.getByText(/strict environment separation/i)).toBeTruthy();
     expect(container.querySelector('.dp-wind-scene')).toBeTruthy();
     expect(screen.getByText(/signed webhooks/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /start building/i }));
+    const configWarning = await screen.findByRole('alert');
+    expect(configWarning.className).toContain('warning');
+    expect(configWarning.textContent).toContain('Registration is disabled');
+    expect(screen.getByRole('button', { name: /dismiss message/i })).toBeTruthy();
   });
 });
 
@@ -74,6 +79,10 @@ describe('DeveloperPlatformApp account onboarding', () => {
     const request = requests.find(r => r.url.includes('/auth/signup/request-otp'));
     expect(JSON.parse(request.body)).toMatchObject({ email: 'developer@example.com', display_name: 'Test Developer', workspace_name: 'Test Workspace' });
     expect(screen.getByLabelText(/6-digit email code/i)).toBeTruthy();
+    const successToast = screen.getByRole('status');
+    expect(successToast.textContent).toContain('Success');
+    expect(successToast.querySelector('time')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /dismiss message/i })).toBeTruthy();
   });
 });
 
