@@ -90,7 +90,9 @@ frontend-tests:
     - cd frontend
     - npm ci --no-audit --no-fund
     - node --check scripts/deploy-pages-staging.mjs
+    - node --check scripts/deploy-pages-production.mjs
     - test -f wrangler.jsonc
+    - test -f wrangler.production.jsonc
     - test -f public/_redirects
     - test -f public/_headers
     - npm test
