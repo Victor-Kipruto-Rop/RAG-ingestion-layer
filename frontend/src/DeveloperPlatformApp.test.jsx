@@ -147,6 +147,12 @@ describe('DeveloperPlatformApp end-to-end authentication contract', () => {
           ? new Response(JSON.stringify({ detail: 'Developer session is missing or expired' }), { status: 401 })
           : new Response(JSON.stringify(authenticatedSession), { status: 200 });
       }
+      if (url.includes('/api/v1/developer/auth/signup/request-otp')) {
+        return new Response(JSON.stringify({ accepted: true, message: 'If registration is available, a verification code will arrive shortly.' }), { status: 202 });
+      }
+      if (url.includes('/api/v1/developer/auth/signup/verify-otp')) {
+        return new Response(JSON.stringify(authenticatedSession), { status: 200 });
+      }
       if (url.includes('/api/v1/developer/auth/password-reset/request-otp')) {
         return new Response(JSON.stringify({ accepted: true, message: 'If an active account exists, a reset code will arrive shortly.' }), { status: 202 });
       }
@@ -207,3 +213,30 @@ describe('DeveloperPlatformApp end-to-end authentication contract', () => {
     expect(JSON.parse(loginRequest.body)).toEqual({ email: 'developer@example.com', password: 'A-new-unique-password-42' });
   });
 });
+
+
+  it('completes developer signup after a valid email OTP and enters the workspace', async () => {
+    const requests = [];
+    installAuthApiMock(requests);
+    render(<DeveloperPlatformApp />);
+    fireEvent.click(await screen.findByRole('button', { name: /start building/i }));
+    fireEvent.change(screen.getByLabelText(/full name/i), { target: { value: 'Test Developer' } });
+    fireEvent.change(screen.getByLabelText(/workspace name/i), { target: { value: 'Test Workspace' } });
+    fireEvent.change(screen.getByLabelText(/email address/i), { target: { value: 'developer@example.com' } });
+    fireEvent.change(screen.getByLabelText(/^password$/i), { target: { value: 'A-long-unique-password-42' } });
+    fireEvent.change(screen.getByLabelText(/confirm password/i), { target: { value: 'A-long-unique-password-42' } });
+    fireEvent.click(screen.getByRole('button', { name: /send verification code/i }));
+    expect(await screen.findByRole('heading', { name: /verify your email/i })).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText(/6-digit email code/i), { target: { value: '123456' } });
+    fireEvent.click(screen.getByRole('button', { name: /verify email and create account/i }));
+    expect(await screen.findByRole('heading', { name: /your integration layer/i })).toBeTruthy();
+
+    const signup = requests.find(r => r.url.includes('/auth/signup/request-otp'));
+    const verify = requests.find(r => r.url.includes('/auth/signup/verify-otp'));
+    expect(JSON.parse(signup.body)).toMatchObject({
+      email: 'developer@example.com', display_name: 'Test Developer',
+      workspace_name: 'Test Workspace', password: 'A-long-unique-password-42'
+    });
+    expect(JSON.parse(verify.body)).toEqual({ email: 'developer@example.com', code: '123456' });
+  });
