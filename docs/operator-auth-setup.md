@@ -34,7 +34,7 @@ Register server-side OAuth applications with these exact callback URLs:
 - Google: `https://YOUR_PUBLIC_HOST/api/v1/admin/oauth/google/callback`
 - GitHub: `https://YOUR_PUBLIC_HOST/api/v1/admin/oauth/github/callback`
 
-Configure `PUBLIC_BASE_URL`, `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET`, and `ADMIN_OAUTH_ALLOWED_EMAILS`. The allowlist is mandatory. Use HTTPS, keep client secrets server-side, and never allow arbitrary OAuth identities to become operators.
+Configure `PUBLIC_BASE_URL`, `ADMIN_FRONTEND_URL`, `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET`, and `ADMIN_OAUTH_ALLOWED_EMAILS`. `PUBLIC_BASE_URL` must be the API origin used for provider callbacks. `ADMIN_FRONTEND_URL` must be the browser-facing frontend origin (the same SPA that serves `/internal`); if both dashboards share one frontend, `DEVELOPER_FRONTEND_URL` is used as a fallback. The OAuth callback returns to `/internal`, not `/`, because `/` serves the public developer portal. The allowlist is mandatory. Use HTTPS, keep client secrets server-side, and never allow arbitrary OAuth identities to become operators.
 
 ## 4. Session behavior
 
