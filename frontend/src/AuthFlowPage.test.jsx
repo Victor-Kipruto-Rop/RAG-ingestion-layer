@@ -48,3 +48,25 @@ describe('operator authentication flows', () => {
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Password updated' })).toBeTruthy());
   });
 });
+
+
+  it('shows an actionable error when signup OTP delivery fails', async () => {
+    api.mockRejectedValueOnce(new Error('Verification email could not be sent. Check mail configuration or try later.'));
+    render(<AuthFlowPage mode="signup" config={{ password_min_length: 12, otp_ttl_seconds: 600 }} onBack={vi.fn()} onAuthenticated={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText('Full name'), { target: { value: 'Test Operator' } });
+    fireEvent.change(screen.getByLabelText('Work email'), { target: { value: 'operator@example.com' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'unique-password-2026' } });
+    fireEvent.change(screen.getByLabelText('Confirm password'), { target: { value: 'unique-password-2026' } });
+    fireEvent.click(screen.getByRole('button', { name: /send verification code/i }));
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('Verification email could not be sent'));
+    expect(screen.queryByLabelText('Email verification code')).toBeNull();
+  });
+
+  it('shows a recoverable error when password reset request fails', async () => {
+    api.mockRejectedValueOnce(new Error('Password reset is temporarily unavailable.'));
+    render(<AuthFlowPage mode="reset" config={{ password_min_length: 12, otp_ttl_seconds: 600 }} onBack={vi.fn()} onAuthenticated={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText('Work email'), { target: { value: 'operator@example.com' } });
+    fireEvent.click(screen.getByRole('button', { name: /send reset code/i }));
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('Password reset is temporarily unavailable'));
+    expect(screen.queryByLabelText('Email verification code')).toBeNull();
+  });
