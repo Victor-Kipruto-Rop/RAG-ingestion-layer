@@ -10,5 +10,5 @@ import './workspace-modules.css';
 import './glass-theme.css';
 import './developer-platform.css';
 import './developer-public.css';
-const Root = window.location.pathname === '/internal' || window.location.pathname.startsWith('/internal/') ? App : DeveloperPlatformApp;
+const Root = App;
 createRoot(document.getElementById('root')).render(<React.StrictMode><AppErrorBoundary><Root/></AppErrorBoundary></React.StrictMode>);
