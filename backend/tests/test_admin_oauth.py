@@ -47,3 +47,50 @@ def test_oauth_provider_configuration_requires_client_id_and_secret(monkeypatch)
 
     assert response.status_code == 200
     assert response.json()["google"] is False
+
+
+def test_oauth_callback_redirects_to_internal_dashboard(monkeypatch):
+    import src.admin_auth as auth
+
+    monkeypatch.setattr(settings, "admin_oauth_allowed_emails", "operator@example.com")
+    monkeypatch.setattr(settings, "admin_frontend_url", "https://datasource.example.com")
+
+    async def verified_identity(provider, code, callback):
+        assert provider == "google"
+        assert code == "trusted-test-code"
+        return "operator@example.com"
+
+    monkeypatch.setattr(auth, "_oauth_identity", verified_identity)
+    monkeypatch.setattr(auth, "_issue_admin_oauth_session", lambda response, email, provider: None)
+
+    response = TestClient(app).get(
+        "/api/v1/admin/oauth/google/callback?code=trusted-test-code&state=state-123",
+        cookies={"pg_oauth_state_google": "state-123"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "https://datasource.example.com/internal"
+
+
+def test_oauth_callback_uses_shared_frontend_fallback(monkeypatch):
+    import src.admin_auth as auth
+
+    monkeypatch.setattr(settings, "admin_oauth_allowed_emails", "operator@example.com")
+    monkeypatch.setattr(settings, "admin_frontend_url", "")
+    monkeypatch.setattr(settings, "developer_frontend_url", "https://datasource.example.com/")
+
+    async def verified_identity(provider, code, callback):
+        return "operator@example.com"
+
+    monkeypatch.setattr(auth, "_oauth_identity", verified_identity)
+    monkeypatch.setattr(auth, "_issue_admin_oauth_session", lambda response, email, provider: None)
+
+    response = TestClient(app).get(
+        "/api/v1/admin/oauth/google/callback?code=test-code&state=state-456",
+        cookies={"pg_oauth_state_google": "state-456"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "https://datasource.example.com/internal"
