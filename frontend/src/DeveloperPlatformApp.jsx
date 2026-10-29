@@ -250,7 +250,7 @@ function AuthScreen({mode,setMode,config,onAuthenticated,busy,error,setError}){
         const r=await readJson('/api/v1/developer/auth/password-reset/request-otp',{method:'POST',body:JSON.stringify({email})});setMessage(r.message);setStage('confirm');
       }else if(reset&&stage==='confirm'){
         if(password!==confirm)throw new Error('Passwords do not match.');
-        const r=await readJson('/api/v1/developer/auth/password-reset/confirm',{method:'POST',body:JSON.stringify({email,code,new_password:password})});setMessage(r.message);setMode('login');setStage('details');
+        const r=await readJson('/api/v1/developer/auth/password-reset/confirm',{method:'POST',body:JSON.stringify({email,code,new_password:password})});setMessage(r.message);setPassword('');setConfirm('');setCode('');setMode('login');setStage('details');
       }else{
         const r=await readJson('/api/v1/developer/auth/login',{method:'POST',body:JSON.stringify({email,password})});onAuthenticated(r);
       }
