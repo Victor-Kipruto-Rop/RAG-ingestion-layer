@@ -1,5 +1,4 @@
-import { spawn } from 'node:child_process';
-import { access } from 'node:fs/promises';
+import { spawn, spawnSync } from 'node:child_process';
 
 const expectedApiOrigin = 'https://api.datasource.pesaguard.co.ke';
 const rawApiBase = process.env.VITE_API_BASE_URL?.trim();
@@ -29,13 +28,18 @@ if (
   process.exit(1);
 }
 
-try {
-  await access('dist/index.html');
-  await access('dist/_redirects');
-  await access('dist/_headers');
-} catch {
-  console.error('Refusing production deployment: built dist assets are missing. Run npm run pages:build first.');
+const build = spawnSync('npm', ['run', 'pages:build'], {
+  cwd: process.cwd(),
+  stdio: 'inherit',
+  shell: process.platform === 'win32',
+});
+if (build.error) {
+  console.error('Unable to start frontend build:', build.error.message);
   process.exit(1);
+}
+if (build.status !== 0) {
+  console.error('Production deployment stopped because the frontend build or Pages verification failed.');
+  process.exit(build.status ?? 1);
 }
 
 const args = [
