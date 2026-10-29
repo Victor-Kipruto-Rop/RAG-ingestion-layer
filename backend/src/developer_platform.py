@@ -57,9 +57,15 @@ def _require_signing_config():
         raise HTTPException(503, "Developer session signing is not configured")
 
 
+def _require_otp_pepper():
+    if len(settings.auth_otp_pepper.encode()) < 32:
+        raise HTTPException(503, "Email verification and recovery are unavailable until a 32-character AUTH_OTP_PEPPER is configured")
+
+
 def _require_otp_config():
-    if not settings.auth_email_delivery_configured or len(settings.auth_otp_pepper.encode()) < 32:
-        raise HTTPException(503, "Email verification and recovery are unavailable until email delivery and a 32-character AUTH_OTP_PEPPER are configured")
+    _require_otp_pepper()
+    if not settings.auth_email_delivery_configured:
+        raise HTTPException(503, "Email verification and recovery are unavailable until email delivery is configured")
 
 
 def _require_platform_config():
@@ -467,7 +473,9 @@ def signup_request_otp(payload: SignupRequest, request: Request, db: Session = D
 
 @router.post("/auth/signup/verify-otp")
 def signup_verify_otp(payload: VerifyOtpRequest, request: Request, response: Response, db: Session = Depends(get_db)):
-    _require_platform_config()
+    # A code already delivered remains verifiable if the email provider is temporarily down.
+    _require_signing_config()
+    _require_otp_pepper()
     _check_login_rate(request.client.host if request.client else "unknown")
     email = _email(str(payload.email))
     _check_account_rate(email)
@@ -582,7 +590,9 @@ def password_reset_request(payload: ResetRequest, request: Request, db: Session 
 
 @router.post("/auth/password-reset/confirm")
 def password_reset_confirm(payload: ResetConfirmRequest, request: Request, response: Response, db: Session = Depends(get_db)):
-    _require_platform_config()
+    # Completing a previously delivered reset code must not depend on email transport health.
+    _require_signing_config()
+    _require_otp_pepper()
     _check_login_rate(request.client.host if request.client else "unknown")
     email = _email(str(payload.email))
     _check_account_rate(email)
