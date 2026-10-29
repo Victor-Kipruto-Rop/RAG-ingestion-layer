@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Activity, ArrowDownRight, ArrowRight, ArrowUpRight, BookOpen, Boxes, BellRing, Check, CheckCircle2,
   ChevronDown, CircleHelp, Clipboard, Code2, Copy, ExternalLink, Eye, EyeOff, FileCode2,
-  FlaskConical, Globe2, Code2, KeyRound, Layers3, LockKeyhole, LogOut, Menu, Plus, Radio,
+  FlaskConical, Globe2, KeyRound, Layers3, LockKeyhole, LogOut, Menu, Plus, Radio,
   RefreshCw, Rocket, Search, ShieldCheck, Terminal, Trash2, UserRound, Webhook, X, Zap
 } from 'lucide-react';
 import { API_BASE, api, setCsrfToken } from './api.js';
