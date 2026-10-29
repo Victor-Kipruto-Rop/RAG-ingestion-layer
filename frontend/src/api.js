@@ -1,5 +1,6 @@
-// Same-origin by default in production builds; the dev server talks to the local API.
-export const API_BASE = import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.DEV ? 'http://localhost:8000' : '');
+// Keep local development pointed at the local API. Hosted builds use the deployed Render backend
+// unless a platform-specific VITE_API_BASE_URL is explicitly configured.
+export const API_BASE = import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.DEV ? 'http://localhost:8000' : 'https://pesaguard-datasource.onrender.com');
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 let csrfToken = '';
 
