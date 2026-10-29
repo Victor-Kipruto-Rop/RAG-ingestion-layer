@@ -166,7 +166,6 @@ def test_developer_login_is_not_blocked_by_email_transport_configuration(monkeyp
 
 def test_developer_signup_does_not_claim_otp_sent_when_email_delivery_fails(monkeypatch):
     from types import SimpleNamespace
-    from fastapi import HTTPException
     from src.developer_platform import SignupRequest, signup_request_otp
 
     monkeypatch.setattr(settings, "developer_access_token_secret", "d" * 40)
