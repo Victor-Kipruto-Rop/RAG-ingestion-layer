@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
+    "pages:build": "npm run build",
     "test": "vitest run",
     "pages:preview": "npx --yes wrangler pages dev dist --config wrangler.jsonc",
     "pages:deploy:staging": "node ./scripts/deploy-pages-staging.mjs"
