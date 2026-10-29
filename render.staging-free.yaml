@@ -29,6 +29,8 @@ services:
         value: https://pesaguard-datasource-staging-api.onrender.com
       - key: DEVELOPER_OAUTH_CALLBACK_BASE_URL
         value: https://pesaguard-datasource-staging-api.onrender.com
+      - key: ADMIN_FRONTEND_URL
+        value: https://pesaguard-datasource-staging.pages.dev
       - key: DEVELOPER_FRONTEND_URL
         value: https://pesaguard-datasource-staging.pages.dev
       - key: DEVELOPER_PUBLIC_BASE_URL

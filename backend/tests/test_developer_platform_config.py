@@ -129,3 +129,77 @@ def test_production_oauth_start_requires_frontend_redirect_origin(monkeypatch):
 
     assert exc.value.status_code == 503
     assert "DEVELOPER_FRONTEND_URL" in exc.value.detail
+
+
+def test_developer_login_is_not_blocked_by_email_transport_configuration(monkeypatch):
+    from types import SimpleNamespace
+    from fastapi import Response
+    from src.developer_platform import LoginRequest, developer_login
+
+    monkeypatch.setattr(settings, "developer_access_token_secret", "d" * 40)
+    monkeypatch.setattr(settings, "session_secret", "s" * 40)
+    monkeypatch.setattr(settings, "auth_otp_pepper", "")
+    monkeypatch.setattr(settings, "resend_api_key", "")
+    monkeypatch.setattr(settings, "resend_from_email", "")
+    monkeypatch.setattr(settings, "smtp_host", "")
+    monkeypatch.setattr(settings, "smtp_from_email", "")
+    monkeypatch.setattr(developer_platform, "_check_login_rate", lambda _host: None)
+    monkeypatch.setattr(developer_platform, "_check_account_rate", lambda _email: None)
+
+    class EmptyDatabase:
+        def scalar(self, *_args, **_kwargs):
+            return None
+
+    with pytest.raises(HTTPException) as exc:
+        developer_login(
+            LoginRequest(email="developer@example.com", password="not-the-password"),
+            SimpleNamespace(client=SimpleNamespace(host="127.0.0.1")),
+            Response(),
+            EmptyDatabase(),
+        )
+
+    # The request reaches credential verification (401), rather than failing early
+    # with 503 just because email OTP delivery is unavailable.
+    assert exc.value.status_code == 401
+    assert "invalid email or password" in exc.value.detail.lower()
+
+
+def test_developer_signup_does_not_claim_otp_sent_when_email_delivery_fails(monkeypatch):
+    from types import SimpleNamespace
+    from src.developer_platform import SignupRequest, signup_request_otp
+
+    monkeypatch.setattr(settings, "developer_access_token_secret", "d" * 40)
+    monkeypatch.setattr(settings, "session_secret", "s" * 40)
+    monkeypatch.setattr(settings, "auth_otp_pepper", "p" * 40)
+    monkeypatch.setattr(settings, "resend_api_key", "test-resend-key")
+    monkeypatch.setattr(settings, "resend_from_email", "noreply@example.test")
+    monkeypatch.setattr(developer_platform, "_check_login_rate", lambda _host: None)
+    monkeypatch.setattr(developer_platform, "_check_account_rate", lambda _email: None)
+    monkeypatch.setattr(developer_platform, "_send_email", lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("mail unavailable")))
+
+    class EmptyDatabase:
+        def __init__(self):
+            self.rows = []
+
+        def scalar(self, *_args, **_kwargs):
+            return None
+
+        def scalars(self, *_args, **_kwargs):
+            return []
+
+        def add(self, row):
+            self.rows.append(row)
+
+        def commit(self):
+            return None
+
+    with pytest.raises(HTTPException) as exc:
+        signup_request_otp(
+            SignupRequest(email="developer@example.com", display_name="Test Developer",
+                          workspace_name="Test Workspace", password="A-long-unique-password-42"),
+            SimpleNamespace(client=SimpleNamespace(host="127.0.0.1")),
+            EmptyDatabase(),
+        )
+
+    assert exc.value.status_code == 503
+    assert "verification email could not be sent" in exc.value.detail.lower()

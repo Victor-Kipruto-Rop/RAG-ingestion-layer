@@ -50,13 +50,28 @@ EVENT_TYPES = {
 }
 
 
-def _require_platform_config():
+def _require_signing_config():
     if not settings.developer_access_token_secret or len(settings.developer_access_token_secret.encode()) < 32:
         raise HTTPException(503, "Developer account authentication is not configured")
     if not settings.session_secret or len(settings.session_secret.encode()) < 32:
         raise HTTPException(503, "Developer session signing is not configured")
-    if not settings.auth_email_delivery_configured or len(settings.auth_otp_pepper.encode()) < 32:
-        raise HTTPException(503, "Email verification and recovery are unavailable until email delivery and a 32-character AUTH_OTP_PEPPER are configured")
+
+
+def _require_otp_pepper():
+    if len(settings.auth_otp_pepper.encode()) < 32:
+        raise HTTPException(503, "Email verification and recovery are unavailable until a 32-character AUTH_OTP_PEPPER is configured")
+
+
+def _require_otp_config():
+    _require_otp_pepper()
+    if not settings.auth_email_delivery_configured:
+        raise HTTPException(503, "Email verification and recovery are unavailable until email delivery is configured")
+
+
+def _require_platform_config():
+    # Backward-compatible guard for flows that both create/verify accounts and need email OTP.
+    _require_signing_config()
+    _require_otp_config()
 
 
 def _email(email: str) -> str:
@@ -447,16 +462,20 @@ def signup_request_otp(payload: SignupRequest, request: Request, db: Session = D
     try:
         _send_email(email, "Verify your PesaGuard Developer Platform account",
                     f"Your verification code is {code}. It expires in {max(1, settings.auth_otp_ttl_seconds // 60)} minutes. If you did not request this, ignore this email.", template_id="account.verify_otp", idempotency_key=f"signup-otp:{challenge.id}")
-    except Exception:
+    except Exception as exc:
         challenge.consumed_at = now_utc()
         db.commit()
         logging.getLogger(__name__).warning("developer_signup_otp_delivery_failed")
+        # Do not advance the UI to code verification when no code was delivered.
+        raise HTTPException(503, "Verification email could not be sent. Check mail configuration or try again later.") from exc
     return {"accepted": True, "message": "If this address can register, a verification code will arrive shortly."}
 
 
 @router.post("/auth/signup/verify-otp")
 def signup_verify_otp(payload: VerifyOtpRequest, request: Request, response: Response, db: Session = Depends(get_db)):
-    _require_platform_config()
+    # A code already delivered remains verifiable if the email provider is temporarily down.
+    _require_signing_config()
+    _require_otp_pepper()
     _check_login_rate(request.client.host if request.client else "unknown")
     email = _email(str(payload.email))
     _check_account_rate(email)
@@ -492,7 +511,8 @@ def signup_verify_otp(payload: VerifyOtpRequest, request: Request, response: Res
 
 @router.post("/auth/login")
 def developer_login(payload: LoginRequest, request: Request, response: Response, db: Session = Depends(get_db)):
-    _require_platform_config()
+    # Existing users must still be able to sign in during an email-provider outage.
+    _require_signing_config()
     _check_login_rate(request.client.host if request.client else "unknown")
     email = _email(str(payload.email))
     _check_account_rate(email)
@@ -570,7 +590,9 @@ def password_reset_request(payload: ResetRequest, request: Request, db: Session 
 
 @router.post("/auth/password-reset/confirm")
 def password_reset_confirm(payload: ResetConfirmRequest, request: Request, response: Response, db: Session = Depends(get_db)):
-    _require_platform_config()
+    # Completing a previously delivered reset code must not depend on email transport health.
+    _require_signing_config()
+    _require_otp_pepper()
     _check_login_rate(request.client.host if request.client else "unknown")
     email = _email(str(payload.email))
     _check_account_rate(email)
