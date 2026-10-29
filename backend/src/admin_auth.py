@@ -393,7 +393,11 @@ async def _oauth_callback(provider: str, request: Request):
         raise HTTPException(502, 'Identity provider is temporarily unavailable') from exc
     if email not in settings.admin_oauth_email_list:
         raise HTTPException(403, 'This identity is not authorized for operator access')
-    response = RedirectResponse(url='/', status_code=303)
+    # The operator UI is mounted at /internal; the public root is the developer portal.
+    # Use the configured frontend origin when the API and static frontend are separate services.
+    frontend_base = settings.admin_frontend_url.strip().rstrip('/') or settings.developer_frontend_url.strip().rstrip('/')
+    destination = f'{frontend_base}/internal' if frontend_base else '/internal'
+    response = RedirectResponse(url=destination, status_code=303)
     _issue_admin_oauth_session(response, email, provider)
     response.delete_cookie(_oauth_state_cookie(provider), path='/api/v1/admin/oauth/')
     return response
