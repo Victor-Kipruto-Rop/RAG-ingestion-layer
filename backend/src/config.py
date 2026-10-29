@@ -52,6 +52,7 @@ class Settings(BaseSettings):
  session_cookie_secure:bool=True
  admin_login_max_attempts_per_minute:int=10
  public_base_url:str=''
+ admin_frontend_url:str=''
  google_oauth_client_id:str=''
  google_oauth_client_secret:str=''
  github_oauth_client_id:str=''
