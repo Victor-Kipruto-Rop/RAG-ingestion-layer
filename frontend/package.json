@@ -8,7 +8,9 @@
     "build": "vite build",
     "test": "vitest run",
     "pages:preview": "npx --yes wrangler pages dev dist --config wrangler.jsonc",
-    "pages:deploy:staging": "node ./scripts/deploy-pages-staging.mjs"
+    "pages:deploy:staging": "node ./scripts/deploy-pages-staging.mjs",
+    "pages:check": "node ./scripts/verify-pages-build.mjs",
+    "pages:build": "npm run build && npm run pages:check"
   },
   "dependencies": {
     "@vitejs/plugin-react": "6.1.2",

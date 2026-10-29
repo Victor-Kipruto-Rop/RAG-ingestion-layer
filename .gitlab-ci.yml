@@ -94,7 +94,7 @@ frontend-tests:
     - test -f public/_redirects
     - test -f public/_headers
     - npm test
-    - npm run build
+    - npm run pages:build
     - test -f dist/_redirects
     - test -f dist/_headers
     - npm audit --audit-level=moderate
