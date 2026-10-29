@@ -215,7 +215,7 @@ export default function App() {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [mobile, setMobile] = useState(false);
-  const [previewMode, setPreviewMode] = useState(false);
+  const [previewMode, setPreviewMode] = useState(true);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [oauthProviders, setOauthProviders] = useState({ google: false, github: false });
   const [notificationCount, setNotificationCount] = useState(0);
@@ -307,7 +307,7 @@ export default function App() {
     // Restore an existing server-side session after a page reload.
     api('/api/v1/admin/session').then(r => r.json()).then(s => { setCsrfToken(s.csrf_token); setAuthed(true); }).catch(() => {}).finally(() => setChecking(false));
   }, []);
-  useEffect(() => { if (authed) refresh(); }, [authed, refresh]);
+  useEffect(() => { if (authed) { setPreviewMode(false); refresh(); } }, [authed, refresh]);
   useEffect(() => { setOrgPage(1); }, [search]);
   useEffect(() => { if (page !== 'Ingestion Jobs' && jobsPage !== 1) setJobsPage(1); }, [page, jobsPage]);
 
@@ -360,14 +360,12 @@ export default function App() {
   const knownPage = ['Overview', 'Data Sources', 'Registry Records', 'Ingestion Jobs', 'Upload center', 'API Keys', 'Data Quality', 'Warehouse', 'Validation Rules', 'Audit Logs', 'Settings', 'Profile', 'Sessions', 'Notifications', 'Documentation'].includes(page);
 
   const completeAuthFlow = result => { setCsrfToken(result.csrf_token); setPassword(''); setEmail(result.identity_email || email); setAuthMode('login'); setError(''); setAuthed(true); };
-  if (!authed && !checking && authMode !== 'login') return <AuthFlowPage mode={authMode} config={authConfig} onBack={() => { setAuthMode('login'); setError(''); }} onAuthenticated={completeAuthFlow} />;
-  if (!authed && !checking) return <LoginPage email={email} setEmail={setEmail} password={password} setPassword={setPassword} onSubmit={signIn} error={error} busy={signingIn} oauthProviders={oauthProviders} authConfig={authConfig} onAuthMode={setAuthMode} />;
 
   return <div className="app-shell">
     {mobile && <button className="sidebar-scrim" aria-label="Close navigation" onClick={() => setMobile(false)} />}
     <Sidebar page={page} setPage={setPage} mobile={mobile} setMobile={setMobile} connected={connected} />
     <main className="main-content">
-      <Topbar page={page} connected={connected} onRefresh={refresh} loading={loading} search={search} setSearch={setSearch} setMobile={setMobile} onSignOut={signOut} previewMode={previewMode} onTogglePreview={() => setPreviewMode(v => !v)} failedJobs={jobs.filter(job => ['failed','error'].includes(String(job.status || '').toLowerCase()))} notificationsOpen={notificationsOpen} setNotificationsOpen={setNotificationsOpen} onViewJobs={() => setPage('Ingestion Jobs')} notificationCount={notificationCount} />
+      <Topbar page={page} connected={connected} onRefresh={refresh} loading={loading} search={search} setSearch={setSearch} setMobile={setMobile} onSignOut={signOut} previewMode={previewMode} onTogglePreview={() => { if (!authed) setPreviewMode(true); else setPreviewMode(v => !v); }} failedJobs={jobs.filter(job => ['failed','error'].includes(String(job.status || '').toLowerCase()))} notificationsOpen={notificationsOpen} setNotificationsOpen={setNotificationsOpen} onViewJobs={() => setPage('Ingestion Jobs')} notificationCount={notificationCount} />
       <div className="page-content">
         {previewMode && <div className="alert-banner info"><ShieldCheck size={17}/><span>Preview mode is active. Write actions are disabled; data shown still comes from the connected backend.</span></div>}
         {error && <div className="alert-banner error"><AlertTriangle size={17} /><span>{error}</span><button onClick={() => setError('')} aria-label="Dismiss error"><X size={16} /></button></div>}
