@@ -185,7 +185,7 @@ def test_developer_signup_does_not_claim_otp_sent_when_email_delivery_fails(monk
             return None
 
         def scalars(self, *_args, **_kwargs):
-            return SimpleNamespace(all=lambda: [])
+            return []
 
         def add(self, row):
             self.rows.append(row)
