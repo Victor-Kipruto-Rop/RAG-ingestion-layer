@@ -210,8 +210,8 @@ class LoginRequest(BaseModel):
 
 @router.post('/login')
 def login(payload: LoginRequest, request: Request, response: Response):
-    if not settings.session_secret:
-        raise HTTPException(503, 'Dashboard session signing is not configured')
+    if len(settings.session_secret.encode()) < 32:
+        raise HTTPException(503, 'Dashboard session signing is not configured correctly. Contact the workspace administrator.')
     _check_login_rate(request.client.host if request.client else 'unknown')
     account = None
     if payload.email:
@@ -760,6 +760,8 @@ def _valid_challenge(db: Session, *, email: str, purpose: str, code: str) -> Adm
 
 
 def _set_session_cookie(response: Response, request: Request, *, email: str, auth_method: str) -> dict:
+    if len(settings.session_secret.encode()) < 32:
+        raise HTTPException(503, 'Dashboard session signing is not configured correctly. Contact the workspace administrator.')
     token, claims = issue_session_token(email=email, auth_method=auth_method)
     _persist_session(claims, request, email=email, auth_method=auth_method)
     response.set_cookie(COOKIE_NAME, token, max_age=max(60, settings.session_ttl_seconds), httponly=True,
@@ -789,8 +791,12 @@ class PasswordResetConfirmRequest(OtpVerifyRequest):
 
 @router.get('/auth/config')
 def auth_config():
-    return {'signup_enabled': bool(settings.admin_signup_email_list and settings.auth_email_delivery_configured),
-            'password_reset_enabled': bool(settings.auth_email_delivery_configured),
+    # Only advertise flows that can finish successfully: OTP delivery, strong session
+    # signing, and (for signup) an explicit operator allowlist must all be configured.
+    session_signing_ready = len(settings.session_secret.encode()) >= 32
+    otp_ready = settings.auth_email_delivery_configured and len(settings.auth_otp_pepper.encode()) >= 32
+    return {'signup_enabled': bool(session_signing_ready and otp_ready and settings.admin_signup_email_list),
+            'password_reset_enabled': bool(session_signing_ready and otp_ready),
             'otp_ttl_seconds': settings.auth_otp_ttl_seconds,
             'password_min_length': 12,
             'signup_requires_allowlisted_email': True}
@@ -802,21 +808,23 @@ def signup_request_otp(payload: SignupRequest, request: Request):
     _check_login_rate(request.client.host if request.client else 'unknown')
     if email not in settings.admin_signup_email_list:
         return {'accepted': True, 'message': 'If this address is eligible, a verification code will be sent.'}
+    if len(settings.session_secret.encode()) < 32:
+        raise HTTPException(503, 'Account sign-up is temporarily unavailable. Contact the workspace administrator.')
     _require_otp_delivery()
     with SessionLocal() as db:
         if db.scalar(select(AdminAccount.id).where(func.lower(AdminAccount.email) == email)):
             return {'accepted': True, 'message': 'If this address is eligible, a verification code will be sent.'}
-        try:
-            _create_auth_challenge(db, email=email, purpose='signup', password_hash=hash_password(payload.password),
-                                   display_name=payload.display_name.strip())
-        except HTTPException as exc:
-            if exc.status_code != 503:
-                raise
+        # For an explicitly allowlisted address, report delivery failure rather than
+        # claiming a code was sent. _create_auth_challenge invalidates failed deliveries.
+        _create_auth_challenge(db, email=email, purpose='signup', password_hash=hash_password(payload.password),
+                               display_name=payload.display_name.strip())
     return {'accepted': True, 'message': 'If this address is eligible, a verification code will be sent.'}
 
 
 @router.post('/auth/signup/verify-otp')
 def signup_verify_otp(payload: OtpVerifyRequest, request: Request, response: Response):
+    if len(settings.session_secret.encode()) < 32:
+        raise HTTPException(503, 'Account sign-up is temporarily unavailable. Contact the workspace administrator.')
     email = _normalize_email(payload.email)
     if email not in settings.admin_signup_email_list:
         raise HTTPException(400, 'The code is invalid or expired. Request a new code.')
@@ -840,6 +848,8 @@ def signup_verify_otp(payload: OtpVerifyRequest, request: Request, response: Res
 
 @router.post('/auth/password-reset/request-otp', status_code=202)
 def password_reset_request_otp(payload: PasswordResetRequest, request: Request):
+    if len(settings.session_secret.encode()) < 32:
+        raise HTTPException(503, 'Password reset is temporarily unavailable. Contact the workspace administrator.')
     email = _normalize_email(payload.email)
     _check_login_rate(request.client.host if request.client else 'unknown')
     _require_otp_delivery()
@@ -857,6 +867,8 @@ def password_reset_request_otp(payload: PasswordResetRequest, request: Request):
 
 @router.post('/auth/password-reset/confirm')
 def password_reset_confirm(payload: PasswordResetConfirmRequest):
+    if len(settings.session_secret.encode()) < 32:
+        raise HTTPException(503, 'Password reset is temporarily unavailable. Contact the workspace administrator.')
     email = _normalize_email(payload.email)
     with SessionLocal() as db:
         account = db.scalar(select(AdminAccount).where(func.lower(AdminAccount.email) == email,
