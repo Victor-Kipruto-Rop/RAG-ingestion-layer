@@ -30,9 +30,31 @@ if ($envText -match "(?m)^\s*REGISTRY_API_KEYS\s*=\s*(change-this-local-only-key
     throw "REGISTRY_API_KEYS is still a placeholder. Edit .env to use a long random local-only key, then rerun this script."
 }
 
+function Get-LocalComposePort([string]$name, [int]$defaultPort) {
+    $value = [Environment]::GetEnvironmentVariable($name)
+    if (-not $value) {
+        $match = [regex]::Match($envText, "(?m)^\s*$([regex]::Escape($name))\s*=\s*(\d+)\s*(?:#.*)?$")
+        $value = if ($match.Success) { $match.Groups[1].Value } else { "$defaultPort" }
+    }
+
+    if ($value -notmatch '^\d{1,5}$' -or [int]$value -lt 1 -or [int]$value -gt 65535) {
+        throw "$name must be a port number between 1 and 65535."
+    }
+    return [int]$value
+}
+
+$apiHostPort = Get-LocalComposePort "REGISTRY_API_HOST_PORT" 8002
+$frontendHostPort = Get-LocalComposePort "REGISTRY_FRONTEND_HOST_PORT" 5176
+
 Write-Host "Validating local Compose configuration..."
 docker compose -f docker-compose.windows.local.yml config --quiet
 if ($LASTEXITCODE -ne 0) { throw "Compose configuration validation failed." }
+
+docker network inspect pesaguard-local_default *> $null
+if ($LASTEXITCODE -ne 0) {
+    docker network create pesaguard-local_default | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Could not create the shared PesaGuard Compose network." }
+}
 
 Write-Host "Building and starting local API, worker, and dashboard..."
 docker compose -f docker-compose.windows.local.yml up -d --build
@@ -42,7 +64,7 @@ Write-Host "Waiting for API readiness..."
 $apiReady = $false
 for ($i = 0; $i -lt 60; $i++) {
     try {
-        $response = Invoke-WebRequest -Uri "http://127.0.0.1:8000/health/ready" -TimeoutSec 3 -UseBasicParsing
+        $response = Invoke-WebRequest -Uri "http://127.0.0.1:$apiHostPort/health/ready" -TimeoutSec 3 -UseBasicParsing
         if ($response.StatusCode -eq 200) { $apiReady = $true; break }
     } catch {
         Start-Sleep -Seconds 2
@@ -58,7 +80,7 @@ Write-Host "Waiting for dashboard HTTP response..."
 $frontendReady = $false
 for ($i = 0; $i -lt 60; $i++) {
     try {
-        $response = Invoke-WebRequest -Uri "http://127.0.0.1:5173" -TimeoutSec 3 -UseBasicParsing
+        $response = Invoke-WebRequest -Uri "http://127.0.0.1:$frontendHostPort" -TimeoutSec 3 -UseBasicParsing
         if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 400) { $frontendReady = $true; break }
     } catch {
         Start-Sleep -Seconds 2
@@ -73,9 +95,9 @@ if (-not $frontendReady) {
 docker compose -f docker-compose.windows.local.yml ps
 Write-Host ""
 Write-Host "Local stack passed HTTP readiness checks." -ForegroundColor Green
-Write-Host "Dashboard: http://localhost:5173" -ForegroundColor Green
-Write-Host "API docs:  http://localhost:8000/docs" -ForegroundColor Green
-Write-Host "Liveness:  http://localhost:8000/health/live"
-Write-Host "Readiness: http://localhost:8000/health/ready"
+Write-Host "Dashboard: http://localhost:$frontendHostPort" -ForegroundColor Green
+Write-Host "API docs:  http://localhost:$apiHostPort/docs" -ForegroundColor Green
+Write-Host "Liveness:  http://localhost:$apiHostPort/health/live"
+Write-Host "Readiness: http://localhost:$apiHostPort/health/ready"
 Write-Host "Use only the local API key from .env in the local dashboard. Never use a production key here."
-Start-Process "http://localhost:5173"
+Start-Process "http://localhost:$frontendHostPort"

@@ -50,10 +50,10 @@ The internal operator dashboard remains separate from the public developer platf
 
 ## Local development
 
-1. For Windows local testing, copy `.env.example` to `.env` and replace `REGISTRY_API_KEYS` with a long random local-only key.
-2. Run `docker compose -f docker-compose.windows.local.yml up -d --build` to start the API, dashboard, and independent worker with one shared SQLite database and local file storage. This configuration is isolated from production Supabase and R2.
-3. Open the dashboard at `http://localhost:5173` and API docs at `http://localhost:8000/docs`. Sign in with the dashboard admin password (see `ADMIN_PASSWORD_HASH` in `.env.example`); the browser never receives the service API key.
-4. The guided Windows startup and stop scripts are `scripts/start-windows-local.ps1` and `scripts/stop-windows-local.ps1`.
+1. Copy `.env.example` to `.env` and replace `REGISTRY_API_KEYS` with a long random local-only key. Set the matching key as `PESAGUARD_REGISTRY_DATASOURCE_API_KEY` in `infra/unified.env`.
+2. From the PesaGuard repository root, run `docker compose --env-file infra/unified.env -f infra/compose.dev.yml up -d --build` to start all platforms, including this API, dashboard, and worker. The datasource uses an isolated SQLite database and local file storage, while sharing the local Redis service; it does not connect to production Supabase or R2.
+3. Open the dashboard at `http://localhost:5176` and API docs at `http://localhost:8002/docs`. Configure `ADMIN_PASSWORD_HASH` and `SESSION_SECRET` in the datasource `.env` to enable dashboard sign-in; the browser never receives the service API key.
+4. The guided Windows scripts and standalone Compose files remain available. `docker-compose.yml` serves the dashboard at `http://localhost:5177` and API docs at `http://localhost:8000/docs`; `docker-compose.windows.local.yml` uses the configurable host ports in `.env.example`. The Windows startup script creates the shared Compose network if it does not exist. Stop the unified stack's `registry-api`, `registry-worker`, and `registry-frontend` services before starting a standalone stack; do not run both against the same SQLite volumes or host ports.
 5. Follow [`docs/windows-local-worker.md`](docs/windows-local-worker.md) to upload the fictional CSV fixture and verify that the worker processes it.
 6. Tests: `pip install -r backend/requirements-dev.txt && pytest -q` from the repository root. Set `TEST_DATABASE_URL` and `TEST_PG_ADMIN_URL` to also run the suite and the SQL-migration/RLS checks on PostgreSQL.
 
@@ -108,6 +108,8 @@ Example request:
     X-API-Key: <server-side-secret>
 
 The API returns found, a matching organization when present, source metadata, data-quality state, and timestamps. A local record is not proof of current legal status or authoritative KYB verification.
+
+For the unified local PesaGuard Compose stack, set the same local-only key as `REGISTRY_API_KEYS` in this repository's `.env` and `PESAGUARD_REGISTRY_DATASOURCE_API_KEY` in `infra/unified.env`. The API is available on host port `8002` and at `http://registry-api:8000` to other Compose services. PesaGuard exposes the lookup through the authenticated `GET /auth/onboarding/registry-lookup` endpoint using the registration number already saved in the caller's onboarding profile; imported records remain non-authoritative review evidence.
 
 ## Ingestion flow
 
