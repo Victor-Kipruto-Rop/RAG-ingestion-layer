@@ -57,3 +57,9 @@
 @keyframes dp-toast-enter{from{opacity:0;transform:translate3d(0,-8px,0) scale(.985)}to{opacity:1;transform:translate3d(0,0,0) scale(1)}}
 @media(max-width:600px){.dp-toast-viewport{top:10px;right:10px;width:calc(100vw - 20px)}.dp-toast-popup{padding:13px 11px;grid-template-columns:22px minmax(0,1fr) 26px}}
 @media(prefers-reduced-motion:reduce){.dp-toast-popup{animation:none}}
+
+/* Warnings are intentionally styled like errors: high-contrast red, never success green. */
+.dp-toast-popup.warning{border-color:#ff646b;color:#ff9ca1;box-shadow:0 18px 54px #0009,0 0 0 1px #ff646b18}
+.dp-toast-popup.warning .dp-toast-icon{color:#ff747c}
+.dp-toast-popup.warning .dp-toast-copy strong{color:#ff969c}
+.dp-toast-popup.warning .dp-toast-close:hover{background:#ff646b18;border-color:#ff646b50}
