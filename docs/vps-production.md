@@ -1,6 +1,6 @@
 # Registry datasource on the PesaGuard VPS
 
-The production Compose file replaces the local SQLite database with PostgreSQL and uses the existing private Cloudflare R2 integration for uploaded registry files. PostgreSQL, Redis and the registry API publish no host ports. The API is attached to the operations project's internal network as registry-api:8000.
+The production Compose file replaces the local SQLite database with PostgreSQL and uses the existing private Cloudflare R2 integration for uploaded registry files. PostgreSQL, Redis and the registry API publish no host ports. The API is attached to the operations project's dedicated internal proxy network and reaches the registry API over TLS at https://registry.pesaguard.co.ke.
 
 ## Configure
 
