@@ -1,6 +1,6 @@
 # Registry datasource on the PesaGuard VPS
 
-The production Compose file replaces the local SQLite database with PostgreSQL and uses the existing private Cloudflare R2 integration for uploaded registry files. PostgreSQL, Redis and the registry API publish no host ports. The API is attached to the operations project's dedicated internal proxy network and reaches the registry API over TLS at https://registry.pesaguard.co.ke.
+The production Compose file replaces the local SQLite database with PostgreSQL and uses the existing private Cloudflare R2 integration for uploaded registry files. PostgreSQL, Redis, registry API and operator frontend publish no host ports. The API is attached to the operations project's dedicated internal proxy network and reaches the registry API over TLS at https://registry.pesaguard.co.ke. The same hostname serves the operator SPA at / and routes /api/ to the registry API.
 
 ## Configure
 
@@ -17,7 +17,7 @@ The production Compose file replaces the local SQLite database with PostgreSQL a
     docker compose --env-file backend/.env.production -f docker-compose.production.yml -p pesaguard-registry up -d --build
     docker compose --env-file backend/.env.production -f docker-compose.production.yml -p pesaguard-registry ps
 
-The registry API readiness probe requires PostgreSQL, Redis and a reachable R2 bucket. The worker shares the same database and upload volume.
+The registry API readiness probe requires PostgreSQL, Redis and a reachable R2 bucket. The operator frontend is built with the same-origin HTTPS API base. The worker shares the same database and upload volume.
 
 ## Security and scope
 
