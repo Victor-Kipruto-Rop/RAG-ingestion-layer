@@ -47,7 +47,7 @@ services:
       REDIS_URL: redis://registry-redis:6379/0
       LOCAL_STORAGE_PATH: /app/.registry-uploads
       SESSION_COOKIE_SECURE: "true"
-      CORS_ORIGINS: ${REGISTRY_CORS_ORIGINS:-https://app.pesaguard.co.ke}
+      CORS_ORIGINS: ${REGISTRY_CORS_ORIGINS:-https://registry.pesaguard.co.ke}
       PUBLIC_BASE_URL: ${REGISTRY_PUBLIC_BASE_URL:-https://registry.pesaguard.co.ke}
       ADMIN_FRONTEND_URL: ${REGISTRY_ADMIN_FRONTEND_URL:-https://registry.pesaguard.co.ke}
     volumes:
@@ -91,6 +91,24 @@ services:
     security_opt: [no-new-privileges:true]
     mem_limit: 1g
     cpus: 1.5
+
+  registry-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: https://registry.pesaguard.co.ke
+    networks: [registry-proxy]
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1:8080/health]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    cpus: 0.5
 
 volumes:
   registry_postgres_data:
