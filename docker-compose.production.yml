@@ -52,7 +52,7 @@ services:
       ADMIN_FRONTEND_URL: ${REGISTRY_ADMIN_FRONTEND_URL:-https://registry.pesaguard.co.ke}
     volumes:
       - registry_uploads:/app/.registry-uploads
-    networks: [registry-data, pesaguard-data]
+    networks: [registry-data, pesaguard-data, registry-proxy]
     depends_on:
       registry-postgres: {condition: service_healthy}
       registry-redis: {condition: service_healthy}
@@ -103,3 +103,6 @@ networks:
   pesaguard-data:
     external: true
     name: pesaguard_data
+  registry-proxy:
+    external: true
+    name: pesaguard-registry-proxy
