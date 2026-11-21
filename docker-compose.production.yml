@@ -1,0 +1,105 @@
+name: pesaguard-registry
+services:
+  registry-postgres:
+    image: postgres:16.6-bookworm
+    environment:
+      POSTGRES_DB: ${REGISTRY_DB_NAME:?Set REGISTRY_DB_NAME}
+      POSTGRES_USER: ${REGISTRY_DB_USER:?Set REGISTRY_DB_USER}
+      POSTGRES_PASSWORD: ${REGISTRY_DB_PASSWORD:?Set REGISTRY_DB_PASSWORD}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - registry_postgres_data:/var/lib/postgresql/data
+    networks: [registry-data]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    mem_limit: 1g
+    cpus: 1.0
+
+  registry-redis:
+    image: redis:7.4-alpine
+    command: [redis-server, --appendonly, "yes", --appendfsync, everysec, --maxmemory, 256mb, --maxmemory-policy, noeviction]
+    volumes: [registry_redis_data:/data]
+    networks: [registry-data]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    mem_limit: 384m
+    cpus: 0.5
+
+  registry-api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file: [.env]
+    environment:
+      APP_ENV: production
+      API_ENVIRONMENT: production
+      DATABASE_URL: postgresql+psycopg://${REGISTRY_DB_USER}:${REGISTRY_DB_PASSWORD}@registry-postgres:5432/${REGISTRY_DB_NAME}
+      REDIS_URL: redis://registry-redis:6379/0
+      LOCAL_STORAGE_PATH: /app/.registry-uploads
+      SESSION_COOKIE_SECURE: "true"
+      CORS_ORIGINS: ${REGISTRY_CORS_ORIGINS:-https://app.pesaguard.co.ke}
+      PUBLIC_BASE_URL: ${REGISTRY_PUBLIC_BASE_URL:-https://registry.pesaguard.co.ke}
+      ADMIN_FRONTEND_URL: ${REGISTRY_ADMIN_FRONTEND_URL:-https://registry.pesaguard.co.ke}
+    volumes:
+      - registry_uploads:/app/.registry-uploads
+    networks: [registry-data, pesaguard-data]
+    depends_on:
+      registry-postgres: {condition: service_healthy}
+      registry-redis: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready',timeout=5)"]
+      interval: 20s
+      timeout: 8s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+    init: true
+    security_opt: [no-new-privileges:true]
+    mem_limit: 768m
+    cpus: 1.5
+
+  registry-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.worker
+    env_file: [.env]
+    environment:
+      APP_ENV: production
+      API_ENVIRONMENT: production
+      DATABASE_URL: postgresql+psycopg://${REGISTRY_DB_USER}:${REGISTRY_DB_PASSWORD}@registry-postgres:5432/${REGISTRY_DB_NAME}
+      REDIS_URL: redis://registry-redis:6379/0
+      LOCAL_STORAGE_PATH: /app/.registry-uploads
+    volumes:
+      - registry_uploads:/app/.registry-uploads
+    networks: [registry-data]
+    depends_on:
+      registry-postgres: {condition: service_healthy}
+      registry-redis: {condition: service_healthy}
+      registry-api: {condition: service_healthy}
+    restart: unless-stopped
+    init: true
+    security_opt: [no-new-privileges:true]
+    mem_limit: 1g
+    cpus: 1.5
+
+volumes:
+  registry_postgres_data:
+  registry_redis_data:
+  registry_uploads:
+
+networks:
+  registry-data:
+    internal: true
+  pesaguard-data:
+    external: true
+    name: pesaguard_data
